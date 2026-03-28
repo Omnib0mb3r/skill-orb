@@ -1,22 +1,22 @@
-# Skill Orb
+# DevNeural
 
-Real-time 3D visualization of cross-project skill and dependency connections in Claude Code workflows.
+A living neural network of everything you build — projects, tools, skills, and their interconnections. DevNeural tracks every dependency, connection, and pattern across your entire dev ecosystem, then gives Claude the intelligence to reference that graph when starting new work.
 
 ---
 
 ## Concept
 
-An interactive orb that tracks every time Claude uses a skill from another project, building a live dependency graph over time. Designed for developers working with Claude across multiple repos.
+DevNeural is more than a visualizer — it's a neural network Claude actively uses. It tracks every skill invocation, repo reference, and tool usage across all your projects, building a weighted dependency graph over time. When starting a new project, Claude queries DevNeural to surface existing tools, skills, and patterns that are relevant — preventing duplicate work and unlocking cross-project intelligence.
 
 ---
 
 ## Key Features
 
-- **Floating VS Code panel** — 3D orb visible while you work
+- **Claude-native intelligence** — Claude queries the graph at session start to recommend relevant repos, skills, and tools for the current project
+- **Floating VS Code panel** — 3D neural network visualization visible while you work
 - **Connection strength visualization** — active connections pulse and glow; stronger dependencies shift to warmer colors (uniform line thickness, color-coded intensity)
-- **Voice interface** — query the orb ("What's our status?", "How many products?")
+- **Voice interface** — query the network ("What's connected to this project?", "What skills are we using most?")
 - **NotebookLM integration** — auto-generates training materials from high-dependency clusters
-- **Context recommendations** — helps Claude decide which other repos to pull in for context
 - **Training material suggestions** — recommendation engine based on usage patterns
 
 ---
@@ -25,8 +25,8 @@ An interactive orb that tracks every time Claude uses a skill from another proje
 
 1. **Connection logger** tracks every skill invocation across projects
 2. **Metadata layer** (JSON) maintains connection weights (0–10 scale)
-3. **Three.js frontend** visualizes the orb with real-time updates
-4. **Claude references** connection data to prioritize relevant repos
+3. **Three.js frontend** visualizes the neural network with real-time updates
+4. **Claude references** connection data to prioritize relevant repos when opening new projects
 5. **Voice interface** queries the system
 
 ---
@@ -38,20 +38,21 @@ Claude Code (any project)
   → skill invocation hook
   → C:\dev\data\skill-connections\logs\
   → weights.json (0-10 scale per connection)
-  → skill-orb reads + renders in real time
+  → DevNeural reads + renders in real time
+  → Claude queries on session start → recommends relevant context
 ```
 
-Voice sessions from Claude Voice workflow feed into the orb as conversation logs, enriching the dependency model over time.
+Voice sessions from Claude Voice workflow feed into the network as conversation logs, enriching the dependency model over time.
 
 ---
 
 ## File Structure
 
 ```
-skill-orb/
+DevNeural/
   src/
     logger/       ← connection logger (reads Claude hook events)
-    orb/          ← Three.js visualization engine
+    neural/       ← Three.js neural network visualization engine
     voice/        ← voice query interface
     api/          ← REST/WebSocket server
   data/           ← local dev data (symlink or pointer to C:\dev\data\skill-connections\)
@@ -75,7 +76,7 @@ C:\dev\data\skill-connections\
 
 1. Create connection logger + JSON schema
 2. Wire Claude Code hooks in `claude-setup` to write invocation events
-3. Build Three.js orb visualization
+3. Build Three.js neural network visualization
 4. Add WebSocket server for real-time updates
 5. Add voice interface
 6. NotebookLM integration
