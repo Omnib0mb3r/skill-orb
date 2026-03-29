@@ -16,9 +16,13 @@ but receives `connection:new` via browser WebSocket instead of VS Code postMessa
 
 | File | Action |
 |------|--------|
-| `webview/animation.ts` | Create — replace stub |
-| `webview/edges.ts` | Modify — expose edge material references |
-| `src/main.ts` | Modify — route `connection:new` to animation module |
+| `webview/animation.ts` | Created — full implementation |
+| `webview/orb.ts` | Modified — imports and calls `registerEdges` after each graph update |
+| `src/main.ts` | Modified — routes `connection:new` and `graph:snapshot` to animation module; calls `tickBreathing` each frame |
+
+> **Note:** `getEdgeMaterials` from the edges.ts plan was omitted — animation.ts accesses materials via direct cast, which is equivalent and avoids an unused export.
+> **Added:** `registerEdges` (not in original spec) required for animation module to track source→target→edgeId mappings. Called by orb.ts.
+> **Added:** Node scale breathing via `nodeIndexMap` imported from nodes.ts — `tickBreathing` applies `scaleFactor` via Matrix4 decompose/recompose per frame.
 
 All paths: `C:\dev\tools\DevNeural\03-web-app\`
 

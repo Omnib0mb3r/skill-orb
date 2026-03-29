@@ -1,5 +1,6 @@
 import { createScene } from '../webview/renderer';
 import { updateGraph, getGraphInstance, initOrb, updateRenderPositions } from '../webview/orb';
+import { initAnimation, onConnectionNew, onSnapshot, tickBreathing } from '../webview/animation';
 import type { WsMessage } from './types';
 
 const canvas = document.getElementById('devneural-canvas') as HTMLCanvasElement;
@@ -9,10 +10,12 @@ const graphOrb = getGraphInstance();
 scene.add(graphOrb);
 
 initOrb(scene);
+initAnimation(scene);
 
-startAnimationLoop(() => {
+startAnimationLoop((delta: number) => {
   graphOrb.tickFrame();
   updateRenderPositions();
+  tickBreathing(delta * 1000);
 });
 
 // Browser WebSocket — connects to the DevNeural Python server
@@ -26,8 +29,18 @@ function connect(): void {
       const msg = JSON.parse(event.data as string) as WsMessage;
       if (msg.type === 'graph:snapshot') {
         updateGraph(msg.payload);
+        onSnapshot(msg.payload.edges.map(e => ({
+          id: e.id,
+          last_seen: new Date(e.last_seen).getTime(),
+        })));
       }
-      // connection:new handler wired in section-02-animation
+      if (msg.type === 'connection:new') {
+        onConnectionNew({
+          source: msg.payload.source,
+          target: msg.payload.target,
+          connectionType: msg.payload.connection_type,
+        });
+      }
     } catch {
       // ignore malformed messages
     }

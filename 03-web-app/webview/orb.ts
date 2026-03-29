@@ -15,6 +15,7 @@ import {
   updateEdgePositions,
   type EdgeRenderData,
 } from './edges';
+import { registerEdges } from './animation';
 import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 
 export type { GraphSnapshot };
@@ -226,6 +227,7 @@ export function updateGraph(snapshot: GraphSnapshot): void {
     const colorMap = computeRelativeColor(links);
     currentEdgeLines = createEdgeLines(links, colorMap);
     currentEdgeLines.forEach(line => currentScene!.add(line));
+    registerEdges(currentEdgeLines, links.map(l => ({ id: l.id, source: l.source, target: l.target })));
 
     // Wire LineMaterial resolution updates so line thickness stays correct on resize
     addResizeListener((w, h) => {
