@@ -135,6 +135,52 @@ export async function deriveConnections(
   }
 }
 
+/**
+ * Walks up from startDir looking for a devneural.json file.
+ * Returns { stage?, tags? } if found, undefined if not found or if JSON is malformed.
+ * Never throws.
+ */
+export async function readDevneuralJson(
+  startDir: string,
+): Promise<{ stage?: string; tags?: string[] } | undefined> {
+  let current = startDir;
+  while (true) {
+    const candidate = path.join(current, 'devneural.json');
+    try {
+      const content = await fs.promises.readFile(candidate, 'utf-8');
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(content);
+      } catch (err) {
+        console.warn('[DevNeural] devneural.json parse error:', err instanceof Error ? err.message : String(err));
+        return undefined;
+      }
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const obj = parsed as Record<string, unknown>;
+        const stage = typeof obj['stage'] === 'string' ? obj['stage'] : undefined;
+        const tags = Array.isArray(obj['tags'])
+          ? (obj['tags'] as unknown[]).filter((t): t is string => typeof t === 'string')
+          : undefined;
+        return { ...(stage !== undefined ? { stage } : {}), ...(tags !== undefined ? { tags } : {}) };
+      }
+      return undefined;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        console.warn('[DevNeural] devneural.json read error:', err instanceof Error ? err.message : String(err));
+        return undefined;
+      }
+      // ENOENT — file not found at this level, walk up
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      // Reached filesystem root
+      return undefined;
+    }
+    current = parent;
+  }
+}
+
 async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) {
     return '';
@@ -169,9 +215,10 @@ async function main(): Promise<void> {
 
   const identity = await resolveProjectIdentity(payload.cwd);
   const connections = await deriveConnections(payload, identity);
+  const meta = await readDevneuralJson(payload.cwd);
 
   const entries = connections.map(conn =>
-    buildLogEntry(payload, identity, conn.connectionType, conn.sourceNode, conn.targetNode),
+    buildLogEntry(payload, identity, conn.connectionType, conn.sourceNode, conn.targetNode, meta?.stage, meta?.tags),
   );
 
   const weightsPath = path.join(dataRoot, 'weights.json');

@@ -20,7 +20,12 @@
     "section-11-voice",
     "section-12-integration"
   ],
-  "sections_state": {},
+  "sections_state": {
+    "section-01-schema": {
+      "status": "complete",
+      "commit_hash": "232bf0e"
+    }
+  },
   "pre_commit": {
     "present": false,
     "type": "none",

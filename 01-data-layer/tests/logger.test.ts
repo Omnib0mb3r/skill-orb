@@ -113,6 +113,52 @@ describe('buildLogEntry', () => {
     expect(entry.timestamp.endsWith('Z')).toBe(true);
     expect(new Date(entry.timestamp).toISOString()).toBe(entry.timestamp);
   });
+
+  it('includes stage and tags in the entry when provided', () => {
+    const entry = buildLogEntry(
+      makePayload(), makeIdentity(), 'project->tool', 'project:x', 'tool:Bash',
+      'deployed', ['sandbox'],
+    );
+    expect(entry.stage).toBe('deployed');
+    expect(entry.tags).toEqual(['sandbox']);
+  });
+
+  it('omits stage key entirely when stage is undefined', () => {
+    const entry = buildLogEntry(
+      makePayload(), makeIdentity(), 'project->tool', 'project:x', 'tool:Bash',
+      undefined, undefined,
+    );
+    expect(entry).not.toHaveProperty('stage');
+    expect(entry).not.toHaveProperty('tags');
+  });
+
+  it('includes tags but omits stage when only tags are provided', () => {
+    const entry = buildLogEntry(
+      makePayload(), makeIdentity(), 'project->tool', 'project:x', 'tool:Bash',
+      undefined, ['sandbox'],
+    );
+    expect(entry).not.toHaveProperty('stage');
+    expect(entry.tags).toEqual(['sandbox']);
+  });
+
+  it('includes stage but omits tags when only stage is provided', () => {
+    const entry = buildLogEntry(
+      makePayload(), makeIdentity(), 'project->tool', 'project:x', 'tool:Bash',
+      'alpha', undefined,
+    );
+    expect(entry.stage).toBe('alpha');
+    expect(entry).not.toHaveProperty('tags');
+  });
+
+  it('serialized JSON entry includes stage and tags only when defined', async () => {
+    const entry = buildLogEntry(
+      makePayload(), makeIdentity(), 'project->tool', 'project:x', 'tool:Bash',
+      'beta', ['revision-needed'],
+    );
+    const parsed = JSON.parse(JSON.stringify(entry));
+    expect(parsed.stage).toBe('beta');
+    expect(parsed.tags).toEqual(['revision-needed']);
+  });
 });
 
 // ── appendLogEntry ────────────────────────────────────────────────────────────

@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawnSync } from 'child_process';
-import { extractSkillName, extractProjectRefs, deriveConnections } from '../src/hook-runner';
+import { extractSkillName, extractProjectRefs, deriveConnections, readDevneuralJson } from '../src/hook-runner';
 import { resolveProjectIdentity } from '../src/identity';
-import type { HookPayload, ProjectIdentity } from '../src/types';
+import type { HookPayload, ProjectIdentity, LogEntry } from '../src/types';
 import { createTempDir, removeTempDir } from './helpers/tempDir';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -341,6 +341,232 @@ describe('Integration: full pipeline', () => {
       expect(keys.length).toBeGreaterThanOrEqual(2);
     } finally {
       removeTempDir(otherDir);
+    }
+  });
+});
+
+// ── readDevneuralJson ─────────────────────────────────────────────────────────
+
+describe('readDevneuralJson', () => {
+  let tempDir: string;
+
+  const validConfig = {
+    name: 'TestProject',
+    localPath: 'c:/dev/test',
+    githubUrl: 'https://github.com/user/test',
+    stage: 'beta',
+    tags: ['sandbox'],
+    description: 'Test project',
+  };
+
+  beforeEach(() => { tempDir = createTempDir(); });
+  afterEach(() => { removeTempDir(tempDir); });
+
+  it('reads stage and tags from devneural.json in the current directory', async () => {
+    fs.writeFileSync(path.join(tempDir, 'devneural.json'), JSON.stringify(validConfig), 'utf8');
+    const result = await readDevneuralJson(tempDir);
+    expect(result).toBeDefined();
+    expect(result!.stage).toBe('beta');
+    expect(result!.tags).toEqual(['sandbox']);
+  });
+
+  it('walks up 3 directory levels to find devneural.json', async () => {
+    const deepDir = path.join(tempDir, 'a', 'b', 'c');
+    fs.mkdirSync(deepDir, { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'devneural.json'), JSON.stringify(validConfig), 'utf8');
+    const result = await readDevneuralJson(deepDir);
+    expect(result).toBeDefined();
+    expect(result!.stage).toBe('beta');
+  });
+
+  it('returns undefined when no devneural.json exists anywhere in the path', async () => {
+    // Use a deeply nested temp path with no devneural.json
+    const deepDir = path.join(tempDir, 'x', 'y', 'z');
+    fs.mkdirSync(deepDir, { recursive: true });
+    const result = await readDevneuralJson(deepDir);
+    expect(result).toBeUndefined();
+  });
+
+  it('returns undefined and emits a warning when devneural.json contains malformed JSON', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fs.writeFileSync(path.join(tempDir, 'devneural.json'), '{ not json', 'utf8');
+    const result = await readDevneuralJson(tempDir);
+    expect(result).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[DevNeural]'), expect.anything());
+    warnSpy.mockRestore();
+  });
+
+  it('returns result without stage key when devneural.json is missing the stage field', async () => {
+    const withoutStage = { ...validConfig };
+    delete (withoutStage as Record<string, unknown>)['stage'];
+    fs.writeFileSync(path.join(tempDir, 'devneural.json'), JSON.stringify(withoutStage), 'utf8');
+    const result = await readDevneuralJson(tempDir);
+    expect(result).toBeDefined();
+    expect(result!.stage).toBeUndefined();
+  });
+
+  it('does not throw when called with a non-existent start directory', async () => {
+    await expect(readDevneuralJson('/nonexistent/path/that/does/not/exist')).resolves.toBeUndefined();
+  });
+});
+
+// ── LogEntry type — stage and tags fields ─────────────────────────────────────
+
+describe('LogEntry type — stage and tags', () => {
+  it('LogEntry accepts optional stage and tags fields', () => {
+    const entry: LogEntry = {
+      schema_version: 1,
+      timestamp: new Date().toISOString(),
+      session_id: 'sess',
+      tool_use_id: 'tu',
+      project: 'proj',
+      project_source: 'git-remote',
+      tool_name: 'Bash',
+      tool_input: {},
+      connection_type: 'project->tool',
+      source_node: 'project:proj',
+      target_node: 'tool:Bash',
+      stage: 'beta',
+      tags: ['sandbox'],
+    };
+    expect(entry.stage).toBe('beta');
+    expect(entry.tags).toEqual(['sandbox']);
+  });
+
+  it('LogEntry allows stage and tags to be absent', () => {
+    const entry: LogEntry = {
+      schema_version: 1,
+      timestamp: new Date().toISOString(),
+      session_id: 'sess',
+      tool_use_id: 'tu',
+      project: 'proj',
+      project_source: 'git-remote',
+      tool_name: 'Bash',
+      tool_input: {},
+      connection_type: 'project->tool',
+      source_node: 'project:proj',
+      target_node: 'tool:Bash',
+    };
+    expect(entry.stage).toBeUndefined();
+    expect(entry.tags).toBeUndefined();
+  });
+});
+
+// ── stage/tags not in weights.json ───────────────────────────────────────────
+
+describe('weights.json does not contain stage/tags', () => {
+  let dataRoot: string;
+
+  beforeEach(() => { dataRoot = createTempDir(); });
+  afterEach(() => { removeTempDir(dataRoot); });
+
+  it('ConnectionRecord has no stage or tags fields after hook run', () => {
+    // Create a devneural.json in a temp cwd
+    const cwd = createTempDir();
+    try {
+      fs.writeFileSync(path.join(cwd, 'devneural.json'), JSON.stringify({
+        name: 'Proj',
+        localPath: cwd,
+        githubUrl: 'https://github.com/user/proj',
+        stage: 'beta',
+        tags: ['sandbox'],
+        description: 'Test',
+      }), 'utf8');
+
+      const payload = makePayload({ tool_name: 'Bash', tool_input: { command: 'echo hi' }, cwd });
+      const result = spawnHook(JSON.stringify(payload), { DEVNEURAL_DATA_ROOT: dataRoot });
+      expect(result.status).toBe(0);
+
+      const weightsFile = path.join(dataRoot, 'weights.json');
+      expect(fs.existsSync(weightsFile)).toBe(true);
+      const weights = JSON.parse(fs.readFileSync(weightsFile, 'utf8'));
+      for (const record of Object.values(weights.connections) as Record<string, unknown>[]) {
+        expect(record).not.toHaveProperty('stage');
+        expect(record).not.toHaveProperty('tags');
+      }
+    } finally {
+      removeTempDir(cwd);
+    }
+  });
+});
+
+// ── devneural.json enrichment in subprocess ───────────────────────────────────
+
+describe('Hook runner orchestration: devneural.json enrichment (subprocess)', () => {
+  let dataRoot: string;
+
+  beforeEach(() => { dataRoot = createTempDir(); });
+  afterEach(() => { removeTempDir(dataRoot); });
+
+  it('JSONL log entry contains stage and tags when devneural.json is in cwd', () => {
+    const cwd = createTempDir();
+    try {
+      fs.writeFileSync(path.join(cwd, 'devneural.json'), JSON.stringify({
+        name: 'TestProject',
+        localPath: cwd,
+        githubUrl: 'https://github.com/user/testproj',
+        stage: 'deployed',
+        tags: ['revision-needed'],
+        description: 'Test project',
+      }), 'utf8');
+
+      const payload = makePayload({ tool_name: 'Bash', tool_input: { command: 'ls' }, cwd });
+      const result = spawnHook(JSON.stringify(payload), { DEVNEURAL_DATA_ROOT: dataRoot });
+      expect(result.status).toBe(0);
+
+      const today = new Date();
+      const y = today.getUTCFullYear();
+      const m = String(today.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(today.getUTCDate()).padStart(2, '0');
+      const logFile = path.join(dataRoot, 'logs', `${y}-${m}-${d}.jsonl`);
+      expect(fs.existsSync(logFile)).toBe(true);
+
+      const lines = fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean);
+      const entries = lines.map(l => JSON.parse(l));
+      const bashEntry = entries.find(e => e.connection_type === 'project->tool');
+      expect(bashEntry?.stage).toBe('deployed');
+      expect(bashEntry?.tags).toEqual(['revision-needed']);
+    } finally {
+      removeTempDir(cwd);
+    }
+  });
+
+  it('JSONL log entry omits stage and tags when no devneural.json in path', () => {
+    const cwd = createTempDir();
+    try {
+      const payload = makePayload({ tool_name: 'Bash', tool_input: { command: 'ls' }, cwd });
+      const result = spawnHook(JSON.stringify(payload), { DEVNEURAL_DATA_ROOT: dataRoot });
+      expect(result.status).toBe(0);
+
+      const today = new Date();
+      const y = today.getUTCFullYear();
+      const m = String(today.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(today.getUTCDate()).padStart(2, '0');
+      const logFile = path.join(dataRoot, 'logs', `${y}-${m}-${d}.jsonl`);
+      expect(fs.existsSync(logFile)).toBe(true);
+
+      const lines = fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean);
+      const entries = lines.map(l => JSON.parse(l));
+      for (const entry of entries) {
+        expect(entry).not.toHaveProperty('stage');
+        expect(entry).not.toHaveProperty('tags');
+      }
+    } finally {
+      removeTempDir(cwd);
+    }
+  });
+
+  it('hook runner exits 0 and proceeds normally when devneural.json is malformed', () => {
+    const cwd = createTempDir();
+    try {
+      fs.writeFileSync(path.join(cwd, 'devneural.json'), '{ bad json !!', 'utf8');
+      const payload = makePayload({ tool_name: 'Bash', tool_input: { command: 'ls' }, cwd });
+      const result = spawnHook(JSON.stringify(payload), { DEVNEURAL_DATA_ROOT: dataRoot });
+      expect(result.status).toBe(0);
+      // Still creates weights.json (tool processing continues)
+      expect(fs.existsSync(path.join(dataRoot, 'weights.json'))).toBe(true);
+    } finally {
+      removeTempDir(cwd);
     }
   });
 });

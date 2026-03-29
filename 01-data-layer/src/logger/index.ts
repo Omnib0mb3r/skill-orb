@@ -20,7 +20,9 @@ export function buildLogEntry(
   identity: ProjectIdentity,
   connectionType: ConnectionType,
   sourceNode: string,
-  targetNode: string
+  targetNode: string,
+  stage?: string,
+  tags?: string[],
 ): LogEntry {
   return {
     schema_version: 1,
@@ -34,6 +36,8 @@ export function buildLogEntry(
     connection_type: connectionType,
     source_node: sourceNode,
     target_node: targetNode,
+    ...(stage !== undefined ? { stage } : {}),
+    ...(tags !== undefined ? { tags } : {}),
   };
 }
 
