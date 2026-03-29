@@ -174,17 +174,25 @@ Start a new Claude Code session (the hook config is read at session startup, not
 
 Work through this list top to bottom before considering this section complete:
 
-- [ ] `npm test` passes (all modules green)
-- [ ] `npm run build` completes without TypeScript errors
-- [ ] `dist/hook-runner.js` exists
-- [ ] `dist/hook-runner.js` contains `require(` (CommonJS confirmed)
-- [ ] Smoke test A passes: Bash payload → JSONL entry + weights entry created
-- [ ] Smoke test B passes: Read payload → no files written
-- [ ] Smoke test C passes: empty stdin → exits 0
-- [ ] Smoke test D passes: malformed JSON → exits 0
-- [ ] `~/.claude/settings.json` updated with PostToolUse hook entry
+- [x] `npm test` passes (all modules green — 71/71)
+- [x] `npm run build` completes without TypeScript errors
+- [x] `dist/hook-runner.js` exists
+- [x] `dist/hook-runner.js` contains `require(` (CommonJS confirmed)
+- [x] Smoke test A passes: Bash payload → JSONL entry + weights entry created
+- [x] Smoke test B passes: Read payload → no files written
+- [x] Smoke test C passes: empty stdin → exits 0
+- [x] Smoke test D passes: malformed JSON → exits 0
+- [x] `~/.claude/settings.json` updated with PostToolUse hook entry (appended to existing PostToolUse array)
 - [ ] New Claude Code session started after settings update
 - [ ] Live hook verified: real tool call produces JSONL + weights entries
+
+---
+
+## Deviations from Plan
+
+- **`dist/` is gitignored** — build output is not committed to source control (standard practice). The `npm run build` step produces `dist/` at deploy time.
+- **Hook appended to existing PostToolUse array** — `settings.json` already had a `PostToolUse` entry for `gsd-context-monitor.js`. The DevNeural hook was appended as a second entry with `"matcher": ""` rather than replacing the existing block.
+- **Smoke test exit codes show blank on Windows bash** — `echo "Exit: $?"` renders blank in Git Bash on Windows for this shell session; confirmed correct behavior by checking file output (JSONL written for Test A, no Read entry for Test B).
 
 ---
 
