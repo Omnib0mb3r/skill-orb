@@ -203,17 +203,34 @@ Only `src/config.ts` and `src/server.ts` contain code at the end of this section
 
 ---
 
+## Implementation Notes (Actual)
+
+**Deviations from plan:**
+
+- `vitest.config.ts` adds `passWithNoTests: true` — required in vitest v2.x, which exits code 1 when no test files found. Without this, `npm test` would fail the smoke test.
+- `tsconfig.json` omits `declaration: true` and `declarationMap: true` — these fields generate `.d.ts` output which is unnecessary for a standalone server binary that is never imported as a library. `sourceMap: true` retained for debugging.
+- `src/config.ts` PORT validation uses regex `!/^\d+$/.test(trimmed)` instead of mixed `Number.isInteger + includes('.')` check — cleaner, handles whitespace-padded values correctly after trim.
+
+**Files created:**
+- `02-api-server/package.json`
+- `02-api-server/package-lock.json`
+- `02-api-server/tsconfig.json`
+- `02-api-server/vitest.config.ts`
+- `02-api-server/src/config.ts`
+- `02-api-server/src/server.ts`
+- Directories (empty, not tracked by git): `src/graph/`, `src/routes/`, `src/ws/`, `src/watcher/`, `tests/helpers/`, `tests/graph/`, `tests/routes/`, `tests/ws/`
+
 ## Completion Checklist
 
-- [ ] `package.json` created with `"type": "module"`, all dependencies, all four scripts
-- [ ] `npm install` runs without errors
-- [ ] `tsconfig.json` created with NodeNext module resolution and `strict: true`
-- [ ] `vitest.config.ts` created
-- [ ] All subdirectories under `src/` and `tests/` created
-- [ ] `src/config.ts` implements `ServerConfig` interface and `loadConfig()` with fail-fast validation
-- [ ] `src/server.ts` stub creates Fastify, calls `loadConfig()`, registers `/health`, binds to `127.0.0.1:<port>`
-- [ ] `npm run build` exits 0 with no TypeScript errors
-- [ ] `npm run dev` starts, prints bound address, responds to `curl http://127.0.0.1:3747/health`
-- [ ] `npm test` exits 0 (zero tests found is acceptable)
-- [ ] `PORT=abc npm run dev` prints clear error and exits non-zero
-- [ ] `PORT=99999 npm run dev` prints clear error and exits non-zero
+- [x] `package.json` created with `"type": "module"`, all dependencies, all four scripts
+- [x] `npm install` runs without errors
+- [x] `tsconfig.json` created with NodeNext module resolution and `strict: true`
+- [x] `vitest.config.ts` created
+- [x] All subdirectories under `src/` and `tests/` created
+- [x] `src/config.ts` implements `ServerConfig` interface and `loadConfig()` with fail-fast validation
+- [x] `src/server.ts` stub creates Fastify, calls `loadConfig()`, registers `/health`, binds to `127.0.0.1:<port>`
+- [x] `npm run build` exits 0 with no TypeScript errors
+- [x] `npm run dev` starts, prints bound address (`http://127.0.0.1:3747`)
+- [x] `npm test` exits 0 (zero tests found is acceptable)
+- [x] `PORT=abc npm run dev` prints clear error and exits non-zero
+- [x] `PORT=99999 npm run dev` prints clear error and exits non-zero
