@@ -15,9 +15,9 @@ export interface WeightsFileEntry {
 }
 
 export interface WeightsFile {
+  schema_version: 1;
+  updated_at: string;
   connections: Record<string, WeightsFileEntry>;
-  last_updated: string;
-  version: string;
 }
 
 export interface GraphNode {

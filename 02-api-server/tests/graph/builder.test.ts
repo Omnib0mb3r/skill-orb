@@ -3,9 +3,9 @@ import { buildGraph } from '../../src/graph/builder.js';
 import type { WeightsFile } from '../../src/graph/types.js';
 
 const emptyWeights: WeightsFile = {
+  schema_version: 1,
+  updated_at: '2025-01-01T00:00:00.000Z',
   connections: {},
-  last_updated: '2025-01-01T00:00:00.000Z',
-  version: '1.0',
 };
 
 describe('buildGraph', () => {
@@ -30,8 +30,8 @@ describe('buildGraph', () => {
           last_seen: '2025-06-01T00:00:00.000Z',
         },
       },
-      last_updated: '2025-06-01T00:00:00.000Z',
-      version: '1.0',
+      schema_version: 1,
+      updated_at: '2025-06-01T00:00:00.000Z',
     };
     const graph = buildGraph(weights);
     expect(graph.nodeIndex.size).toBe(2);
@@ -64,8 +64,8 @@ describe('buildGraph', () => {
           last_seen: '2025-01-01T00:00:00.000Z',
         },
       },
-      last_updated: '2025-01-01T00:00:00.000Z',
-      version: '1.0',
+      schema_version: 1,
+      updated_at: '2025-01-01T00:00:00.000Z',
     };
     const graph = buildGraph(weights);
     expect(graph.nodeIndex.get('project:my-repo')?.type).toBe('project');
@@ -107,8 +107,8 @@ describe('buildGraph', () => {
           last_seen: '2025-01-01T00:00:00.000Z',
         },
       },
-      last_updated: '2025-01-01T00:00:00.000Z',
-      version: '1.0',
+      schema_version: 1,
+      updated_at: '2025-01-01T00:00:00.000Z',
     };
     const graph = buildGraph(weights);
     expect(graph.edgeList.map((e) => e.weight)).toEqual([3.0, 2.0, 1.0]);
@@ -146,8 +146,8 @@ describe('buildGraph', () => {
           last_seen: '2025-01-01T00:00:00.000Z',
         },
       },
-      last_updated: '2025-01-01T00:00:00.000Z',
-      version: '1.0',
+      schema_version: 1,
+      updated_at: '2025-01-01T00:00:00.000Z',
     };
     const graph = buildGraph(weights);
     // project:a: source in 2 + target in 1 = 3 total
@@ -182,8 +182,8 @@ describe('buildGraph', () => {
           last_seen: '2025-01-01T00:00:00.000Z',
         },
       },
-      last_updated: '2025-01-01T00:00:00.000Z',
-      version: '1.0',
+      schema_version: 1,
+      updated_at: '2025-01-01T00:00:00.000Z',
     };
     const graph = buildGraph(weights);
     expect(graph.edgeList.length).toBe(2);
@@ -206,8 +206,8 @@ describe('buildGraph', () => {
           last_seen: '2025-01-01T00:00:00.000Z',
         },
       },
-      last_updated: '2025-01-01T00:00:00.000Z',
-      version: '1.0',
+      schema_version: 1,
+      updated_at: '2025-01-01T00:00:00.000Z',
     };
     const graph = buildGraph(weights);
     const node = graph.nodeIndex.get('project:github.com/user/repo');

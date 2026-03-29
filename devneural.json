@@ -1,0 +1,8 @@
+{
+  "name": "DevNeural",
+  "localPath": "c:/dev/tools/DevNeural",
+  "githubUrl": "https://github.com/mcollins-f6i/DevNeural",
+  "stage": "alpha",
+  "tags": [],
+  "description": "Living neural network of project interconnections — data layer, API server, and VS Code extension"
+}

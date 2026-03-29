@@ -48,7 +48,7 @@ export function startWatchers(
     .on('add', handleWeightsRead)
     .on('change', handleWeightsRead)
     .on('unlink', () => {
-      const emptyWeights: WeightsFile = { connections: {}, last_updated: '', version: '' };
+      const emptyWeights: WeightsFile = { schema_version: 1, updated_at: '', connections: {} };
       onGraphChange(buildGraph(emptyWeights));
     });
 
