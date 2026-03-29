@@ -44,6 +44,10 @@
     "section-06-threejs-scene": {
       "status": "complete",
       "commit_hash": "765f4d3"
+    },
+    "section-07-rendering": {
+      "status": "complete",
+      "commit_hash": "95caa17"
     }
   },
   "pre_commit": {

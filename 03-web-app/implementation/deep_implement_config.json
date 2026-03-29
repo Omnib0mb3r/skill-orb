@@ -1,0 +1,32 @@
+{
+  "plugin_root": "C:\\Users\\mcollins\\.claude\\plugins\\cache\\piercelamb-plugins\\deep-implement\\0.2.1",
+  "sections_dir": "C:\\dev\\tools\\DevNeural\\03-web-app\\sections",
+  "target_dir": "C:\\dev\\tools\\DevNeural",
+  "state_dir": "C:\\dev\\tools\\DevNeural\\03-web-app\\implementation",
+  "git_root": "C:\\dev\\tools\\DevNeural",
+  "commit_style": "simple",
+  "test_command": "cd C:\\dev\\tools\\DevNeural\\03-web-app && npm test",
+  "sections": [
+    "section-01-scaffold",
+    "section-02-animation",
+    "section-03-camera-hud",
+    "section-04-node-actions",
+    "section-05-voice",
+    "section-06-integration"
+  ],
+  "sections_state": {
+    "section-01-scaffold": {
+      "status": "complete",
+      "commit_hash": "pending"
+    }
+  },
+  "pre_commit": {
+    "present": false,
+    "type": "none",
+    "config_file": null,
+    "native_hook": null,
+    "may_modify_files": false,
+    "detected_formatters": []
+  },
+  "created_at": "2026-03-29T00:00:00.000000+00:00"
+}
