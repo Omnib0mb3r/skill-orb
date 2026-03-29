@@ -31,6 +31,18 @@
     "section-04-logger": {
       "status": "complete",
       "commit_hash": "0211295"
+    },
+    "section-05-weights": {
+      "status": "complete",
+      "commit_hash": "e428c60"
+    },
+    "section-06-hook-runner": {
+      "status": "complete",
+      "commit_hash": "4e45581"
+    },
+    "section-07-build-and-wire": {
+      "status": "complete",
+      "commit_hash": "fe28256"
     }
   },
   "pre_commit": {
