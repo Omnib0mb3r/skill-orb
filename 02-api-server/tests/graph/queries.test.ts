@@ -28,13 +28,13 @@ function makeWeights(
       last_seen: '2025-01-01T00:00:00.000Z',
     };
   }
-  return { connections, last_updated: '2025-01-01T00:00:00.000Z', version: '1.0' };
+  return { connections, schema_version: 1, updated_at: '2025-01-01T00:00:00.000Z' };
 }
 
 const emptyWeights: WeightsFile = {
   connections: {},
-  last_updated: '2025-01-01T00:00:00.000Z',
-  version: '1.0',
+  schema_version: 1,
+  updated_at: '2025-01-01T00:00:00.000Z',
 };
 
 describe('getFullGraph', () => {

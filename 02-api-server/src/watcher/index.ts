@@ -20,7 +20,7 @@ let eventBuffer: LogEntry[] = [];
 export function startWatchers(
   weightsPath: string,
   logsDir: string,
-  onGraphChange: (graph: InMemoryGraph) => void,
+  onGraphChange: (graph: InMemoryGraph, weights: WeightsFile) => void,
   onNewLogEntry: (entry: LogEntry, isStartup: boolean) => void,
   opts?: WatcherOptions
 ): void {
@@ -30,7 +30,7 @@ export function startWatchers(
     try {
       const content = await fs.promises.readFile(weightsPath, 'utf-8');
       const parsed = JSON.parse(content) as WeightsFile;
-      onGraphChange(buildGraph(parsed));
+      onGraphChange(buildGraph(parsed), parsed);
     } catch (err) {
       console.error('Failed to read/parse weights.json:', err);
     }
@@ -44,12 +44,12 @@ export function startWatchers(
     ignoreInitial: true,
   });
 
+  const emptyWeights: WeightsFile = { schema_version: 1, updated_at: '', connections: {} };
   weightsWatcher
     .on('add', handleWeightsRead)
     .on('change', handleWeightsRead)
     .on('unlink', () => {
-      const emptyWeights: WeightsFile = { schema_version: 1, updated_at: '', connections: {} };
-      onGraphChange(buildGraph(emptyWeights));
+      onGraphChange(buildGraph(emptyWeights), emptyWeights);
     });
 
   let isStartupScan = true;

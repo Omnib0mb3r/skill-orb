@@ -53,14 +53,14 @@ const fixtureWeights: WeightsFile = {
       last_seen: '2025-03-01T00:00:00.000Z',
     },
   },
-  last_updated: '2025-03-01T00:00:00.000Z',
-  version: '1.0',
+  schema_version: 1,
+  updated_at: '2025-03-01T00:00:00.000Z',
 };
 
 const emptyWeights: WeightsFile = {
   connections: {},
-  last_updated: '2025-01-01T00:00:00.000Z',
-  version: '1.0',
+  schema_version: 1,
+  updated_at: '2025-01-01T00:00:00.000Z',
 };
 
 let app: FastifyInstance;
@@ -148,8 +148,8 @@ describe('GET /graph/node/:id', () => {
           last_seen: '2025-01-01T00:00:00.000Z',
         },
       },
-      last_updated: '2025-01-01T00:00:00.000Z',
-      version: '1.0',
+      schema_version: 1,
+      updated_at: '2025-01-01T00:00:00.000Z',
     };
     graph = buildGraph(pathWeights);
     const res = await app.inject({
@@ -236,7 +236,7 @@ describe('GET /graph/top', () => {
         last_seen: '2025-01-01T00:00:00.000Z',
       };
     }
-    graph = buildGraph({ connections, last_updated: '2025-01-01T00:00:00.000Z', version: '1.0' });
+    graph = buildGraph({ connections, schema_version: 1, updated_at: '2025-01-01T00:00:00.000Z' });
     const res = await app.inject({ method: 'GET', url: '/graph/top?limit=200' });
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);

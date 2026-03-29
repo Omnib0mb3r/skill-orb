@@ -4,6 +4,9 @@ const GraphNodeSchema = z.object({
   id: z.string(),
   type: z.enum(['project', 'tool', 'skill']),
   label: z.string(),
+  stage: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  localPath: z.string().optional(),
 });
 
 const GraphEdgeSchema = z.object({

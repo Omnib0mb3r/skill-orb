@@ -17,8 +17,8 @@ const fixtureWeights = {
       last_seen: '2025-03-01T00:00:00.000Z',
     },
   },
-  last_updated: '2025-03-01T00:00:00.000Z',
-  version: '1.0',
+  schema_version: 1,
+  updated_at: '2025-03-01T00:00:00.000Z',
 };
 
 async function pollUntil(
@@ -62,7 +62,7 @@ let server: Awaited<ReturnType<typeof createServer>>;
 beforeEach(async () => {
   tempDir = createTempDir();
   await fs.mkdir(path.join(tempDir, 'logs'), { recursive: true });
-  server = await createServer({ port: 0, dataRoot: tempDir });
+  server = await createServer({ port: 0, dataRoot: tempDir, localReposRoot: '' });
 });
 
 afterEach(async () => {

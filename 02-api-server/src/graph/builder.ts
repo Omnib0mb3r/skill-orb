@@ -1,16 +1,25 @@
-import type { WeightsFile, InMemoryGraph, GraphNode, GraphEdge } from './types.js';
+import type { WeightsFile, InMemoryGraph, GraphNode, GraphEdge, ProjectRegistry } from './types.js';
 
-function parseNode(id: string): GraphNode {
+function parseNode(id: string, registry?: ProjectRegistry): GraphNode {
   const colonIdx = id.indexOf(':');
   const prefix = id.slice(0, colonIdx);
   const label = id.slice(colonIdx + 1);
   const type = (prefix === 'project' || prefix === 'tool' || prefix === 'skill')
     ? prefix
     : 'skill';
-  return { id, type, label };
+  const node: GraphNode = { id, type, label };
+  if (type === 'project' && registry) {
+    const meta = registry.get(id);
+    if (meta) {
+      node.stage = meta.stage;
+      node.tags = meta.tags;
+      node.localPath = meta.localPath;
+    }
+  }
+  return node;
 }
 
-export function buildGraph(weights: WeightsFile): InMemoryGraph {
+export function buildGraph(weights: WeightsFile, registry?: ProjectRegistry): InMemoryGraph {
   const nodeIndex = new Map<string, GraphNode>();
   const edgeList: GraphEdge[] = [];
   const edgeIndex = new Map<string, GraphEdge>();
@@ -33,7 +42,7 @@ export function buildGraph(weights: WeightsFile): InMemoryGraph {
 
     for (const nodeId of [entry.source_node, entry.target_node]) {
       if (!nodeIndex.has(nodeId)) {
-        nodeIndex.set(nodeId, parseNode(nodeId));
+        nodeIndex.set(nodeId, parseNode(nodeId, registry));
       }
       const adj = adjacency.get(nodeId);
       if (adj) {

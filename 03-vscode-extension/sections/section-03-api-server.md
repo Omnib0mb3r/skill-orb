@@ -180,6 +180,37 @@ const GraphNodeSchema = z.object({
 
 ---
 
+## Implementation Notes (Actual)
+
+### Deviations from plan
+
+1. **`watcher/index.ts` also updated** (not in plan's "files to touch" table): `onGraphChange` callback signature changed from `(graph: InMemoryGraph) => void` to `(graph: InMemoryGraph, weights: WeightsFile) => void` to allow `server.ts` to track `latestWeights` without re-reading disk. Backward compatible (TS allows callbacks with fewer params).
+
+2. **Registry watcher uses `depth: 1` glob instead of one-level-deep readdir pattern**: `chokidar.watch('${localReposRoot}/**/devneural.json', { depth: 1 })` with forward-slash path (path.join avoided to prevent Windows backslash in glob).
+
+3. **`server.ts` keeps `latestWeights: WeightsFile`**: Needed so registry watcher can rebuild `buildGraph(latestWeights, newRegistry)` without re-reading weights.json from disk.
+
+### Files actually created/modified
+
+| File | Change |
+|------|--------|
+| `02-api-server/src/graph/types.ts` | Added `stage?`, `tags?`, `localPath?` to `GraphNode`; added `ProjectMeta`, `ProjectRegistry` |
+| `02-api-server/src/graph/registry.ts` | **Created** — `buildProjectRegistry` function |
+| `02-api-server/src/graph/builder.ts` | `buildGraph` accepts optional `ProjectRegistry` |
+| `02-api-server/src/config.ts` | Added `localReposRoot: string` (empty = skip scan) |
+| `02-api-server/src/server.ts` | Registry init, latestWeights tracking, registry watcher, stop() teardown |
+| `02-api-server/src/ws/types.ts` | Extended `GraphNodeSchema` with optional stage/tags/localPath |
+| `02-api-server/src/watcher/index.ts` | `onGraphChange` callback now receives `(graph, weights)` |
+| `02-api-server/tests/graph/registry.test.ts` | **Created** — 7 tests for `buildProjectRegistry` |
+| `02-api-server/tests/graph/builder.test.ts` | Added 5 tests for `buildGraph with ProjectRegistry` |
+| `02-api-server/tests/server.integration.test.ts` | Added `localReposRoot: ''` to `createServer` call |
+| `02-api-server/tests/routes/graph.test.ts` | Fixed remaining old WeightsFile field names |
+| `02-api-server/tests/graph/queries.test.ts` | Fixed remaining old WeightsFile field names |
+
+### Final test count
+
+93 tests across 9 test files — all passing.
+
 ## Behavior Contract
 
 - **Registry scan is non-blocking**: If `localReposRoot` is empty or inaccessible, the server starts normally with an empty registry. Nodes render without enrichment.
