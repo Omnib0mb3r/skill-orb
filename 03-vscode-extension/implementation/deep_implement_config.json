@@ -32,6 +32,14 @@
     "section-03-api-server": {
       "status": "complete",
       "commit_hash": "9af5468"
+    },
+    "section-04-scaffold": {
+      "status": "complete",
+      "commit_hash": "5c73947"
+    },
+    "section-05-extension-host": {
+      "status": "complete",
+      "commit_hash": "e38b533"
     }
   },
   "pre_commit": {
