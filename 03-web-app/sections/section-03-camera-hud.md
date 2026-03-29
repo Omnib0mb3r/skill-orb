@@ -188,5 +188,26 @@ setCameraMode(hudElements, cameraController.state);
 // WebSocket onclose → setConnectionStatus(hudElements, 'disconnected')
 ```
 
-`getNodePosition` should read from `nodeIndexMap` + the current force positions from
-`graph.graphData()`.
+`getNodePosition` is exported from `webview/orb.ts` — reads live force positions via
+`graph.graphData().nodes.find(...)`.
+
+---
+
+## Actual Implementation Notes
+
+**Files created:**
+- `webview/camera.ts` — camera state machine, 115 lines
+- `webview/hud.ts` — HUD overlay, 175 lines
+- `webview/search.ts` — pure query engine, 100 lines
+- `webview/__tests__/camera.test.ts` — 7 tests
+- `webview/__tests__/hud.test.ts` — 7 tests
+- `webview/__tests__/search.test.ts` — 11 tests (8 evaluateQuery + 3 detectReverseQuery)
+
+**Files modified:**
+- `webview/orb.ts` — added `getNodePosition()` export
+- `src/main.ts` — wired camera, HUD, search; restructured to avoid forward-reference
+
+**Deviations from plan:**
+- Node click → `onActiveProjectsChanged` deferred to section-04-node-actions (requires raycasting)
+- Non-matching search visual: `0x3a3a4a` dark blue-gray instead of opacity 0.2 (background is near-black; opacity requires per-instance transparency on InstancedMesh which is complex; dark blue-gray achieves the same de-emphasis without disappearing against background)
+- Type query edge filter: spec said AND-style edges but OR is correct (fixed in review)

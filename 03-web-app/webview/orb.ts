@@ -211,6 +211,19 @@ export function getGraphInstance(): ThreeForceGraph {
   return graph;
 }
 
+/**
+ * Returns the current Three.js world position of a node by ID, or null if unknown.
+ * Reads live force-layout positions from the graph data each call.
+ */
+export function getNodePosition(nodeId: string): THREE.Vector3 | null {
+  const graphData = graph.graphData() as {
+    nodes: Array<NodeObject & { x?: number; y?: number; z?: number }>;
+  };
+  const node = graphData.nodes.find(n => String((n as Record<string, unknown>)['id']) === nodeId);
+  if (!node || node.x === undefined) return null;
+  return new THREE.Vector3(node.x, node.y ?? 0, node.z ?? 0);
+}
+
 export function updateGraph(snapshot: GraphSnapshot): void {
   const { nodes, links, wasCapped, originalCounts } = capAndTransform(snapshot);
 
