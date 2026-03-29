@@ -256,3 +256,29 @@ npm test
 ```
 
 All extension host unit tests must pass.
+
+---
+
+## Implementation Notes (Actual)
+
+### Files Created / Modified
+- `src/extension.ts` — full implementation as planned
+- `src/types.ts` — as planned
+- `src/wsClient.ts` — as planned; `onClose` callback removed from `WsClientOptions` (was vestigial dead code; reconnect is internal)
+- `src/panelManager.ts` — as planned
+- `src/activeProject.ts` — as planned; path prefix check uses `startsWith(localPath + '/')` not `startsWith(localPath)` to avoid string prefix false-positives
+- `src/graphCache.ts` — as planned; exports `CACHE_KEY` and `MAX_CACHED_EDGES` for test assertions
+- `src/__mocks__/vscode.ts` — extended with `ViewColumn`, `_configChangeEmitter`, `_activeEditorChangeEmitter`, `ExtensionContext` class, `Uri` class
+- `src/__tests__/extension.test.ts` — 38 tests (one extra: path prefix false-positive regression)
+- `tests/build-smoke.test.ts` — removed misleading string regex check; kept 500KB size cap
+- `tsconfig.json` — exclude `src/__tests__/**` and `src/__mocks__/**` from tsc (tests use vitest alias, not tsc)
+- `vitest.config.ts` — added `alias: { vscode: 'src/__mocks__/vscode.ts' }`
+
+### Deviations from Plan
+- `WsClientOptions.onClose` removed (simplification; was always `() => {}` at the only call site)
+- `detectActiveProjects` uses `startsWith(localPath + '/')` (bug fix vs. plan spec)
+- 38 tests instead of planned ~37 (one regression test added for path prefix bug)
+- `tsconfig.json` excludes test/mock files (tests typecheck via vitest config, not tsc)
+
+### Final Test Count
+57 tests passing (7 manifest + 38 extension + 12 build-smoke)

@@ -8,5 +8,6 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*", "webview/**/*", "tests/**/*"]
+  "include": ["src/**/*", "webview/**/*"],
+  "exclude": ["src/__tests__/**/*", "src/__mocks__/**/*"]
 }

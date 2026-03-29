@@ -22,25 +22,37 @@ function createEventEmitter<T>() {
 const configChangeEmitter = createEventEmitter<{ affectsConfiguration: (s: string) => boolean }>();
 const activeEditorChangeEmitter = createEventEmitter<unknown>();
 
+export const ViewColumn = {
+  Active: -1,
+  Beside: -2,
+  One: 1,
+  Two: 2,
+  Three: 3,
+} as const;
+
 export const window = {
-  createWebviewPanel: vi.fn((_viewType: string, _title: string) => {
-    const disposeEmitter = createEventEmitter<void>();
-    return {
-      webview: {
-        html: '',
-        postMessage: vi.fn(),
-        onDidReceiveMessage: createEventEmitter<unknown>().event,
-        cspSource: 'mock-csp',
-        asWebviewUri: vi.fn((uri: Uri) => uri),
-      },
-      reveal: vi.fn(),
-      onDidDispose: disposeEmitter.event,
-      onDidChangeViewState: createEventEmitter<unknown>().event,
-      dispose: vi.fn(),
-      visible: true,
-      active: true,
-    };
-  }),
+  createWebviewPanel: vi.fn(
+    (_viewType: string, _title: string, _column: number, _options?: object) => {
+      const disposeEmitter = createEventEmitter<void>();
+      return {
+        webview: {
+          html: '',
+          postMessage: vi.fn().mockResolvedValue(undefined),
+          onDidReceiveMessage: createEventEmitter<unknown>().event,
+          cspSource: 'mock-csp',
+          // Returns a URI with vscode-webview:// scheme so tests can assert the prefix
+          asWebviewUri: vi.fn((uri: Uri) => new Uri('vscode-webview', 'extension', uri.path, '', '')),
+        },
+        reveal: vi.fn(),
+        onDidDispose: disposeEmitter.event,
+        onDidChangeViewState: createEventEmitter<unknown>().event,
+        // Firing the dispose event when dispose() is called mirrors VS Code behaviour
+        dispose: vi.fn(() => { disposeEmitter.fire(undefined as unknown as void); }),
+        visible: true,
+        active: true,
+      };
+    },
+  ),
   onDidChangeActiveTextEditor: activeEditorChangeEmitter.event,
   showErrorMessage: vi.fn(),
   showInformationMessage: vi.fn(),
@@ -57,9 +69,11 @@ export const workspace = {
 };
 
 export const commands = {
-  registerCommand: vi.fn((_command: string, _handler: (...args: unknown[]) => unknown): Disposable => ({
-    dispose: vi.fn(),
-  })),
+  registerCommand: vi.fn(
+    (_command: string, _handler: (...args: unknown[]) => unknown): Disposable => ({
+      dispose: vi.fn(),
+    }),
+  ),
   executeCommand: vi.fn(),
 };
 
@@ -93,7 +107,15 @@ export class Uri {
     return `${this.scheme}://${this.authority}${this.path}`;
   }
 
-  with(change: Partial<{ scheme: string; authority: string; path: string; query: string; fragment: string }>): Uri {
+  with(
+    change: Partial<{
+      scheme: string;
+      authority: string;
+      path: string;
+      query: string;
+      fragment: string;
+    }>,
+  ): Uri {
     return new Uri(
       change.scheme ?? this.scheme,
       change.authority ?? this.authority,
@@ -110,8 +132,8 @@ export const env = {
 
 export class ExtensionContext {
   workspaceState = {
-    get: vi.fn(),
-    update: vi.fn(),
+    get: vi.fn().mockReturnValue(undefined),
+    update: vi.fn().mockResolvedValue(undefined),
     keys: vi.fn((): string[] => []),
   };
   extensionUri = Uri.file('/mock/extension');
