@@ -197,6 +197,24 @@ export function getTopEdges(graph: InMemoryGraph, limit: number): GraphResponse
 
 ---
 
+---
+
+## Actual Implementation Notes
+
+**Files created:**
+- `src/graph/queries.ts` — 4 pure query functions
+- `tests/graph/queries.test.ts` — 25 tests, all passing
+
+**Deviations from plan:**
+- `getFullGraph` returns `graph.edgeList.slice()` instead of `graph.edgeList` directly to prevent callers mutating the shared pre-sorted array (code review fix I2)
+- Added JSDoc to `getNodeById` clarifying that callers must pass the full prefixed node id (unlike `getSubgraph`, no normalization is applied)
+
+**Additional tests added (code review):**
+- `getNodeById` → "returns edges for a node that only appears as target (not source)"
+- `getSubgraph` → "does not match double-prefixed id 'project:project:...'" + positive guard on no-double-prefix test
+
+---
+
 ## What This Section Does NOT Do
 
 - No file I/O or async operations.

@@ -240,11 +240,23 @@ All imports use the `.js` extension (ESM convention in TypeScript with `"moduleR
 
 ---
 
+## Implementation Notes (Actual)
+
+**Files created:**
+- `02-api-server/src/graph/types.ts` — all 7 type exports
+- `02-api-server/src/graph/builder.ts` — `buildGraph()` + private `parseNode()` helper
+- `02-api-server/tests/graph/builder.test.ts` — 7 tests (6 required + 1 bonus for colon-in-label)
+
+**Deviations from plan:**
+- Added `passWithNoTests: true` was already in vitest.config from section-01.
+- Test count is 7 not 6: the bonus colon-in-label test is retained alongside all 6 required tests.
+- Adjacency test updated to exercise a node appearing in 3 edges (2 as source, 1 as target) per plan spec.
+
 ## Acceptance Criteria
 
-1. `npm run build` compiles with no TypeScript errors.
-2. All six tests in `tests/graph/builder.test.ts` pass.
-3. `InMemoryGraph`, `GraphNode`, `GraphEdge`, `GraphResponse`, `WeightsFile`, `ConnectionType` are all exported from `src/graph/types.ts`.
-4. `buildGraph` is exported from `src/graph/builder.ts`.
-5. An empty `WeightsFile` input produces an `InMemoryGraph` with all four collections empty and no thrown exception.
-6. Three connections with weights `1.0`, `3.0`, `2.0` produce an `edgeList` ordered `[3.0, 2.0, 1.0]`.
+1. [x] `npm run build` compiles with no TypeScript errors.
+2. [x] All 7 tests in `tests/graph/builder.test.ts` pass (6 required + 1 bonus).
+3. [x] `InMemoryGraph`, `GraphNode`, `GraphEdge`, `GraphResponse`, `WeightsFile`, `ConnectionType` exported from `src/graph/types.ts`.
+4. [x] `buildGraph` exported from `src/graph/builder.ts`.
+5. [x] Empty `WeightsFile` → empty `InMemoryGraph`, no exception.
+6. [x] Three connections with weights 1.0, 3.0, 2.0 → `edgeList` order [3.0, 2.0, 1.0].
