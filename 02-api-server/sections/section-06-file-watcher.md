@@ -29,10 +29,25 @@ export interface LogEntry {
 
 ---
 
-## Files to Create
+## Files Created
 
 - `src/watcher/index.ts` — the watcher module
-- `tests/watcher/watcher.test.ts` — unit tests using temp directories
+- `tests/watcher/watcher.test.ts` — unit tests using temp directories (13 tests, all passing)
+- `tests/helpers/tempDir.ts` — shared temp directory helper (`createTempDir`, `removeTempDir`)
+
+## Deviations from Plan
+
+**Weights watcher handles both `add` and `change` events** (spec only showed `change`): On Windows, chokidar v4 fires `add` (not `change`) when a watched file that didn't exist at startup is first created. Registering both handlers ensures correct behavior across all scenarios.
+
+**Test init waits (150ms):** Tests add a `150ms` wait after `startWatchers` before writing files. chokidar needs time to initialize on Windows before it can detect changes. This is a platform-specific initialization wait, not an event delivery wait.
+
+**`LogEntry` index signature added to `src/graph/types.ts`:** The spec said to declare `LogEntry` locally in `src/watcher/index.ts` with `[key: string]: unknown`. Since `LogEntry` was already declared in `src/graph/types.ts` (from Section 02), the index signature was added there instead of creating a duplicate type. This prevents TypeScript errors in Section 07 when broadcasting entries with extra fields.
+
+**Test node count is 3, not 4:** The spec fixture note said `nodeIndex.size === 4` but the fixture has 2 connections sharing one source node, yielding 3 unique nodes. The test uses the correct value of 3.
+
+## Final Test Count
+
+13 tests in `tests/watcher/watcher.test.ts`, all passing.
 
 ---
 

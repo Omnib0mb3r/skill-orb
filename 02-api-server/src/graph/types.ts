@@ -49,6 +49,7 @@ export interface LogEntry {
   source_node: string;
   target_node: string;
   timestamp: string;
+  [key: string]: unknown;
 }
 
 export interface InMemoryGraph {
