@@ -293,6 +293,34 @@ Write to `path.join(tempDir, 'weights.json')` for watcher tests.
 
 ---
 
+## Implementation Notes (Actual)
+
+### Deviations from plan
+
+- **Import style**: Used `import { promises as fs } from 'node:fs'` (not `import fs from 'node:fs'`) for clarity.
+- **emptyWeights**: Used `version: '1.0'` (plan showed `'1.0'`; earlier draft had `''`).
+- **ESM guard**: Used IIFE instead of top-level `await` — Vitest's Vite transformer cannot load modules with top-level await.
+- **SIGINT handler**: Calls returned `stop()` closure (not `stopWatchers()` + `fastify.close()` directly) for idempotency.
+- **Test imports**: `tests/server.integration.test.ts` uses `'../src/server.js'` and `'./helpers/tempDir.js'` (one `..` level, not two — file is at `tests/` root, not a subdirectory).
+- **WS test pattern**: `waitForMessage(ws)` called immediately after `new WebSocket()` (before `waitForOpen`) to avoid race where server sends snapshot before the message listener is set up.
+
+### Files created/modified
+
+| File | Action |
+|---|---|
+| `src/server.ts` | Rewritten (replaces section 01 stub) |
+| `tests/server.integration.test.ts` | Created |
+
+### Tests
+
+6 integration tests, all passing:
+1. GET /health returns 200 with status ok and numeric uptime
+2. GET /graph returns empty nodes/edges when no weights.json exists
+3. Writing weights.json triggers watcher and updates /graph
+4. Connected WS client receives graph:snapshot broadcast when weights.json is written
+5. Second createServer on the same port rejects
+6. stop() closes server and WS clients receive close frame
+
 ## Definition of Done
 
 - `src/server.ts` starts cleanly with `npm run dev` against the real data root
