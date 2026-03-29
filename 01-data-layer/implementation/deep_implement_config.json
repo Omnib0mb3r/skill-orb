@@ -23,6 +23,26 @@
     "section-02-config": {
       "status": "complete",
       "commit_hash": "2361851"
+    },
+    "section-03-identity": {
+      "status": "complete",
+      "commit_hash": "47a2237"
+    },
+    "section-04-logger": {
+      "status": "complete",
+      "commit_hash": "0211295"
+    },
+    "section-05-weights": {
+      "status": "complete",
+      "commit_hash": "e428c60"
+    },
+    "section-06-hook-runner": {
+      "status": "complete",
+      "commit_hash": "4e45581"
+    },
+    "section-07-build-and-wire": {
+      "status": "complete",
+      "commit_hash": "fe28256"
     }
   },
   "pre_commit": {
@@ -33,5 +53,5 @@
     "may_modify_files": false,
     "detected_formatters": []
   },
-  "created_at": "2026-03-29T00:55:16.075342+00:00"
+  "created_at": "2026-03-29T01:31:48.979120+00:00"
 }

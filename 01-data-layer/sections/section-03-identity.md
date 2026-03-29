@@ -12,10 +12,18 @@ Implement the identity resolution module. Given a `cwd` string from a hook paylo
 
 ---
 
-## Files to Create
+## Files Created
 
 - `src/identity/index.ts` — all implementation
-- `tests/identity.test.ts` — all tests
+- `tests/identity.test.ts` — all tests (14 tests)
+
+## Deviations from Plan
+
+- **`normalizePath` lowercases full path** (not just drive letter): the spec bullet said "lowercase drive letter" but the example showed full-path lowercase. Full lowercase chosen for canonical key stability on case-insensitive filesystems (Windows NTFS).
+- **Shell injection fix**: replaced `execSync` with string interpolation → `execFileSync` with args array to prevent shell injection via attacker-controlled `cwd`.
+- **`execFileSync` mock in tests**: original tests tried `vi.spyOn(cp, 'execSync')` which fails on non-configurable Node.js built-in properties. Used `vi.mock('child_process')` module-level mock instead.
+- **`git binary not on PATH` test asserts `git-root` not `cwd`**: spec test bullet says `cwd` but implementation (correctly per spec background prose) returns `git-root` when `.git` exists regardless of git binary availability.
+- **14 tests instead of 11**: added SSH without `.git` suffix, Unix path normalizePath, and Windows full-lowercase normalizePath tests.
 
 ---
 

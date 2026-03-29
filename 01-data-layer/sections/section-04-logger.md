@@ -10,11 +10,18 @@ This section implements the logger module — the component responsible for cons
 
 ---
 
-## Files to Create
+## Files Created
 
 - `src/logger/types.ts` — re-exports `LogEntry` type from the shared types
-- `src/logger/index.ts` — the three logger functions
-- `tests/logger.test.ts` — full test suite (7 tests)
+- `src/logger/index.ts` — the three logger functions (no `LogEntry` re-export here — deferred to `types.ts`)
+- `tests/logger.test.ts` — 13 tests
+
+## Deviations from Plan
+
+- **ASCII arrows `->` not Unicode `→`**: `src/types.ts` defines `ConnectionType` with ASCII `->` (documented reason: avoids Windows cp1252 encoding corruption in weights.json). All tests updated to use `'project->tool'` etc.
+- **13 tests not 7**: spec header said 7 but body described 12; added 1 more (getLogFilePath default date). All 13 pass.
+- **Midnight UTC race fixed**: 3 appendLogEntry tests capture `new Date()` before calling `appendLogEntry` to avoid ENOENT at UTC day boundary.
+- **Import path**: tests import from `'../src/logger'` (barrel), not `'../src/logger/index'`.
 
 ---
 
