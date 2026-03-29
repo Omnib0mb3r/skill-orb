@@ -1,0 +1,23 @@
+{
+  "name": "devneural-data-layer",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "tsx src/hook-runner.ts"
+  },
+  "dependencies": {
+    "write-file-atomic": "^5.0.1",
+    "proper-lockfile": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/write-file-atomic": "^4.0.3",
+    "@types/proper-lockfile": "^4.1.4",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0",
+    "tsx": "^4.7.0"
+  }
+}
