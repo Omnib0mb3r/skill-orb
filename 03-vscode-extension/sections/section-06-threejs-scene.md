@@ -1,5 +1,25 @@
 # section-06-threejs-scene
 
+## Implementation Status: COMPLETE
+
+**Commit**: (see deep_implement_config.json)
+
+### Actual files created/modified
+| File | Action |
+|------|--------|
+| `webview/renderer.ts` | Created — full implementation |
+| `webview/orb.ts` | Created — full implementation |
+| `webview/main.ts` | Updated — wired up scene + message routing |
+| `webview/__tests__/renderer.test.ts` | Created — 4 tests |
+| `webview/__tests__/orb.test.ts` | Created — 9 tests (incl. pinning + no-throw) |
+| `package.json` / `package-lock.json` | Updated — added jsdom + @types/jsdom dev deps |
+
+### Deviations from plan
+- **Force engine**: Used `d3` instead of `ngraph`. ngraph's physics API does not expose per-tick force hooks needed for custom velocity injection (no `onSimulationTick` equivalent). `d3Force()` with `ForceFn.initialize()` provides exactly this. The spec explicitly allows this fallback.
+- **`capAndTransform` includes center node pinning**: Added `fx=fy=fz=0` on DevNeural center node within the pure transform. Spec placed this under sphere constraint but the function is tested for it explicitly.
+
+### Test count: 72 total (9 new webview tests + 63 existing)
+
 ## Overview
 
 This section implements the Three.js scene foundation and the three-forcegraph orb layout. It produces `webview/renderer.ts` and `webview/orb.ts`. These are the bedrock of the 3D visualization — every subsequent rendering, animation, and camera section builds on top of them.
