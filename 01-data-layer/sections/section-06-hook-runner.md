@@ -244,3 +244,17 @@ main().catch((err) => {
 Before writing `extractProjectRefs` and `extractSkillName`, capture real `PostToolUse` stdin payloads from a live Claude Code session. Run the hook temporarily with a debug version that writes raw stdin to a temp file. Examine several Agent payloads (skill calls) and Edit/Bash payloads (cross-project file references) to confirm the shape of `tool_input.description`, `tool_input.prompt`, and `tool_input.file_path`. Use these as test fixtures in `hook-runner.test.ts`.
 
 Without real payload examples, the skill-name extraction token pattern and the Bash path-scanning regex are guesswork. Real examples will make the logic correct rather than speculative.
+
+---
+
+## Deviations from Plan
+
+- **Helper functions exported** — `extractSkillName`, `extractProjectRefs`, `deriveConnections` are exported for unit testability. Plan said "module exports nothing" but this is necessary to test the core logic without subprocess overhead.
+- **Subprocess tests use `tsx` instead of `dist/hook-runner.js`** — plan required compiled output. Kept `tsx` for faster tests (~350ms per subprocess vs build prerequisite). TypeScript compilation is validated at build time; end-to-end logic is validated by the subprocess tests. Deviation accepted.
+- **`require.main === module` guard added** — without this, importing the module in tests hangs on stdin. Plan spec did not mention this guard but it is required for the module to be testable.
+- **`SKILL_STOP` set added** — plan mentioned skipping "common English words" but did not specify a list. Added 20 common hyphenated phrases (well-known, up-to-date, built-in, etc.) that match `SKILL_TOKEN_RE` but must not be classified as skill names.
+- **`path.dirname` applied in Bash and Agent branches** — plan described resolving paths via `resolveProjectIdentity` but did not specify `path.dirname`. Both branches now call `resolveProjectIdentity(path.dirname(candidate))`, consistent with the Write/Edit branch.
+- **Lock first-run pre-creation** — `proper-lockfile` requires the target file to exist. Added `fs.writeFileSync` with `flag: 'wx'` before lock acquisition to create `weights.json` if absent. Race-safe: the `wx` flag ensures only one process creates it; others silently continue.
+- **URL_RE uses negative lookbehind** — `[^\s.,;:)\]'"<>]+` (character exclusion) incorrectly stops at dots, breaking domain names like `github.com`. Replaced with `[^\s]+` followed by `(?<![.,;:)\]'"<>])` (negative lookbehind), which allows dots within URLs while stripping trailing sentence punctuation via backtracking.
+- **`effectiveDataRoot` not introduced** — plan implied using `config.data_root` as an override. Simplified to use `dataRoot` (from env or compiled-in default) everywhere. The config `data_root` field override path is undocumented and untested; removed.
+- **Test count is 23, not 15** — expanded to: 5 `extractSkillName` + 5 `extractProjectRefs` + 5 `deriveConnections` + 6 subprocess orchestration + 2 full-pipeline integration. Subprocess "multiple connections" test strengthened to unconditionally assert `>= 2` lines and both connection types.
