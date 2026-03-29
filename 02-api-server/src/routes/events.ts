@@ -1,12 +1,7 @@
 import type { FastifyInstance } from 'fastify';
+import type { LogEntry } from '../graph/types.js';
 
-export interface LogEntry {
-  tool_use_id: string;
-  connection_type: string;
-  source_node: string;
-  target_node: string;
-  timestamp: string;
-}
+export type { LogEntry };
 
 export function registerEventsRoutes(
   app: FastifyInstance,

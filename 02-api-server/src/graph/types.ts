@@ -43,6 +43,14 @@ export interface GraphResponse {
   updated_at: string;
 }
 
+export interface LogEntry {
+  tool_use_id: string;
+  connection_type: string;
+  source_node: string;
+  target_node: string;
+  timestamp: string;
+}
+
 export interface InMemoryGraph {
   /** O(1) lookup by node id */
   nodeIndex: Map<string, GraphNode>;
