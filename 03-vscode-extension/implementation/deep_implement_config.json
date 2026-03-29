@@ -28,6 +28,10 @@
     "section-02-data-layer": {
       "status": "complete",
       "commit_hash": "5f03a75"
+    },
+    "section-03-api-server": {
+      "status": "complete",
+      "commit_hash": "9af5468"
     }
   },
   "pre_commit": {
