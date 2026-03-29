@@ -1,0 +1,75 @@
+{
+  "name": "devneural",
+  "displayName": "DevNeural",
+  "description": "3D skill graph orb — living visualization of Claude session connections across projects",
+  "version": "0.1.0",
+  "publisher": "devneural",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization"
+  ],
+  "activationEvents": [
+    "onCommand:devneural.openGraphView",
+    "onWebviewPanel:devneuralGraph"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "devneural.openGraphView",
+        "title": "DevNeural: Open Graph View"
+      }
+    ],
+    "configuration": {
+      "title": "DevNeural",
+      "properties": {
+        "devneural.apiServerHost": {
+          "type": "string",
+          "default": "localhost",
+          "description": "Hostname of the DevNeural API server (no scheme)"
+        },
+        "devneural.apiServerPort": {
+          "type": "number",
+          "default": 3747,
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "Port of the DevNeural API server"
+        },
+        "devneural.localReposRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Root directory where local project clones live (used for open-folder actions)"
+        },
+        "devneural.recencyFading": {
+          "type": "boolean",
+          "default": true,
+          "description": "When enabled, edges less recently active than others render at reduced opacity. Disable to show all edges at full opacity."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "node esbuild.mjs --production",
+    "build": "node esbuild.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/three": "^0.183.1",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.5.0",
+    "@vscode/vsce": "^2.23.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.0.0",
+    "three": "^0.183.2",
+    "three-forcegraph": "^1.43.0",
+    "ws": "^8.16.0"
+  }
+}

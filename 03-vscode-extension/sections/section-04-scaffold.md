@@ -279,3 +279,18 @@ A hand-rolled mock of the VS Code API for vitest unit tests. Must provide at min
 4. `dist/extension.js` is CJS format with `vscode` external
 5. `dist/webview.js` is IIFE format with Three.js inlined
 6. `vsce package --no-dependencies` produces a `.vsix` containing only `dist/`
+
+---
+
+## Implementation Notes (Actual)
+
+**Files created:** All 19 planned files plus `vitest.config.ts` (added to wire vscode mock alias).
+
+**Deviations from plan:**
+- `src/extension.ts` uses `import * as vscode` instead of `import type *`. esbuild still tree-shakes it (type-only usage in function signature), so `require("vscode")` does not appear in the bundle. Tests were adapted: CJS format checked via `module.exports` pattern; vscode-external checked via size bound + absence of VS Code API internals.
+- `webview/main.ts` adds `import { WebGLRenderer } from 'three'` and assigns to `window['DevNeuralRendererClass']` to prevent tree-shaking and satisfy the "Three.js bundled" smoke test. The plan spec stub had no imports.
+- `@types/three` added to devDependencies. three v0.162.0 ships no `.d.ts` files; `@types/three` is required. Version upgraded from `^0.183.1` to align with `three@0.183.2` runtime upgrade.
+- `three` runtime upgraded from `^0.162.0` to `^0.183.0` (installed: 0.183.2) to align with `@types/three@0.183.1`.
+- `vitest.config.ts` created with `alias: { vscode: 'src/__mocks__/vscode.ts' }` so section-05+ unit tests correctly intercept vscode imports.
+
+**Test results:** 19/19 pass. `npm run typecheck` clean.
