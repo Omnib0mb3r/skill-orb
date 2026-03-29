@@ -1,7 +1,21 @@
+import * as THREE from 'three';
 import ThreeForceGraph from 'three-forcegraph';
 import type { NodeObject } from 'three-forcegraph';
-import { ORB_RADIUS } from './renderer';
+import type { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { ORB_RADIUS, addResizeListener } from './renderer';
 import type { GraphNode, GraphEdge, GraphSnapshot } from '../src/types';
+import {
+  createNodeMeshes,
+  setNodePositions,
+  type NodeRenderData,
+} from './nodes';
+import {
+  computeRelativeColor,
+  createEdgeLines,
+  updateEdgePositions,
+  type EdgeRenderData,
+} from './edges';
+import type { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 
 export type { GraphSnapshot };
 
@@ -113,6 +127,73 @@ function createSphereForce(targetRadius: number) {
   return force;
 }
 
+// ── Rendering state (set via initOrb) ────────────────────────────────────────
+
+type NodeMeshes = ReturnType<typeof createNodeMeshes>;
+
+let currentScene: THREE.Scene | null = null;
+let currentMeshes: NodeMeshes | null = null;
+let currentEdgeLines: Map<string, Line2> = new Map();
+
+/**
+ * Initializes the node/edge rendering layer.
+ * Creates InstancedMesh objects, adds them to the scene, and stores refs for later updates.
+ * Call once after createScene() before starting the animation loop.
+ */
+export function initOrb(scene: THREE.Scene): NodeMeshes {
+  currentScene = scene;
+  const meshes = createNodeMeshes(GRAPH_NODE_CAP);
+  currentMeshes = meshes;
+  scene.add(meshes.projectMesh, meshes.toolMesh, meshes.skillMesh, meshes.badgeMesh);
+  return meshes;
+}
+
+/**
+ * Updates instanced node positions and edge geometry from the current force layout.
+ * Call once per animation frame after graph.tickFrame().
+ */
+export function updateRenderPositions(): void {
+  if (!currentMeshes) return;
+
+  const graphData = graph.graphData() as { nodes: NodeObject[]; links: unknown[] };
+  const physNodes = graphData.nodes as Array<NodeObject & GraphNode & { x?: number; y?: number; z?: number }>;
+
+  const renderNodes: NodeRenderData[] = physNodes
+    .filter(n => n.x !== undefined)
+    .map(n => ({
+      id: String(n.id),
+      type: n.type ?? 'skill',
+      x: n.x as number,
+      y: n.y as number,
+      z: n.z as number,
+      stage: n.stage,
+    }));
+
+  if (renderNodes.length > 0) {
+    setNodePositions(renderNodes, currentMeshes);
+  }
+
+  if (currentEdgeLines.size > 0) {
+    const nodePositions = new Map<string, THREE.Vector3>();
+    for (const n of physNodes) {
+      if (n.x !== undefined) {
+        nodePositions.set(String(n.id), new THREE.Vector3(n.x, n.y ?? 0, n.z ?? 0));
+      }
+    }
+    const edgeRenderData: EdgeRenderData[] = (graphData.links as Array<Record<string, unknown>>).map(l => ({
+      id: String(l['id']),
+      source: typeof l['source'] === 'object' && l['source'] !== null
+        ? String((l['source'] as Record<string, unknown>)['id'])
+        : String(l['source']),
+      target: typeof l['target'] === 'object' && l['target'] !== null
+        ? String((l['target'] as Record<string, unknown>)['id'])
+        : String(l['target']),
+      weight: typeof l['weight'] === 'number' ? l['weight'] : 1,
+    }));
+    updateEdgePositions(currentEdgeLines, edgeRenderData, nodePositions);
+  }
+}
+
 // ── Graph instance (module-level singleton) ───────────────────────────────────
 // Uses d3 engine (not ngraph): ngraph's physics API does not expose per-tick force
 // hooks for custom velocity injection. d3Force() provides this via ForceFn.initialize().
@@ -137,6 +218,21 @@ export function updateGraph(snapshot: GraphSnapshot): void {
       `DevNeural: graph capped. Showing ${links.length} edges (of ${originalCounts.edges}) ` +
         `and ${nodes.length} nodes (of ${originalCounts.nodes})`
     );
+  }
+
+  // Rebuild edge lines if the scene is active
+  if (currentScene) {
+    currentEdgeLines.forEach(line => currentScene!.remove(line));
+    const colorMap = computeRelativeColor(links);
+    currentEdgeLines = createEdgeLines(links, colorMap);
+    currentEdgeLines.forEach(line => currentScene!.add(line));
+
+    // Wire LineMaterial resolution updates so line thickness stays correct on resize
+    addResizeListener((w, h) => {
+      currentEdgeLines.forEach(line => {
+        (line.material as LineMaterial).resolution.set(w, h);
+      });
+    });
   }
 
   showLoading();

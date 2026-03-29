@@ -3,6 +3,14 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 export const ORB_RADIUS = 120;
 
+type ResizeCallback = (width: number, height: number) => void;
+const resizeListeners: ResizeCallback[] = [];
+
+/** Register a callback that fires whenever the canvas is resized. Used by LineMaterial. */
+export function addResizeListener(cb: ResizeCallback): void {
+  resizeListeners.push(cb);
+}
+
 export function createScene(canvas: HTMLCanvasElement): {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
@@ -35,6 +43,7 @@ export function createScene(canvas: HTMLCanvasElement): {
     renderer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    resizeListeners.forEach(cb => cb(w, h));
   }).observe(canvas);
 
   function startAnimationLoop(onTick: (delta: number) => void): void {

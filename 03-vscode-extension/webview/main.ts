@@ -1,14 +1,19 @@
 import { createScene } from './renderer';
-import { updateGraph, getGraphInstance } from './orb';
+import { updateGraph, getGraphInstance, initOrb, updateRenderPositions } from './orb';
 import type { GraphSnapshot } from '../src/types';
 
 const canvas = document.getElementById('devneural-canvas') as HTMLCanvasElement;
 const { scene, startAnimationLoop } = createScene(canvas);
-const graphOrb = getGraphInstance();
 
+const graphOrb = getGraphInstance();
 scene.add(graphOrb);
+
+// Initialize instanced mesh rendering and add node meshes to scene
+initOrb(scene);
+
 startAnimationLoop(() => {
   graphOrb.tickFrame();
+  updateRenderPositions();
 });
 
 window.addEventListener('message', (event: MessageEvent) => {

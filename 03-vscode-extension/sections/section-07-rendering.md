@@ -208,21 +208,16 @@ export function applyEdgeColors(
 
 ## Integration with scene
 
-In `orb.ts` or `renderer.ts`, after creating meshes/lines, add them to the scene:
+Integration went into `orb.ts` and `main.ts` (not `renderer.ts`) to avoid pulling InstancedMesh into the renderer test mock.
 
-```typescript
-const meshes = createNodeMeshes(500);
-scene.add(meshes.projectMesh, meshes.toolMesh, meshes.skillMesh, meshes.badgeMesh);
+`renderer.ts` was modified to add an `addResizeListener` callback system so `LineMaterial` resolution can be updated on webview resize without importing Three.js meshes into the renderer module.
 
-// On each graph:snapshot, rebuild edge lines:
-const colorMap = computeRelativeColor(snapshot.edges);
-// Remove old edge lines from scene
-// Create new ones and add to scene
-const edgeLines = createEdgeLines(snapshot.edges, colorMap);
-edgeLines.forEach(line => scene.add(line));
-```
+`orb.ts` received:
+- `initOrb(scene)` — creates meshes, adds all 4 to scene, stores refs
+- `updateRenderPositions()` — called each frame after `graph.tickFrame()`, updates node matrices and edge positions
+- `updateGraph()` modified — rebuilds edge lines on snapshot, wires `addResizeListener` for LineMaterial resolution
 
-In the animation loop, call `setNodePositions` and `updateEdgePositions` after each `graph.tickFrame()`.
+`main.ts` wires: `initOrb(scene)` once, then `updateRenderPositions()` in the animation loop.
 
 ---
 
@@ -230,6 +225,32 @@ In the animation loop, call `setNodePositions` and `updateEdgePositions` after e
 
 1. **`instanceColor.needsUpdate = true`**: Must be set after every `setColorAt` call. Silent failure otherwise.
 2. **`instanceMatrix.needsUpdate = true`**: Must be set after every `setMatrixAt` call.
-3. **InstancedMesh count**: The `count` parameter is a maximum. Scale unused instances to zero instead of reducing count.
+3. **InstancedMesh count**: The `count` parameter is a maximum. Scale unused instances to zero instead of reducing count. Implemented with `prevNodeCount` high-water mark — zeros slots `nodes.length..prevNodeCount-1` on each `setNodePositions` call.
 4. **Line2 + LineMaterial pairing**: Always use `LineMaterial`, never `LineBasicMaterial`.
 5. **Pure function tests**: All `computeRelativeColor` tests must pass before visual integration.
+
+---
+
+## Deviations from Plan (Code Review Fixes)
+
+- **Ghost nodes**: Added `prevNodeCount` module-level high-water mark to `nodes.ts`; zeros surplus slots on snapshot shrink.
+- **Zero-range color**: `computeRelativeColor` uses `normalized = 1.0` (warm orange) when all weights equal, not "mid-range". Documented as authoritative intent.
+- **`addResizeListener` wired**: `updateGraph` now calls `addResizeListener` after rebuilding edge lines so LineMaterial resolution tracks resize.
+- **`resetNodeColors` badge flush**: Added `badgeMesh` to the `instanceColor.needsUpdate` loop for consistency with `setNodePositions`.
+- **`computeLineDistances` placement**: Removed from `updateEdgePositions` (was running per frame unnecessarily); only called in `createEdgeLines` at construction time.
+- **`nodeIndexMap` singleton**: Kept as module-level export per spec requirement for sections 09/10.
+- **`_meshes` dead parameter**: Kept with underscore prefix per spec for section-10 signature compatibility.
+
+## Actual Files Created/Modified
+
+| File | Action |
+|------|--------|
+| `webview/nodes.ts` | Created — 194 lines |
+| `webview/edges.ts` | Created — 108 lines |
+| `webview/renderer.ts` | Modified — added resize listener mechanism |
+| `webview/orb.ts` | Modified — added initOrb, updateRenderPositions, wired edge rebuild |
+| `webview/main.ts` | Modified — wired initOrb + updateRenderPositions |
+| `webview/__tests__/nodes.test.ts` | Created — 8 tests |
+| `webview/__tests__/edges.test.ts` | Created — 6 tests |
+
+**Test count:** 14 tests, all passing.

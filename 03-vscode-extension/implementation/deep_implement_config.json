@@ -40,6 +40,10 @@
     "section-05-extension-host": {
       "status": "complete",
       "commit_hash": "e38b533"
+    },
+    "section-06-threejs-scene": {
+      "status": "complete",
+      "commit_hash": "765f4d3"
     }
   },
   "pre_commit": {
