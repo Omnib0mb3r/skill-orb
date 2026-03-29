@@ -1,0 +1,37 @@
+{
+  "plugin_root": "C:\\Users\\mcollins\\.claude\\plugins\\cache\\piercelamb-plugins\\deep-implement\\0.2.1",
+  "sections_dir": "C:\\dev\\tools\\DevNeural\\02-api-server\\sections",
+  "target_dir": "C:\\dev\\tools\\DevNeural",
+  "state_dir": "C:\\dev\\tools\\DevNeural\\02-api-server\\implementation",
+  "git_root": "C:\\dev\\tools\\DevNeural",
+  "commit_style": "simple",
+  "test_command": "uv run pytest",
+  "sections": [
+    "section-01-foundation",
+    "section-02-graph-types",
+    "section-03-graph-queries",
+    "section-04-rest-routes",
+    "section-05-websocket",
+    "section-06-file-watcher",
+    "section-07-server-wiring"
+  ],
+  "sections_state": {
+    "section-01-foundation": {
+      "status": "complete",
+      "commit_hash": "0391a5a"
+    },
+    "section-02-graph-types": {
+      "status": "complete",
+      "commit_hash": "e6cbd39"
+    }
+  },
+  "pre_commit": {
+    "present": false,
+    "type": "none",
+    "config_file": null,
+    "native_hook": null,
+    "may_modify_files": false,
+    "detected_formatters": []
+  },
+  "created_at": "2026-03-29T04:51:50.893194+00:00"
+}
