@@ -175,6 +175,30 @@ registerGraphRoutes(app, () => graph);
 await app.ready();
 ```
 
+---
+
+## Actual Implementation Notes
+
+**Files created:**
+- `src/routes/graph.ts` — registerGraphRoutes with /health, /graph, /graph/node/:id, /graph/subgraph, /graph/top
+- `src/routes/events.ts` — registerEventsRoutes with /events; LogEntry type declared here
+- `tests/routes/graph.test.ts` — 19 tests, all passing
+- `tests/routes/events.test.ts` — 9 tests, all passing
+
+**Dependency fix:** Upgraded @fastify/cors from v9 to v11 (v9 requires Fastify 4.x; project uses Fastify 5.x).
+
+**Deviations from plan:** None. All 6 endpoints implemented as specified.
+
+**Additional tests added (code review):**
+- `?project=` empty string → 400 (not just missing param)
+- Invalid/zero `?limit=` fallback tests for both /graph/top and /events
+- CORS header assertion in events.test.ts
+- 101-edge fixture for /graph/top clamping test (proves 200→100, not just ≤fixture size)
+
+**Known issue for section 07:** `src/server.ts` scaffold has a conflicting `/health` route without `uptime`. Will remove when wiring up routes in section 07.
+
+---
+
 ## Implementation Notes
 
 - **Fastify route registration**: Use Fastify's typed route options. Query string params are accessed via `request.query` (typed as a record). Path params via `request.params`.
