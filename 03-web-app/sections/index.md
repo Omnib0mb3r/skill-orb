@@ -1,15 +1,18 @@
+<!-- PROJECT_CONFIG
+runtime: node
+test_command: cd 03-web-app && npm test
+END_PROJECT_CONFIG -->
+
 # DevNeural Web App — Sections
 
-## SECTION_MANIFEST
-
-```
+<!-- SECTION_MANIFEST
 section-01-scaffold
 section-02-animation
 section-03-camera-hud
 section-04-node-actions
 section-05-voice
 section-06-integration
-```
+END_MANIFEST -->
 
 ## Overview
 
