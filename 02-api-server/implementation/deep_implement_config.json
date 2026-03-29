@@ -23,6 +23,22 @@
     "section-02-graph-types": {
       "status": "complete",
       "commit_hash": "e6cbd39"
+    },
+    "section-03-graph-queries": {
+      "status": "complete",
+      "commit_hash": "efa5914"
+    },
+    "section-04-rest-routes": {
+      "status": "complete",
+      "commit_hash": "9f0483b"
+    },
+    "section-05-websocket": {
+      "status": "complete",
+      "commit_hash": "14cc129"
+    },
+    "section-06-file-watcher": {
+      "status": "complete",
+      "commit_hash": "c28de75"
     }
   },
   "pre_commit": {
