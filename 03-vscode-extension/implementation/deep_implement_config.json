@@ -24,6 +24,10 @@
     "section-01-schema": {
       "status": "complete",
       "commit_hash": "232bf0e"
+    },
+    "section-02-data-layer": {
+      "status": "complete",
+      "commit_hash": "5f03a75"
     }
   },
   "pre_commit": {
