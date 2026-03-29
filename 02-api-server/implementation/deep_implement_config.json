@@ -39,6 +39,10 @@
     "section-06-file-watcher": {
       "status": "complete",
       "commit_hash": "c28de75"
+    },
+    "section-07-server-wiring": {
+      "status": "complete",
+      "commit_hash": "b1af846"
     }
   },
   "pre_commit": {
