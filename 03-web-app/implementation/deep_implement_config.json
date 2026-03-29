@@ -18,6 +18,10 @@
     "section-01-scaffold": {
       "status": "complete",
       "commit_hash": "636814f"
+    },
+    "section-02-animation": {
+      "status": "complete",
+      "commit_hash": "b7fb107"
     }
   },
   "pre_commit": {
