@@ -12,7 +12,16 @@ Two source files and a full test suite:
 
 - `src/weights/types.ts` — re-exports `WeightsFile` and `ConnectionRecord` from the shared types
 - `src/weights/index.ts` — four functions for loading, keying, updating, and saving the connection weight graph
-- `tests/weights.test.ts` — 9 tests covering happy path, error handling, and concurrent write simulation
+- `tests/weights.test.ts` — 15 tests covering happy path, error handling, atomicity, and concurrent write simulation
+
+### Deviations from plan
+
+- **`loadWeights` error handling** — differentiates ENOENT (silent) from other read errors (logs `[DevNeural] weights read error:`). Plan only specified ENOENT case.
+- **`saveWeights` non-mutating** — does not mutate caller's `WeightsFile.updated_at`; writes `{ ...weights, updated_at: ... }` instead.
+- **Test count is 15, not 9** — expanded to cover EISDIR read error, non-mutation assertion, and strengthened assertions.
+- **Concurrency test scoped to atomicity-only** — the concurrent RMW test asserts file integrity (write-file-atomic guarantee), not that both updates are preserved. Loss-prevention requires the lock wrapper in section-06.
+- **Lock fallback test uses `vi.mock`** — `vi.spyOn` fails on proper-lockfile CJS non-configurable exports; file-level `vi.mock` factory used instead.
+- **`proper-lockfile` not used in weights module** — lock coordination is section-06's responsibility. The lock fallback test uses `vi.mock` to simulate the scenario but `saveWeights` itself is fully lock-agnostic.
 
 The weights module is the persistence layer for the graph. It is the only module that reads and writes `weights.json`. It is stateless at import time — no module-level state, no open file handles.
 
