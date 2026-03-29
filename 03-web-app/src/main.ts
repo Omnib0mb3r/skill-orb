@@ -6,8 +6,15 @@ import { nodeIndexMap, setNodeColor, resetNodeColors } from '../webview/nodes';
 import { createCameraController } from '../webview/camera';
 import { createHud, setConnectionStatus, setCameraMode } from '../webview/hud';
 import { evaluateQuery } from '../webview/search';
+import {
+  createTooltip,
+  buildInstanceMaps,
+  buildNodeDataMap,
+  registerNodeInteractions,
+} from '../webview/nodeActions';
 import type { WsMessage, GraphNode, GraphEdge } from './types';
 import type { SearchResult } from '../webview/search';
+import type { InstanceMaps } from '../webview/nodeActions';
 
 const canvas = document.getElementById('devneural-canvas') as HTMLCanvasElement;
 const { scene, camera, controls, startAnimationLoop } = createScene(canvas);
@@ -24,6 +31,11 @@ const cameraController = createCameraController(camera, controls, getNodePositio
 // HUD — created before wiring controls events so listeners can reference hudElements
 let lastNodes: GraphNode[] = [];
 let lastEdges: GraphEdge[] = [];
+let lastNodeData: Map<string, GraphNode> = new Map();
+let lastInstanceMaps: InstanceMaps = { project: new Map(), tool: new Map(), skill: new Map() };
+
+const tooltip = createTooltip();
+document.body.appendChild(tooltip.getElement());
 
 function applySearchVisuals(result: SearchResult): void {
   if (result.matchingNodeIds.size === 0) {
@@ -69,6 +81,29 @@ const hudElements = createHud({
   },
 });
 
+// Node interactions
+registerNodeInteractions({
+  canvas,
+  camera,
+  meshes,
+  cameraController,
+  tooltip,
+  getNodeData: () => lastNodeData,
+  getEdgeData: () => lastEdges,
+  getInstanceMaps: () => lastInstanceMaps,
+  applyVisuals: (connectedIds) => {
+    const result: SearchResult = {
+      matchingNodeIds: new Set(connectedIds),
+      matchingEdgeIds: new Set(
+        lastEdges
+          .filter(e => connectedIds.includes(e.source) || connectedIds.includes(e.target))
+          .map(e => e.id),
+      ),
+    };
+    applySearchVisuals(result);
+  },
+});
+
 // Wire controls after HUD exists so the listener can reference hudElements
 controls.addEventListener('start', () => {
   cameraController.onUserInteraction();
@@ -99,6 +134,9 @@ function connect(): void {
         lastNodes = msg.payload.nodes;
         lastEdges = msg.payload.edges;
         updateGraph(msg.payload);
+        // Build maps AFTER updateGraph so nodeIndexMap is populated by setNodePositions
+        lastNodeData = buildNodeDataMap(lastNodes);
+        lastInstanceMaps = buildInstanceMaps(nodeIndexMap, meshes);
         onSnapshot(msg.payload.edges.map(e => ({
           id: e.id,
           last_seen: new Date(e.last_seen).getTime(),

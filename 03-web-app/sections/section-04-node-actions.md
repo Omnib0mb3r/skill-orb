@@ -132,3 +132,20 @@ function deriveGitHubUrl(nodeId: string): string | null {
 - **No parseable URL**: show tooltip with label only, no GitHub link
 - **Multiple mesh hits**: use only first intersection (lowest distance)
 - **Tooltip off-screen**: clamp X/Y to keep within canvas bounds
+
+---
+
+## Actual Implementation Notes
+
+**Files created:**
+- `webview/nodeActions.ts` — pure helpers + event registration, 270 lines
+- `webview/__tests__/nodeActions.test.ts` — 11 tests
+
+**Files modified:**
+- `src/main.ts` — wired registerNodeInteractions, applyVisuals callback
+
+**Deviations from plan:**
+- Testable logic extracted to `webview/nodeActions.ts` (plan said all in `src/main.ts`)
+- `mapInstanceToNodeId` keeps `_mesh` parameter as reserved (low priority removal)
+- Tooltip uses DOM construction instead of innerHTML to prevent XSS
+- `buildInstanceMaps` must be called AFTER `updateGraph` (not before — ordering bug found in review)
