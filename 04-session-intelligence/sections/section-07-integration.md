@@ -215,13 +215,30 @@ const basePayload = {
 
 After all tests are written and all source sections are implemented, verify:
 
-- [ ] `npm run build` exits 0 (run from `04-session-intelligence/`)
-- [ ] `npm test` exits 0 (all tests pass)
-- [ ] No test file imports Fastify — all mock servers use `node:http.createServer`
-- [ ] No test reads from or writes to `~/.claude/settings.json` — install script tests operate on constructed objects passed to `mergeHooks` directly
-- [ ] The timeout test (`api-client.test.ts` test 3 and `session-start.test.ts` test 4) each carry `{ timeout: 15000 }` to avoid false failures from Vitest's default 5-second limit
-- [ ] `beforeAll` in `session-start.test.ts` has a generous timeout (30 seconds) to allow `tsc` compilation
-- [ ] `01-data-layer` is built before running tests (otherwise `identity.ts` import fails at test load time)
+- [x] `npm run build` exits 0 (run from `04-session-intelligence/`)
+- [x] `npm test` exits 0 (all 42 tests pass across 5 files)
+- [x] No test file imports Fastify — all mock servers use `node:http.createServer`
+- [x] No test reads from or writes to `~/.claude/settings.json` — install script tests operate on constructed objects passed to `mergeHooks` directly
+- [x] The timeout test (`api-client.test.ts` test 3 and `session-start.test.ts` test 4) each carry `{ timeout: 15000 }` to avoid false failures from Vitest's default 5-second limit
+- [x] `beforeAll` in `session-start.test.ts` has a 30-second timeout to allow `tsc` compilation
+- [x] `01-data-layer` is built before running tests (otherwise `identity.ts` import fails at test load time)
+
+## Deviations from Plan
+
+- **`helpers.ts` API**: implemented as a raw-handler interface (`(req, res) => void`) rather than the plan's response-object API (`response: unknown, options?`). The handler form is required because `session-start.test.ts` needs to inspect the `?project=` query parameter to construct per-project graph responses. The response-object API would not support this.
+- **`session-start.test.ts` compile step**: uses `spawnSync('npm', ['run', 'build'])` (captures stdout/stderr for error reporting) rather than `execSync` with `stdio: 'inherit'`. Both invoke the same build; `spawnSync` surfaces compilation errors more clearly on failure.
+- **`api-client.test.ts` mock server**: defines a local `startMockServer` instead of importing from `helpers.ts`, since the API unit tests have simpler needs and the local version keeps the file self-contained.
+- **Extra test cases**: `formatter.test.ts` has 15 tests (plan specified 13) — added boundary test at `weight === 1.0`. `api-client.test.ts` has 8 tests (plan specified 6) — added non-OK HTTP status test and default-port test.
+
+## Files Created
+
+All test files were written during their corresponding implementation sections:
+- `tests/helpers.ts` — section-05-entry-point
+- `tests/session-start.test.ts` — section-05-entry-point
+- `tests/formatter.test.ts` — section-04-formatter
+- `tests/api-client.test.ts` — section-03-api-client
+- `tests/install-hook.test.ts` — section-06-install-script
+- `tests/identity.test.ts` — section-02-identity
 
 ---
 

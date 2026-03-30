@@ -37,15 +37,15 @@ describe('session-start integration', () => {
   beforeAll(() => {
     // Compile once; all tests share the built binary.
     // spawnSync is fine here — no mock server needs the event loop during compilation.
-    const result = spawnSync('npx', ['tsc'], {
+    const result = spawnSync('npm', ['run', 'build'], {
       cwd: moduleRoot,
       encoding: 'utf8',
       shell: true,
     });
     if (result.status !== 0) {
-      throw new Error(`tsc compilation failed:\n${result.stdout}\n${result.stderr}`);
+      throw new Error(`build failed:\n${result.stdout}\n${result.stderr}`);
     }
-  });
+  }, 30_000);
 
   afterEach(async () => {
     if (server) {
@@ -81,8 +81,8 @@ describe('session-start integration', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('DevNeural Context for');
     expect(result.stdout).toContain('Test-Driven Development');
-    expect(result.stdout).toContain('7.5');
-    expect(result.stdout).toContain('42');
+    expect(result.stdout).toContain('7.5/10');
+    expect(result.stdout).toContain('42 uses');
   });
 
   it('no connections: project not in graph or all weights below threshold', async () => {
@@ -106,11 +106,12 @@ describe('session-start integration', () => {
     const result = await runBinary(['dist/session-start.js'], {
       cwd: moduleRoot,
       input: makePayload(),
-      env: { ...process.env, DEVNEURAL_API_URL: 'http://127.0.0.1:19987' },
+      env: { ...process.env, DEVNEURAL_API_URL: 'http://127.0.0.1:1' },
     });
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('API offline');
+    expect(result.stdout).toContain('node ');
   });
 
   it('API timeout: mock server delays 6 seconds', { timeout: 15000 }, async () => {

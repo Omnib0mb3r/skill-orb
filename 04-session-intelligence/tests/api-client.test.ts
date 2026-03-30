@@ -54,13 +54,9 @@ describe('fetchSubgraph', () => {
   });
 
   it('returns null when server is offline (ECONNREFUSED)', async () => {
-    // Start then immediately stop a server to get a guaranteed-free port
-    const tmp = await startMockServer((_req, res) => res.end());
-    const freedPort = tmp.port;
-    await tmp.stop();
-
+    // Port 1 on loopback is never listening — guaranteed ECONNREFUSED
     const result = await fetchSubgraph('proj-1', {
-      apiUrl: `http://localhost:${freedPort}`,
+      apiUrl: 'http://127.0.0.1:1',
       timeoutMs: 5000,
     });
     expect(result).toBeNull();

@@ -31,6 +31,14 @@
     "section-04-formatter": {
       "status": "complete",
       "commit_hash": "e73271f"
+    },
+    "section-05-entry-point": {
+      "status": "complete",
+      "commit_hash": "4af3f28"
+    },
+    "section-06-install-script": {
+      "status": "complete",
+      "commit_hash": "3b9a4d8"
     }
   },
   "pre_commit": {
