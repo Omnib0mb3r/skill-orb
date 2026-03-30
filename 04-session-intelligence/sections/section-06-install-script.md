@@ -268,3 +268,18 @@ This uses `tsx` for direct TypeScript execution, so no prior `npm run build` is 
 - **The installer reads the real `settings.json` path (via `getSettingsPath`)** — tests must not call `main()` directly; they test `mergeHooks` with constructed objects.
 - **Moving the DevNeural repo breaks the hook** — the install output explicitly tells the user this. The absolute path is baked in at install time.
 - **No `rootDir` in tsconfig** means `__dirname` in the compiled output will reflect the full relative path structure — verify with a test run that the resolved script path is correct.
+
+---
+
+## Implementation Status
+
+**Files created:**
+- `src/install-hook.ts` — 102 lines; exports `getSettingsPath`, `readSettings`, `buildHookEntry`, `mergeHooks`, `writeSettings`
+- `tests/install-hook.test.ts` — 8 tests covering all spec stubs plus `buildHookEntry`
+
+**Deviations from plan:**
+- `buildHookEntry` takes `command: string` (the full pre-formed command string) instead of `scriptPath: string`. Callers construct `node "path"` before calling, keeping the function composable.
+- `readSettings` rethrows non-ENOENT errors (EPERM, etc.) rather than swallowing all errors.
+- `writeSettings` uses atomic write (`.tmp` → `rename`) to protect against process-kill corruption.
+
+**All 42 tests pass.**
