@@ -14,8 +14,12 @@ coverage, and a browser smoke test.
 
 | File | Action |
 |------|--------|
-| `webview/__tests__/gap-coverage.test.ts` | Create — remaining untested pure functions |
-| `webview/__tests__/integration.test.ts` | Create — multi-module wiring tests |
+| `webview/__tests__/gap-coverage.test.ts` | Created — 9 tests for capAndTransform, applyEdgeColors, resetNodeColors |
+| `webview/__tests__/integration.test.ts` | Created — 9 tests for nodeIndexMap, WebSocket reconnect, animation sync, empty snapshot |
+| `package.json` | Modified — added `build:check` script; wired `tsc --noEmit` into `npm test` |
+| `webview/voice.ts` | Modified — `SpeechRecognitionLike` interface replaces `as any`; type fixes |
+| `webview/nodeActions.ts` | Modified — fixed pre-existing `number \| undefined` TS error |
+| `webview/orb.ts` | Modified — fixed pre-existing `unknown[]` cast; added `LinkObject` import |
 
 All paths: `C:\dev\tools\DevNeural\03-web-app\`
 

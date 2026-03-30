@@ -237,11 +237,11 @@ export function registerNodeInteractions(deps: RegisterDeps): void {
       hitMesh === meshes.toolMesh    ? maps.tool    :
       maps.skill;
 
-    const nodeId = mapInstanceToNodeId(hitMesh, hit.instanceId, mapForMesh);
+    const nodeId = mapInstanceToNodeId(hitMesh, hit.instanceId as number, mapForMesh);
     if (!nodeId) return null;
     const node = deps.getNodeData().get(nodeId);
     if (!node) return null;
-    return { nodeId, node, instanceId: hit.instanceId, hitMesh };
+    return { nodeId, node, instanceId: hit.instanceId as number, hitMesh };
   }
 
   canvas.addEventListener('pointerdown', (e: PointerEvent) => {

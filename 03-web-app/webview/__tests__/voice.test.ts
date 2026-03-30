@@ -8,8 +8,8 @@ class MockSpeechRecognition {
   maxAlternatives = 1;
   continuous = true;
 
-  onresult: ((event: SpeechRecognitionEvent) => void) | null = null;
-  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null = null;
+  onresult: ((event: any) => void) | null = null;
+  onerror: ((event: any) => void) | null = null;
   onend: (() => void) | null = null;
 
   start = vi.fn();
@@ -72,7 +72,7 @@ describe('initVoice', () => {
     mock.onresult!({
       results: [[{ transcript: 'hello world' }]],
       resultIndex: 0,
-    } as unknown as SpeechRecognitionEvent);
+    });
 
     expect(onTranscript).toHaveBeenCalledWith('hello world');
   });
@@ -82,7 +82,7 @@ describe('initVoice', () => {
     const onStatusChange = vi.fn();
     initVoice({ onTranscript: vi.fn(), onStatusChange });
 
-    mock.onerror!({ error: 'no-speech' } as SpeechRecognitionErrorEvent);
+    mock.onerror!({ error: 'no-speech' });
 
     expect(onStatusChange).toHaveBeenCalledWith('error');
   });

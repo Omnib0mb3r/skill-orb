@@ -11,6 +11,18 @@ export interface VoiceCallbacks {
   onStatusChange(status: VoiceStatus): void;
 }
 
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  continuous: boolean;
+  onresult: ((event: any) => void) | null;
+  onerror: ((event: any) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+
 export function initVoice(callbacks: VoiceCallbacks): VoiceController | null {
   const SpeechRecognitionCtor =
     (window as any).SpeechRecognition ??
@@ -18,7 +30,7 @@ export function initVoice(callbacks: VoiceCallbacks): VoiceController | null {
 
   if (!SpeechRecognitionCtor) return null;
 
-  const recognition = new SpeechRecognitionCtor() as SpeechRecognition;
+  const recognition = new SpeechRecognitionCtor() as SpeechRecognitionLike;
   recognition.lang = 'en-US';
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
@@ -32,13 +44,13 @@ export function initVoice(callbacks: VoiceCallbacks): VoiceController | null {
     callbacks.onStatusChange(s);
   }
 
-  recognition.onresult = (event: SpeechRecognitionEvent) => {
-    const transcript = event.results[event.resultIndex][0].transcript;
+  recognition.onresult = (event: any) => {
+    const transcript = event.results[event.resultIndex][0].transcript as string;
     callbacks.onTranscript(transcript);
     setStatus('idle');
   };
 
-  recognition.onerror = (_event: SpeechRecognitionErrorEvent) => {
+  recognition.onerror = (_event: any) => {
     setStatus('error');
     errorResetTimer = setTimeout(() => {
       errorResetTimer = null;
@@ -46,7 +58,7 @@ export function initVoice(callbacks: VoiceCallbacks): VoiceController | null {
     }, 2000);
   };
 
-  recognition.onend = () => {
+  recognition.onend = (): void => {
     if (currentStatus === 'listening') {
       setStatus('idle');
     }

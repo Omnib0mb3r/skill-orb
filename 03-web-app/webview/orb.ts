@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import ThreeForceGraph from 'three-forcegraph';
-import type { NodeObject } from 'three-forcegraph';
+import type { NodeObject, LinkObject } from 'three-forcegraph';
 import type { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { ORB_RADIUS, addResizeListener } from './renderer';
 import type { GraphNode, GraphEdge, GraphSnapshot } from '../src/types';
@@ -252,6 +252,6 @@ export function updateGraph(snapshot: GraphSnapshot): void {
 
   showLoading();
   requestAnimationFrame(() => {
-    graph.graphData({ nodes: nodes as unknown as NodeObject[], links: links as unknown[] });
+    graph.graphData({ nodes: nodes as unknown as NodeObject[], links: links as unknown as LinkObject[] });
   });
 }
