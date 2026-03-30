@@ -12,5 +12,5 @@
     "noEmit": true,
     "strict": true
   },
-  "include": ["src", "webview"]
+  "include": ["src", "webview", "tests"]
 }

@@ -2,7 +2,11 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    environment: 'jsdom',
-    globals: true,
+    globals: false,
+    testTimeout: 10000,
+    environmentMatchGlobs: [
+      ['tests/**', 'node'],
+      ['webview/**', 'jsdom'],
+    ],
   },
 });

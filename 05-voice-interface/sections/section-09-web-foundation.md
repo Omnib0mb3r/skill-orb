@@ -280,6 +280,24 @@ Note: the highlight and dimmed configs are type-agnostic — they apply uniforml
 
 ---
 
+## Implementation Notes
+
+**Files created/updated:**
+- `03-web-app/src/graph/types.ts` — OrbNode, OrbEdge, SceneState, NodeType
+- `03-web-app/src/orb/visuals.ts` — getMaterialForNodeType, getEdgeOpacity, config constants
+- `03-web-app/tests/orb/visuals.test.ts` — 10 tests
+- `03-web-app/package.json` — name updated, test script kept `tsc --noEmit && vitest run`
+- `03-web-app/tsconfig.json` — added `tests` to include
+- `03-web-app/vite.config.ts` — port changed from 5173 to 3748
+- `03-web-app/vitest.config.ts` — changed to `environmentMatchGlobs` to preserve existing jsdom tests
+
+**Deviations from plan:**
+- `vitest.config.ts` uses `environmentMatchGlobs` instead of flat `environment: 'node'` — required to preserve 100 existing webview tests that use jsdom.
+- `getMaterialForNodeType` returns `transparent: true` (review fix — Three.js requires this for opacity to apply).
+- `getEdgeOpacity` range test lower bound is `0.05` not `0.0` (review fix).
+
+**Final test count:** 110 (10 new visuals + 100 existing webview); tsc clean.
+
 ## Verification Checklist
 
 Before marking this section complete:
