@@ -134,10 +134,16 @@ interface SessionSummary {
 
 ## Checklist
 
-- [ ] Write `tests/renderer.test.ts` with all five test cases (failing stubs first)
-- [ ] Create `src/summary/renderer.ts` with `renderSummary` exported function
-- [ ] Ensure `graph_insights` empty array omits the entire "Graph insights" section
-- [ ] Ensure rendered string always ends with `\n---\n`
-- [ ] Ensure `<!-- DEVNEURAL_SESSIONS_START -->` is absent from renderer output
-- [ ] Snapshot test passes for full and empty-insights variants
-- [ ] Run `npm test` — only renderer tests need to pass at this stage
+- [x] Write `tests/renderer.test.ts` with all five test cases (failing stubs first)
+- [x] Create `src/summary/renderer.ts` with `renderSummary` exported function
+- [x] Ensure `graph_insights` empty array omits the entire "Graph insights" section
+- [x] Ensure rendered string always ends with `\n---\n`
+- [x] Ensure `<!-- DEVNEURAL_SESSIONS_START -->` is absent from renderer output
+- [x] Snapshot test passes for full and empty-insights variants
+- [x] Run `npm test` — 29/29 tests pass
+
+## Implementation Notes
+
+- Pure function, no I/O. Uses parts array + join('\n') pattern.
+- Trailing separator: `['---', ''].join('\n')` = `'---\n'` which produces `\n---\n` at string end — correct.
+- Test updated to assert `toMatch(/\n---\n$/)` on raw (untrimmed) string for precision.
