@@ -69,7 +69,7 @@ function main(): void {
     return c;
   })();
 
-  const { renderer, scene, camera } = initRenderer(canvas);
+  const { renderer, scene, camera, controls } = initRenderer(canvas);
 
   const hud = initHud();
 
@@ -129,8 +129,7 @@ function main(): void {
     },
 
     resetCamera() {
-      camera.position.set(0, 0, 20);
-      camera.lookAt(0, 0, 0);
+      controls.reset();
     },
   };
 
@@ -159,9 +158,22 @@ function main(): void {
     if (istate) onHover(getMeshNode(e.clientX, e.clientY), istate);
   });
 
+  // Guard: don't fire click if the pointer moved (i.e. the user was dragging)
+  let _pointerDownPos = { x: 0, y: 0 };
+  canvas.addEventListener('pointerdown', (e: PointerEvent) => {
+    _pointerDownPos = { x: e.clientX, y: e.clientY };
+  });
+
   canvas.addEventListener('click', (e: MouseEvent) => {
+    const dx = e.clientX - _pointerDownPos.x;
+    const dy = e.clientY - _pointerDownPos.y;
+    if (Math.sqrt(dx * dx + dy * dy) > 4) return; // was a drag, not a click
+
     const istate = currentBuild as InteractionState | null;
-    if (istate) onClick(getMeshNode(e.clientX, e.clientY), istate, camera);
+    if (!istate) return;
+    const node = getMeshNode(e.clientX, e.clientY);
+    onClick(node, istate, camera);
+    hud.updateProjectLabel(node ? node.label ?? node.id : null);
   });
 
   let sceneReady = false;
@@ -185,6 +197,7 @@ function main(): void {
         }
       }
     }
+    controls.update();
     renderer.render(scene, camera);
   }
 

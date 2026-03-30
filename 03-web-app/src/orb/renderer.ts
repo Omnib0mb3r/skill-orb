@@ -1,9 +1,11 @@
 import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 export interface RendererState {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   renderer: THREE.WebGLRenderer;
+  controls: OrbitControls;
 }
 
 export function initRenderer(canvas: HTMLCanvasElement): RendererState {
@@ -17,6 +19,12 @@ export function initRenderer(canvas: HTMLCanvasElement): RendererState {
   const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.z = 20;
 
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.minDistance = 2;
+  controls.maxDistance = 200;
+
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
   const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
   dirLight.position.set(5, 10, 5);
@@ -29,5 +37,5 @@ export function initRenderer(canvas: HTMLCanvasElement): RendererState {
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  return { scene, camera, renderer };
+  return { scene, camera, renderer, controls };
 }
