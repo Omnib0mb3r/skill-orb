@@ -27,13 +27,35 @@ export function createScene(canvas: HTMLCanvasElement): {
   camera.position.set(0, 0, distance);
 
   const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x00000a); // near-pure black — deep space
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-  dirLight.position.set(50, 50, 50);
+  // Stars: random point cloud at large radius
+  const starCount = 2000;
+  const starPositions = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i++) {
+    const theta = 2 * Math.PI * Math.random();
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = 800 + Math.random() * 600;
+    starPositions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+    starPositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    starPositions[i * 3 + 2] = r * Math.cos(phi);
+  }
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+  const starMat = new THREE.PointsMaterial({ color: 0xaaccff, size: 0.8, sizeAttenuation: true });
+  scene.add(new THREE.Points(starGeo, starMat));
+
+  // Subtle blue-tinted ambient + cool directional
+  scene.add(new THREE.AmbientLight(0x0a1a3f, 1.2));
+  const dirLight = new THREE.DirectionalLight(0x4488ff, 1.4);
+  dirLight.position.set(50, 80, 50);
   scene.add(dirLight);
+  const rimLight = new THREE.DirectionalLight(0x001133, 0.6);
+  rimLight.position.set(-50, -30, -80);
+  scene.add(rimLight);
 
-  scene.fog = new THREE.FogExp2(0x0a0a0f, 0.003);
+  // Deep-space fog — very sparse so it only kicks in at long range
+  scene.fog = new THREE.FogExp2(0x00000a, 0.0008);
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;

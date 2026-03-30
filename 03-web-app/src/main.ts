@@ -1,214 +1,194 @@
-import * as THREE from 'three';
-import { initRenderer } from './orb/renderer';
-import { initHud } from './ui/hud';
+import { createScene } from '../webview/renderer';
+import {
+  initOrb,
+  updateRenderPositions,
+  updateGraph,
+  getGraphInstance,
+  getNodePosition,
+} from '../webview/orb';
+import { createCameraController } from '../webview/camera';
+import { initVoice } from '../webview/voice';
+import {
+  initAnimation,
+  tickBreathing,
+  onConnectionNew,
+  onSnapshot,
+} from '../webview/animation';
+import {
+  createTooltip,
+  registerNodeInteractions,
+  buildNodeDataMap,
+  buildInstanceMaps,
+} from '../webview/nodeActions';
+import { evaluateQuery, detectVoiceIntent } from '../webview/search';
+import { nodeIndexMap } from '../webview/nodes';
 import { connect } from './ws/client';
-import { build } from './graph/builder';
-import type { BuildResult, GraphData } from './graph/builder';
 import type { SceneRef } from './ws/handlers';
-import type { GraphSnapshot } from './types';
-import { onHover, onClick } from './orb/interaction';
-import type { InteractionState } from './orb/interaction';
-import type { OrbNode } from './graph/types';
-import { getMaterialForNodeType, highlightMaterialConfig } from './orb/visuals';
-
-type AppState = BuildResult & { selectedNodeId: string | null };
-
-let currentBuild: AppState | null = null;
-
-function toGraphData(snapshot: GraphSnapshot): GraphData {
-  return {
-    nodes: snapshot.nodes.map(n => ({ id: n.id, label: n.label, type: n.type })),
-    edges: snapshot.edges.map(e => ({
-      sourceId: e.source,
-      targetId: e.target,
-      weight: e.weight,
-    })),
-  };
-}
-
-function applyHighlightMaterials(build: AppState): void {
-  for (const [id, mesh] of build.meshes) {
-    const node = build.nodes.get(id);
-    if (!node) continue;
-    const mat = mesh.material as THREE.MeshStandardMaterial;
-    if (build.highlightedNodeIds.has(id)) {
-      mat.color.setHex(highlightMaterialConfig.color);
-      mat.opacity = highlightMaterialConfig.opacity;
-      mat.emissiveIntensity = highlightMaterialConfig.emissiveIntensity ?? 0.6;
-    } else {
-      const cfg = getMaterialForNodeType(node.type);
-      mat.color.setHex(cfg.color);
-      mat.opacity = cfg.opacity;
-      mat.emissiveIntensity = cfg.emissiveIntensity ?? 0.1;
-    }
-  }
-}
-
-function clearBuild(scene: THREE.Scene, b: AppState): void {
-  for (const mesh of b.meshes.values()) {
-    scene.remove(mesh);
-    mesh.geometry.dispose();
-    const mat = mesh.material;
-    if (Array.isArray(mat)) mat.forEach(m => m.dispose());
-    else mat.dispose();
-  }
-  for (const line of b.edgeMeshes) {
-    scene.remove(line);
-    line.geometry.dispose();
-    const mat = line.material;
-    if (Array.isArray(mat)) mat.forEach(m => m.dispose());
-    else mat.dispose();
-  }
-}
+import type { GraphSnapshot, GraphEdge, GraphNode } from './types';
+import { initHud, setConnectionStatus, setCameraMode, updateVoiceStatus } from './ui/hud';
 
 function main(): void {
-  const existingCanvas = document.getElementById('devneural-canvas') as HTMLCanvasElement | null;
-  const canvas: HTMLCanvasElement = existingCanvas ?? (() => {
-    const c = document.createElement('canvas');
-    document.body.appendChild(c);
-    return c;
-  })();
+  const canvas =
+    (document.getElementById('devneural-canvas') as HTMLCanvasElement | null) ??
+    (() => {
+      const c = document.createElement('canvas');
+      Object.assign(c.style, {
+        position: 'fixed',
+        inset: '0',
+        width: '100%',
+        height: '100%',
+      });
+      document.body.appendChild(c);
+      return c;
+    })();
 
-  const { renderer, scene, camera, controls } = initRenderer(canvas);
+  const { scene, camera, controls, startAnimationLoop } = createScene(canvas);
+  const meshes = initOrb(scene);
+  const graph = getGraphInstance();
 
   const hud = initHud();
 
+  const cameraController = createCameraController(camera, controls, getNodePosition);
+
+  const tooltip = createTooltip();
+  document.body.appendChild(tooltip.getElement());
+
+  const voice = initVoice({
+    onTranscript(text: string) {
+      const intent = detectVoiceIntent(text);
+      if (intent.action === 'returnToAuto') {
+        cameraController.returnToAuto();
+      } else if (intent.action === 'focus' && intent.target) {
+        applySearch(intent.target);
+      } else if (intent.action === 'search' && intent.query) {
+        applySearch(intent.query);
+        hud.setSearchValue(intent.query);
+      }
+    },
+    onStatusChange(status) {
+      updateVoiceStatus(hud, status);
+    },
+  });
+
+  if (!voice) {
+    updateVoiceStatus(hud, 'unavailable');
+  }
+
+  hud.onVoiceClick(() => {
+    if (!voice) return;
+    if (voice.status === 'listening') voice.stopListening();
+    else voice.startListening();
+  });
+
+  hud.onReturnToAuto(() => {
+    cameraController.returnToAuto();
+  });
+
+  hud.onSearch((query: string) => {
+    applySearch(query);
+  });
+
+  initAnimation(scene);
+
+  let currentSnapshot: GraphSnapshot | null = null;
+  let nodeDataMap: Map<string, GraphNode> = new Map();
+  let edgeData: GraphEdge[] = [];
+
+  function applySearch(query: string): void {
+    if (!currentSnapshot) return;
+    if (query.trim() === '') return;
+    const result = evaluateQuery(query, currentSnapshot.nodes, currentSnapshot.edges);
+    const projectMatches = [...result.matchingNodeIds].filter(
+      id => nodeDataMap.get(id)?.type === 'project',
+    );
+    if (projectMatches.length > 0) {
+      cameraController.onActiveProjectsChanged(projectMatches);
+    }
+    hud.setMatchCount(result.matchingNodeIds.size);
+  }
+
   const sceneRef: SceneRef = {
     clear() {
-      if (!currentBuild) return;
-      clearBuild(scene, currentBuild);
-      currentBuild = null;
+      currentSnapshot = null;
+      nodeDataMap = new Map();
+      edgeData = [];
+      hud.setCounts(0, 0);
     },
 
     rebuild(snapshot: GraphSnapshot) {
-      sceneRef.clear();
-      const result = build(toGraphData(snapshot), scene);
-      currentBuild = { ...result, selectedNodeId: null };
-      hud.updateCounts({ nodes: snapshot.nodes.length, edges: snapshot.edges.length });
+      currentSnapshot = snapshot;
+      nodeDataMap = buildNodeDataMap(snapshot.nodes);
+      edgeData = snapshot.edges;
+      updateGraph(snapshot);
+      onSnapshot(
+        snapshot.edges.map(e => ({
+          id: e.id,
+          last_seen:
+            typeof e.last_seen === 'number' ? e.last_seen : Date.parse(e.last_seen as string),
+        })),
+      );
+      hud.setCounts(snapshot.nodes.length, snapshot.edges.length);
+      setConnectionStatus(hud, 'connected');
     },
 
     addEdge(edge) {
-      if (!currentBuild) return;
-      const srcMesh = currentBuild.meshes.get(edge.source);
-      const tgtMesh = currentBuild.meshes.get(edge.target);
-      if (!srcMesh || !tgtMesh) return;
-      const lineGeo = new THREE.BufferGeometry();
-      lineGeo.setFromPoints([srcMesh.position, tgtMesh.position]);
-      const lineMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.3 });
-      const line = new THREE.Line(lineGeo, lineMat);
-      scene.add(line);
-      currentBuild.edgeMeshes.push(line);
-      currentBuild.edges.push({ sourceId: edge.source, targetId: edge.target, weight: 1.0 });
+      onConnectionNew({
+        source: edge.source,
+        target: edge.target,
+        connectionType: edge.connection_type,
+      });
     },
 
     setFocusNode(nodeId: string) {
-      if (!currentBuild) return;
-      currentBuild.focusedNodeId = nodeId;
-      const mesh = currentBuild.meshes.get(nodeId);
-      if (mesh) {
-        const mat = mesh.material as THREE.MeshStandardMaterial;
-        mat.color.setHex(highlightMaterialConfig.color);
-        mat.opacity = highlightMaterialConfig.opacity;
-        mat.emissiveIntensity = highlightMaterialConfig.emissiveIntensity ?? 0.6;
-      }
-      hud.updateProjectLabel(nodeId);
+      cameraController.onActiveProjectsChanged([nodeId]);
     },
 
     setHighlightNodes(nodeIds: string[]) {
-      if (!currentBuild) return;
-      currentBuild.highlightedNodeIds = new Set(nodeIds);
-      applyHighlightMaterials(currentBuild);
+      cameraController.onActiveProjectsChanged(nodeIds);
     },
 
     clearHighlights() {
-      if (!currentBuild) return;
-      currentBuild.highlightedNodeIds.clear();
-      currentBuild.focusedNodeId = null;
-      applyHighlightMaterials(currentBuild);
-      hud.updateProjectLabel(null);
+      cameraController.returnToAuto();
     },
 
     resetCamera() {
-      controls.reset();
+      cameraController.returnToAuto();
     },
   };
 
-  // Raycaster for pointer events
-  const raycaster = new THREE.Raycaster();
-  const pointer = new THREE.Vector2();
-
-  function getMeshNode(clientX: number, clientY: number): OrbNode | null {
-    if (!currentBuild) return null;
-    const rect = canvas.getBoundingClientRect();
-    pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(pointer, camera);
-    const meshList = [...currentBuild.meshes.values()];
-    const hits = raycaster.intersectObjects(meshList);
-    if (hits.length === 0) return null;
-    const hitMesh = hits[0].object as THREE.Mesh;
-    for (const [id, mesh] of currentBuild.meshes) {
-      if (mesh === hitMesh) return currentBuild.nodes.get(id) ?? null;
-    }
-    return null;
-  }
-
-  canvas.addEventListener('pointermove', (e: PointerEvent) => {
-    const istate = currentBuild as InteractionState | null;
-    if (!istate) return;
-    const node = getMeshNode(e.clientX, e.clientY);
-    onHover(node, istate);
-    if (node) hud.updateProjectLabel(node.id);
+  registerNodeInteractions({
+    canvas,
+    camera,
+    meshes,
+    cameraController,
+    tooltip,
+    getNodeData: () => nodeDataMap,
+    getEdgeData: () => edgeData,
+    getInstanceMaps: () => buildInstanceMaps(nodeIndexMap, meshes),
+    applyVisuals(nodeIds: string[]) {
+      cameraController.onActiveProjectsChanged(nodeIds);
+    },
   });
 
-  // Guard: don't fire click if the pointer moved (i.e. the user was dragging)
-  let _pointerDownPos = { x: 0, y: 0 };
-  canvas.addEventListener('pointerdown', (e: PointerEvent) => {
-    _pointerDownPos = { x: e.clientX, y: e.clientY };
+  // Any orbit drag → manual camera mode
+  canvas.addEventListener('pointerdown', () => {
+    cameraController.onUserInteraction();
   });
 
-  canvas.addEventListener('click', (e: MouseEvent) => {
-    const dx = e.clientX - _pointerDownPos.x;
-    const dy = e.clientY - _pointerDownPos.y;
-    if (Math.sqrt(dx * dx + dy * dy) > 4) return; // was a drag, not a click
-
-    const istate = currentBuild as InteractionState | null;
-    if (!istate) return;
-    const node = getMeshNode(e.clientX, e.clientY);
-    onClick(node, istate, camera);
-    hud.updateProjectLabel(node ? node.label ?? node.id : null);
+  let elapsedMs = 0;
+  startAnimationLoop((deltaS: number) => {
+    elapsedMs += deltaS * 1000;
+    graph.tickFrame();
+    updateRenderPositions();
+    tickBreathing(elapsedMs);
+    cameraController.tick(deltaS * 1000);
+    setCameraMode(hud, cameraController.state);
   });
 
-  let sceneReady = false;
-
-  function animate(): void {
-    requestAnimationFrame(animate);
-    if (currentBuild) {
-      currentBuild.simulation.tick();
-      for (let i = 0; i < currentBuild.edgeMeshes.length; i++) {
-        const line = currentBuild.edgeMeshes[i];
-        const edge = currentBuild.edges[i];
-        if (!edge) continue;
-        const srcMesh = currentBuild.meshes.get(edge.sourceId);
-        const tgtMesh = currentBuild.meshes.get(edge.targetId);
-        if (!srcMesh || !tgtMesh) continue;
-        const posAttr = line.geometry.attributes.position as THREE.BufferAttribute;
-        if (posAttr) {
-          posAttr.setXYZ(0, srcMesh.position.x, srcMesh.position.y, srcMesh.position.z);
-          posAttr.setXYZ(1, tgtMesh.position.x, tgtMesh.position.y, tgtMesh.position.z);
-          posAttr.needsUpdate = true;
-        }
-      }
-    }
-    controls.update();
-    renderer.render(scene, camera);
-  }
-
-  animate();
-  sceneReady = true;
-
-  const ws = connect('ws://localhost:3747/ws', sceneRef, () => sceneReady);
+  const ws = connect('ws://localhost:3747/ws', sceneRef, () => true);
   ws.applyPendingSnapshot(sceneRef);
+
+  setConnectionStatus(hud, 'unknown');
 }
 
 main();

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('three', () => ({
   SphereGeometry: vi.fn(),
+  OctahedronGeometry: vi.fn(),
+  BoxGeometry: vi.fn(),
   MeshStandardMaterial: vi.fn(),
   Mesh: vi.fn(() => ({
     position: { set: vi.fn(), x: 0, y: 0, z: 0 },
@@ -35,34 +37,41 @@ describe('build(graphData)', () => {
     vi.clearAllMocks();
   });
 
-  it('calls new THREE.SphereGeometry for each node in the graph', () => {
+  it('project nodes use SphereGeometry, skill nodes use OctahedronGeometry, tool nodes use BoxGeometry', () => {
     const data: GraphData = { nodes: [projectNode, skillNode, toolNode], edges: [] };
     build(data, makeScene());
-    expect(THREE.SphereGeometry).toHaveBeenCalledTimes(3);
+    expect(THREE.SphereGeometry).toHaveBeenCalledTimes(1);
+    expect(THREE.OctahedronGeometry).toHaveBeenCalledTimes(1);
+    expect(THREE.BoxGeometry).toHaveBeenCalledTimes(1);
   });
 
   it('project nodes use a larger radius than skill nodes', () => {
     const data: GraphData = { nodes: [projectNode, skillNode], edges: [] };
     build(data, makeScene());
     const projectRadius = vi.mocked(THREE.SphereGeometry).mock.calls[0][0] as number;
-    const skillRadius = vi.mocked(THREE.SphereGeometry).mock.calls[1][0] as number;
+    const skillRadius = vi.mocked(THREE.OctahedronGeometry).mock.calls[0][0] as number;
     expect(projectRadius).toBeGreaterThan(skillRadius);
   });
 
   it('skill nodes use a medium radius (between project and tool)', () => {
     const data: GraphData = { nodes: [projectNode, skillNode, toolNode], edges: [] };
     build(data, makeScene());
-    const radii = vi.mocked(THREE.SphereGeometry).mock.calls.map(c => c[0] as number);
-    expect(radii[1]).toBeGreaterThan(radii[2]); // skill > tool
-    expect(radii[1]).toBeLessThan(radii[0]);    // skill < project
+    // SphereGeometry arg is r directly; OctahedronGeometry arg is r*1.1; BoxGeometry arg is r*1.5
+    const projectR = vi.mocked(THREE.SphereGeometry).mock.calls[0][0] as number;
+    const skillR = (vi.mocked(THREE.OctahedronGeometry).mock.calls[0][0] as number) / 1.1;
+    const toolR = (vi.mocked(THREE.BoxGeometry).mock.calls[0][0] as number) / 1.5;
+    expect(skillR).toBeLessThan(projectR); // skill < project
+    expect(toolR).toBeLessThan(skillR);    // tool < skill
   });
 
   it('tool nodes use the smallest radius', () => {
     const data: GraphData = { nodes: [projectNode, skillNode, toolNode], edges: [] };
     build(data, makeScene());
-    const radii = vi.mocked(THREE.SphereGeometry).mock.calls.map(c => c[0] as number);
-    expect(radii[2]).toBeLessThan(radii[0]);
-    expect(radii[2]).toBeLessThan(radii[1]);
+    const projectR = vi.mocked(THREE.SphereGeometry).mock.calls[0][0] as number;
+    const skillR = (vi.mocked(THREE.OctahedronGeometry).mock.calls[0][0] as number) / 1.1;
+    const toolR = (vi.mocked(THREE.BoxGeometry).mock.calls[0][0] as number) / 1.5;
+    expect(toolR).toBeLessThan(projectR);
+    expect(toolR).toBeLessThan(skillR);
   });
 
   it('project nodes: MeshStandardMaterial called with a blue-tinted color config', () => {
