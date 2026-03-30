@@ -180,3 +180,23 @@ node -e "const n = require('natural'); console.log(typeof n.BayesClassifier)"
 ```
 
 If this prints `function`, the standard `natural` package works. If it throws an ESM error, pin `"natural": "^6.12.0"` in `package.json`. If pinning to 6.x is insufficient for the project's Node.js version, implement the hand-rolled fallback instead — the interface is identical and the test suite does not care which underlying implementation is used.
+
+---
+
+## Implementation Notes (Actual)
+
+**Files created:**
+- `05-voice-interface/src/intent/local-parser.ts`
+- `05-voice-interface/tests/intent/local-parser.test.ts`
+
+**Deviations from plan:**
+
+1. **`normalizeConfidence` uses proportional ratio, not softmax.** The plan described `Math.exp(top1)/(Math.exp(top1)+Math.exp(top2))` (softmax over log-probabilities), but `natural.BayesClassifier.getClassifications()` returns real positive probabilities (unnormalized posteriors), not log-probabilities. The correct formula is `top1/(top1+top2)`. The fallback for single-entry input uses `top1 * 0.0001` instead of `top1 - 10`.
+
+2. **`['about']` removed from get_node keyword groups.** Single-word match was too coarse (fires at 0.90 confidence on any sentence containing "about"). Multi-word phrases only for get_node.
+
+3. **`unknown` intent is never emitted.** `null` is the deferral signal. Documented with a comment in the source.
+
+4. **Tests use realistic positive probability values** matching what `apparatus` BayesClassifier actually returns, not synthetic negative floats.
+
+**Final test count:** 12 tests (4 normalizeConfidence, 4 keyword fast-path, 3 BayesClassifier fallback, 1 entity extraction)
