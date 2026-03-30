@@ -266,3 +266,21 @@ Use native `fetch` (Node 18+) or follow 04-session-intelligence's HTTP pattern. 
 4. Implement `src/formatter/orb-events.ts`
 5. Run `npm test` in `05-voice-interface/` — all formatter tests pass
 6. No existing tests broken
+
+## Implementation Notes
+
+**Files created:**
+- `05-voice-interface/src/formatter/response.ts` — `formatResponse(intent, apiResult, hedging): string`
+- `05-voice-interface/src/formatter/orb-events.ts` — `sendOrbEvents(intent, apiResult): Promise<void>`
+- `05-voice-interface/tests/formatter/response.test.ts` — 17 tests
+- `05-voice-interface/tests/formatter/orb-events.test.ts` — 10 tests
+
+**Deviations from plan:**
+- `serverPath` uses `'../../../02-api-server/dist/server.js'` (3 levels up from `src/formatter/`) rather than the `'../../...'` in the spec — correct path to reach `DevNeural/02-api-server` from `dist/formatter/` when compiled.
+- `get_context` in orb-events: `voice:focus` is skipped when no project node found (guard added via code review) to avoid sending `{ nodeId: '' }`.
+- `get_top_skills` in orb-events: filter checks both `source` and `target` for `skill:` prefix (aligned with response.ts behavior, found in code review).
+- `HEDGING_LABELS` typed as `Partial<Record<IntentName, string>>` for type safety.
+- Added `joinList([])` guard to return `''` rather than `'undefined'`.
+- Added 3 extra tests beyond the original spec: `get_node` (2 tests), `hedging+unknown` (1 test).
+
+**Final test count:** 93 total (27 formatter, 66 existing)
