@@ -46,6 +46,18 @@ function removeSessionBlock(lines: string[], date: string): string[] {
 }
 
 /**
+ * Returns the file path that writeSessionEntry would write to.
+ * Pure function — no I/O.
+ */
+export function resolveNotePath(
+  summary: Pick<SessionSummary, 'project'>,
+  config: ObsidianSyncConfig,
+): string {
+  const slug = deriveSlug(summary.project);
+  return path.join(config.vault_path, config.notes_subfolder, `${slug}.md`);
+}
+
+/**
  * Writes a rendered session summary to the appropriate Obsidian vault file.
  */
 export function writeSessionEntry(
