@@ -29,9 +29,9 @@ export interface BuildResult extends SceneState {
 }
 
 const NODE_RADII: Record<NodeType, number> = {
-  project: 0.65,
-  skill: 0.42,
-  tool: 0.35,
+  project: 1.8,
+  skill:   1.2,
+  tool:    0.9,
 };
 
 function inferType(id: string): NodeType {
@@ -94,7 +94,7 @@ export function build(graphData: GraphData, scene: THREE.Scene): BuildResult {
     const material = new THREE.MeshStandardMaterial(materialConfig);
     const mesh = new THREE.Mesh(geometry, material);
 
-    const initPos = randomInSphere(5);
+    const initPos = randomInSphere(10);
     mesh.position.set(initPos.x, initPos.y, initPos.z);
     scene.add(mesh);
     meshMap.set(node.id, mesh);
