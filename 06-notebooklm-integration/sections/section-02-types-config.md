@@ -202,3 +202,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 ## Acceptance Criteria
 
 All eight tests in `tests/config.test.ts` pass with `vitest run`. The types file has no compilation errors. Downstream sections (03–07) can import from `./types.js` and `./config.js` without modification.
+
+## Implementation Notes
+
+- Files created: `src/types.ts`, `src/config.ts`, `tests/config.test.ts`
+- All 8 tests pass
+- Test fix: file-not-found test uses `join(tmpdir(), ...)` for Windows portability
+- Test fix: `checkApiKey` spy uses `vi.fn()` + `toHaveBeenCalledWith(1)` instead of throw-based pattern
