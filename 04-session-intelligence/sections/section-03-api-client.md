@@ -188,3 +188,19 @@ export async function fetchSubgraph(
 ## Acceptance Criteria
 
 All seven tests in `tests/api-client.test.ts` pass. The module compiles without TypeScript errors (`tsc --noEmit`). No test modifies global state or leaves a server running after the test suite finishes (use `afterEach` to call `stop()` on any started mock server).
+
+---
+
+## Implementation Notes (Actual)
+
+**Files created:**
+- `04-session-intelligence/src/api-client.ts` — implementation as specced
+- `04-session-intelligence/tests/api-client.test.ts` — 8 tests (7 planned + 1 added)
+
+**Deviations from plan:**
+- Import path uses `'../src/api-client'` (no `.js` extension) — consistent with `identity.test.ts` style in this project
+- ECONNREFUSED test uses start+stop pattern for a guaranteed-free port instead of hardcoded 19999
+- Timeout test adds `Date.now()` delta assertion (`expect(elapsed).toBeLessThan(5500)`)
+- Added 8th test: `returns null on non-OK HTTP status` — covers the `!response.ok` branch not exercised by the original 7
+
+**Test results:** 11 passed (includes 3 identity tests), 0 failed
