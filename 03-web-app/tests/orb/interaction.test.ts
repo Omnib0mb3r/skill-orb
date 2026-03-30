@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 function makeMesh(opacity = 0.9, emissiveIntensity = 0.1): THREE.Mesh {
   return {
-    material: { opacity, emissiveIntensity },
+    material: { opacity, emissiveIntensity, color: { setHex: vi.fn() } },
   } as unknown as THREE.Mesh;
 }
 

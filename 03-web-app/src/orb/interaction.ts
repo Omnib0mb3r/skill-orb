@@ -30,6 +30,7 @@ export function onHover(node: OrbNode | null, state: InteractionState): void {
       const config = state.highlightedNodeIds.has(_previousHoverNodeId)
         ? highlightMaterialConfig
         : getMaterialForNodeType(prevNode.type);
+      mat.color.setHex(config.color);
       mat.opacity = config.opacity;
       mat.emissiveIntensity = config.emissiveIntensity ?? 0.1;
     }

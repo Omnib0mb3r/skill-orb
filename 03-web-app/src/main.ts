@@ -135,8 +135,9 @@ function main(): void {
 
   function getMeshNode(clientX: number, clientY: number): OrbNode | null {
     if (!currentBuild) return null;
-    pointer.x = (clientX / window.innerWidth) * 2 - 1;
-    pointer.y = -(clientY / window.innerHeight) * 2 + 1;
+    const rect = canvas.getBoundingClientRect();
+    pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointer, camera);
     const meshList = [...currentBuild.meshes.values()];
     const hits = raycaster.intersectObjects(meshList);

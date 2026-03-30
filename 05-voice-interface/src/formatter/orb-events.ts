@@ -30,6 +30,7 @@ async function postEvent(type: string, payload: unknown): Promise<void> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type, payload }),
+      signal: AbortSignal.timeout(5000),
     });
   } catch {
     // Swallow all errors — orb events are best-effort

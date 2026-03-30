@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { spawnSync } from 'child_process';
+import { spawn } from 'child_process';
 import http from 'http';
 import path from 'path';
 
@@ -122,11 +122,25 @@ afterAll(() => {
   });
 });
 
-function run(args: string[], env?: Record<string, string>) {
-  return spawnSync('node', [ENTRY, ...args], {
-    encoding: 'utf8',
-    timeout: 30000,
-    env: { ...process.env, DEVNEURAL_PORT, ...env },
+function run(args: string[], env?: Record<string, string>): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    const child = spawn('node', [ENTRY, ...args], {
+      env: { ...process.env, DEVNEURAL_PORT, ...env },
+    });
+    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+    const timer = setTimeout(() => {
+      child.kill();
+      // Resolve with null status so timeout-sensitive tests fail clearly.
+      // Tests that assert status === 0 will fail with null, signalling a hang.
+      resolve({ status: null, stdout, stderr });
+    }, 15000);
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ status: code, stdout, stderr });
+    });
   });
 }
 
@@ -135,23 +149,23 @@ describe('e2e: skills query with mock server', () => {
     recordedPosts.length = 0;
   });
 
-  it('exit code 0', () => {
-    const result = run(['what skills am I using most?']);
+  it('exit code 0', async () => {
+    const result = await run(['what skills am I using most?']);
     expect(result.status).toBe(0);
   });
 
-  it('stdout is readable text (no markdown characters)', () => {
-    const result = run(['what skills am I using most?']);
+  it('stdout is readable text (no markdown characters)', async () => {
+    const result = await run(['what skills am I using most?']);
     expect(result.stdout).not.toMatch(/[*#`•\[\]_>|]/);
   });
 
-  it('stdout contains no raw skill: node ID prefixes', () => {
-    const result = run(['what skills am I using most?']);
+  it('stdout contains no raw skill: node ID prefixes', async () => {
+    const result = await run(['what skills am I using most?']);
     expect(result.stdout).not.toContain('skill:');
   });
 
-  it('POST /voice/command received with type voice:highlight', () => {
-    const result = run(['what skills am I using most?']);
+  it('POST /voice/command received with type voice:highlight', async () => {
+    const result = await run(['what skills am I using most?']);
     expect(result.status).toBe(0);
     const post = recordedPosts.find(p => p.type === 'voice:highlight');
     expect(post).toBeDefined();
@@ -163,13 +177,13 @@ describe('e2e: context query with mock server', () => {
     recordedPosts.length = 0;
   });
 
-  it('exit code 0', () => {
-    const result = run(["what's my current context"]);
+  it('exit code 0', async () => {
+    const result = await run(["what's my current context"]);
     expect(result.status).toBe(0);
   });
 
-  it('sends voice:focus then voice:highlight (two POSTs total)', () => {
-    const result = run(["what's my current context"]);
+  it('sends voice:focus then voice:highlight (two POSTs total)', async () => {
+    const result = await run(["what's my current context"]);
     expect(result.status).toBe(0);
 
     const types = recordedPosts.map(p => p.type);
@@ -178,34 +192,56 @@ describe('e2e: context query with mock server', () => {
     expect(recordedPosts).toHaveLength(2);
   });
 
-  it('first POST is voice:focus', () => {
-    run(["what's my current context"]);
+  it('first POST is voice:focus', async () => {
+    await run(["what's my current context"]);
     expect(recordedPosts[0]?.type).toBe('voice:focus');
   });
 
-  it('second POST is voice:highlight', () => {
-    run(["what's my current context"]);
+  it('second POST is voice:highlight', async () => {
+    await run(["what's my current context"]);
     expect(recordedPosts[1]?.type).toBe('voice:highlight');
   });
 });
 
+describe('e2e: unknown intent', () => {
+  beforeEach(() => {
+    recordedPosts.length = 0;
+  });
+
+  it('exit code 0 for unrecognized query', async () => {
+    const result = await run(['unknown gibberish xyzzy']);
+    expect(result.status).toBe(0);
+  });
+
+  it('stdout contains clarification message', async () => {
+    const result = await run(['unknown gibberish xyzzy']);
+    expect(result.stdout).toMatch(/not sure|clarif/i);
+  });
+
+  it('POST /voice/command received with type voice:clear', async () => {
+    await run(['unknown gibberish xyzzy']);
+    const post = recordedPosts.find(p => p.type === 'voice:clear');
+    expect(post).toBeDefined();
+  });
+});
+
 describe('e2e: API unavailable', () => {
-  it('exit code 0 when API unreachable', () => {
-    const result = run(['what skills am I using most?'], {
+  it('exit code 0 when API unreachable', async () => {
+    const result = await run(['what skills am I using most?'], {
       DEVNEURAL_API_URL: 'http://localhost:19998',
     });
     expect(result.status).toBe(0);
   });
 
-  it("stdout contains \"isn't running\" message", () => {
-    const result = run(['what skills am I using most?'], {
+  it("stdout contains \"isn't running\" message", async () => {
+    const result = await run(['what skills am I using most?'], {
       DEVNEURAL_API_URL: 'http://localhost:19998',
     });
     expect(result.stdout).toContain("isn't running");
   });
 
-  it('path in message ends with 02-api-server/dist/server.js', () => {
-    const result = run(['what skills am I using most?'], {
+  it('path in message ends with 02-api-server/dist/server.js', async () => {
+    const result = await run(['what skills am I using most?'], {
       DEVNEURAL_API_URL: 'http://localhost:19998',
     });
     expect(result.stdout).toMatch(/02-api-server[\\/]dist[\\/]server\.js/);

@@ -21,6 +21,7 @@ async function main(): Promise<void> {
   const parsed = await parseIntent(query);
 
   if (parsed.clarification) {
+    await sendOrbEvents(parsed, null).catch(() => { /* best-effort */ });
     process.stdout.write(CLARIFICATION_MSG);
     return;
   }
@@ -36,7 +37,7 @@ async function main(): Promise<void> {
     output = `I couldn't reach the AI assistant, but here's what I could parse locally: ${text}`;
   }
 
-  sendOrbEvents(parsed, apiResult?.data ?? null).catch(() => { /* best-effort */ });
+  await sendOrbEvents(parsed, apiResult?.data ?? null).catch(() => { /* best-effort */ });
   process.stdout.write(output + '\n');
 }
 
