@@ -17,9 +17,11 @@ transcribed text is routed to the search module.
 
 | File | Action |
 |------|--------|
-| `webview/voice.ts` | Create — replace stub |
-| `webview/search.ts` | Modify — add `detectVoiceIntent` pure function |
-| `webview/hud.ts` | Modify — wire mic button to VoiceStatus state |
+| `webview/voice.ts` | Created — full implementation |
+| `webview/search.ts` | Modified — added `detectVoiceIntent` and `VoiceIntent` type |
+| `webview/hud.ts` | Modified — added `updateVoiceButton` function |
+| `src/main.ts` | Modified — wired voice controller and mic button click handler |
+| `webview/__tests__/voice.test.ts` | Created — 13 tests |
 
 ---
 
@@ -49,7 +51,8 @@ Mock `window.SpeechRecognition` (or `window.webkitSpeechRecognition`) in tests.
 ### Voice Status States
 
 ```typescript
-export type VoiceStatus = 'unavailable' | 'idle' | 'listening' | 'processing' | 'error';
+export type VoiceStatus = 'unavailable' | 'idle' | 'listening' | 'error';
+// Note: 'processing' removed — synchronous onTranscript makes it a phantom state
 ```
 
 ### API
@@ -93,7 +96,8 @@ recognition.continuous = false;  // single utterance per button press
 
 ```typescript
 export interface VoiceIntent {
-  action: 'search' | 'focus' | 'returnToAuto' | 'zoomIn' | 'zoomOut';
+  action: 'search' | 'focus' | 'returnToAuto';
+  // Note: 'zoomIn'/'zoomOut' removed — not implemented in camera controller
   query?: string;
   target?: string;
 }

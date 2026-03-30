@@ -4,8 +4,9 @@ import { updateGraph, getGraphInstance, initOrb, updateRenderPositions, getNodeP
 import { initAnimation, onConnectionNew, onSnapshot, tickBreathing } from '../webview/animation';
 import { nodeIndexMap, setNodeColor, resetNodeColors } from '../webview/nodes';
 import { createCameraController } from '../webview/camera';
-import { createHud, setConnectionStatus, setCameraMode } from '../webview/hud';
-import { evaluateQuery } from '../webview/search';
+import { createHud, setConnectionStatus, setCameraMode, updateVoiceButton } from '../webview/hud';
+import { evaluateQuery, detectVoiceIntent } from '../webview/search';
+import { initVoice } from '../webview/voice';
 import {
   createTooltip,
   buildInstanceMaps,
@@ -79,6 +80,33 @@ const hudElements = createHud({
       applySearchVisuals(evaluateQuery(q, lastNodes, lastEdges));
     }
   },
+});
+
+// Voice search
+const voiceController = initVoice({
+  onTranscript: (text) => {
+    const intent = detectVoiceIntent(text);
+    if (intent.action === 'search' && intent.query) {
+      hudElements.searchInput.value = intent.query;
+      applySearchVisuals(evaluateQuery(intent.query, lastNodes, lastEdges));
+    } else if (intent.action === 'returnToAuto') {
+      cameraController.returnToAuto();
+      setCameraMode(hudElements, cameraController.state);
+    } else if (intent.action === 'focus' && intent.target) {
+      hudElements.searchInput.value = intent.target;
+      applySearchVisuals(evaluateQuery(intent.target, lastNodes, lastEdges));
+    }
+  },
+  onStatusChange: (status) => updateVoiceButton(hudElements.voiceButton, status),
+});
+
+if (voiceController === null) {
+  updateVoiceButton(hudElements.voiceButton, 'unavailable');
+}
+
+hudElements.voiceButton.addEventListener('click', () => {
+  if (voiceController?.status === 'listening') voiceController.stopListening();
+  else voiceController?.startListening();
 });
 
 // Node interactions

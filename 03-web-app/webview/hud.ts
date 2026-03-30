@@ -1,4 +1,5 @@
 import type { CameraState } from './camera';
+import type { VoiceStatus } from './voice';
 
 export interface HudElements {
   statusIndicator: HTMLElement;
@@ -189,4 +190,30 @@ export function setConnectionStatus(
 export function setCameraMode(elements: HudElements, state: CameraState): void {
   elements.cameraToggle.textContent = state;
   elements.returnToAutoButton.style.display = state === 'manual' ? 'inline-block' : 'none';
+}
+
+export function updateVoiceButton(button: HTMLButtonElement, status: VoiceStatus): void {
+  switch (status) {
+    case 'unavailable':
+      button.style.display = 'none';
+      break;
+    case 'idle':
+      button.style.display = '';
+      button.textContent = '🎤';
+      button.style.animation = '';
+      button.style.color = '';
+      break;
+    case 'listening':
+      button.style.display = '';
+      button.textContent = '🎤';
+      button.style.animation = 'dn-pulse 0.8s infinite';
+      button.style.color = '#ff4444';
+      break;
+    case 'error':
+      button.style.display = '';
+      button.textContent = '⚠️';
+      button.style.animation = '';
+      button.style.color = '#ff8800';
+      break;
+  }
 }

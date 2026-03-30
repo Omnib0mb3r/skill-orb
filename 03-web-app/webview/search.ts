@@ -1,5 +1,32 @@
 import type { GraphNode, GraphEdge } from '../src/types';
 
+export interface VoiceIntent {
+  action: 'search' | 'focus' | 'returnToAuto';
+  query?: string;
+  target?: string;
+}
+
+export function detectVoiceIntent(transcript: string): VoiceIntent {
+  const lower = transcript.toLowerCase().trim();
+  const trimmed = transcript.trim();
+
+  if (/^(zoom out|reset|show all)/.test(lower)) {
+    return { action: 'returnToAuto' };
+  }
+
+  const focusMatch = trimmed.match(/^(?:focus on|go to)\s+(.+)/i);
+  if (focusMatch) {
+    return { action: 'focus', target: focusMatch[1].trim() };
+  }
+
+  const searchMatch = trimmed.match(/^(?:show me|search for|find)\s+(.+)/i);
+  if (searchMatch) {
+    return { action: 'search', query: searchMatch[1].trim() };
+  }
+
+  return { action: 'search', query: transcript.trim() };
+}
+
 export interface SearchResult {
   matchingNodeIds: Set<string>;
   matchingEdgeIds: Set<string>;
