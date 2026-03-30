@@ -174,3 +174,19 @@ No significant connections found for this project yet.
 ## Dependencies
 
 This section has no runtime dependencies beyond Node.js built-ins. Do not import from `api-client.ts` or `identity.ts` — define the needed types locally. The types used here (`GraphResponse`, `GraphNode`, `GraphEdge`) are structurally identical to those in the API client but are intentionally kept separate to preserve the formatter as a pure, isolated module.
+
+---
+
+## Implementation Notes (Actual)
+
+**Files created:**
+- `04-session-intelligence/src/formatter.ts` — implementation with defensive guards added by review
+- `04-session-intelligence/tests/formatter.test.ts` — 14 tests (13 planned + 1 boundary test)
+
+**Deviations from plan:**
+- Added `!targetId` guard in `resolveLabel` → returns `'(unknown)'` for null/undefined targets
+- Added `isNaN(lastSeen.getTime())` guard in `relativeTime` → returns `'unknown'` for invalid dates
+- Added `Math.max(0, ...)` clamp on `diffDays` to handle future dates gracefully
+- Added 14th test: `weight: 1.0` (exactly at `minWeight` boundary) is included — locks in `>=` semantics
+
+**Test results:** 26 passed (includes 3 identity + 8+1 api-client), 0 failed
