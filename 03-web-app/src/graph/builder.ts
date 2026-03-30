@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { getMaterialForNodeType, getEdgeOpacity } from '../orb/visuals';
+import { getMaterialForNodeType, getEdgeColor, getEdgeOpacity } from '../orb/visuals';
 import { createSimulation } from '../orb/physics';
 import type { PhysicsNode, PhysicsEdge, Simulation } from '../orb/physics';
 import type { SceneState, NodeType, OrbNode, OrbEdge } from './types';
@@ -29,15 +29,30 @@ export interface BuildResult extends SceneState {
 }
 
 const NODE_RADII: Record<NodeType, number> = {
-  project: 0.6,
-  skill: 0.4,
-  tool: 0.3,
+  project: 0.65,
+  skill: 0.42,
+  tool: 0.35,
 };
 
 function inferType(id: string): NodeType {
   if (id.startsWith('project:')) return 'project';
   if (id.startsWith('skill:')) return 'skill';
   return 'tool';
+}
+
+/**
+ * Different geometry per node type so they are visually distinct at a glance:
+ *  project → sphere  (familiar, central hub shape)
+ *  skill   → octahedron  (diamond / gem — knowledge)
+ *  tool    → box  (cube — a physical tool)
+ */
+function createNodeGeometry(type: NodeType, r: number): THREE.BufferGeometry {
+  switch (type) {
+    case 'project': return new THREE.SphereGeometry(r, 20, 20);
+    case 'skill':   return new THREE.OctahedronGeometry(r * 1.1);
+    case 'tool':    return new THREE.BoxGeometry(r * 1.5, r * 1.5, r * 1.5);
+    default:        return new THREE.SphereGeometry(r, 12, 12);
+  }
 }
 
 function randomInSphere(radius: number): { x: number; y: number; z: number } {
@@ -75,7 +90,7 @@ export function build(graphData: GraphData, scene: THREE.Scene): BuildResult {
     const radius = NODE_RADII[nodeType] ?? NODE_RADII.tool;
     const materialConfig = getMaterialForNodeType(nodeType);
 
-    const geometry = new THREE.SphereGeometry(radius);
+    const geometry = createNodeGeometry(nodeType, radius);
     const material = new THREE.MeshStandardMaterial(materialConfig);
     const mesh = new THREE.Mesh(geometry, material);
 
@@ -115,8 +130,9 @@ export function build(graphData: GraphData, scene: THREE.Scene): BuildResult {
 
     const lineGeo = new THREE.BufferGeometry();
     lineGeo.setFromPoints([srcMesh.position, tgtMesh.position]);
+    const color = getEdgeColor(edge.weight);
     const opacity = getEdgeOpacity(edge.weight);
-    const lineMat = new THREE.LineBasicMaterial({ transparent: true, opacity });
+    const lineMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
     const line = new THREE.Line(lineGeo, lineMat);
     scene.add(line);
     edgeMeshes.push(line);

@@ -155,7 +155,10 @@ function main(): void {
 
   canvas.addEventListener('pointermove', (e: PointerEvent) => {
     const istate = currentBuild as InteractionState | null;
-    if (istate) onHover(getMeshNode(e.clientX, e.clientY), istate);
+    if (!istate) return;
+    const node = getMeshNode(e.clientX, e.clientY);
+    onHover(node, istate);
+    if (node) hud.updateProjectLabel(node.id);
   });
 
   // Guard: don't fire click if the pointer moved (i.e. the user was dragging)
