@@ -20,6 +20,8 @@ async function pollUntil(
 }
 
 const fixtureWeights: WeightsFile = {
+  schema_version: 1,
+  updated_at: '2024-01-02T00:00:00.000Z',
   connections: {
     'project:github.com/user/repo||tool:Read': {
       source_node: 'project:github.com/user/repo',
@@ -40,8 +42,6 @@ const fixtureWeights: WeightsFile = {
       last_seen: '2024-01-02T00:00:00.000Z',
     },
   },
-  last_updated: '2024-01-02T00:00:00.000Z',
-  version: '1.0',
 };
 
 const fixtureJsonlLines = [

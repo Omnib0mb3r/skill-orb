@@ -1,0 +1,53 @@
+{
+  "plugin_root": "C:\\Users\\mcollins\\.claude\\plugins\\cache\\piercelamb-plugins\\deep-implement\\0.2.1",
+  "sections_dir": "C:\\dev\\tools\\DevNeural\\04-session-intelligence\\sections",
+  "target_dir": "C:\\dev\\tools\\DevNeural",
+  "state_dir": "C:\\dev\\tools\\DevNeural\\04-session-intelligence\\implementation",
+  "git_root": "C:\\dev\\tools\\DevNeural",
+  "commit_style": "simple",
+  "test_command": "npm test",
+  "sections": [
+    "section-01-setup",
+    "section-02-identity",
+    "section-03-api-client",
+    "section-04-formatter",
+    "section-05-entry-point",
+    "section-06-install-script",
+    "section-07-integration"
+  ],
+  "sections_state": {
+    "section-01-setup": {
+      "status": "complete",
+      "commit_hash": "8ac72fa"
+    },
+    "section-02-identity": {
+      "status": "complete",
+      "commit_hash": "5bab3a9"
+    },
+    "section-03-api-client": {
+      "status": "complete",
+      "commit_hash": "0151b15"
+    },
+    "section-04-formatter": {
+      "status": "complete",
+      "commit_hash": "e73271f"
+    },
+    "section-05-entry-point": {
+      "status": "complete",
+      "commit_hash": "4af3f28"
+    },
+    "section-06-install-script": {
+      "status": "complete",
+      "commit_hash": "3b9a4d8"
+    }
+  },
+  "pre_commit": {
+    "present": false,
+    "type": "none",
+    "config_file": null,
+    "native_hook": null,
+    "may_modify_files": false,
+    "detected_formatters": []
+  },
+  "created_at": "2026-03-30T01:58:28.218074+00:00"
+}

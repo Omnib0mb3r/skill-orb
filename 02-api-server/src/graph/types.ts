@@ -15,16 +15,28 @@ export interface WeightsFileEntry {
 }
 
 export interface WeightsFile {
+  schema_version: 1;
+  updated_at: string;
   connections: Record<string, WeightsFileEntry>;
-  last_updated: string;
-  version: string;
 }
 
 export interface GraphNode {
   id: string;
   type: 'project' | 'tool' | 'skill';
   label: string;
+  stage?: string;      // From devneural.json: alpha | beta | deployed | archived
+  tags?: string[];     // From devneural.json: e.g. ['sandbox', 'revision-needed']
+  localPath?: string;  // Absolute path to the local project clone
 }
+
+export interface ProjectMeta {
+  stage: string;
+  tags: string[];
+  localPath: string;
+}
+
+/** Keyed by project node id: 'project:github.com/user/repo' */
+export type ProjectRegistry = Map<string, ProjectMeta>;
 
 export interface GraphEdge {
   id: string;

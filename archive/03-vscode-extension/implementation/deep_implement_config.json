@@ -1,0 +1,62 @@
+{
+  "plugin_root": "C:\\Users\\mcollins\\.claude\\plugins\\cache\\piercelamb-plugins\\deep-implement\\0.2.1",
+  "sections_dir": "C:\\dev\\tools\\DevNeural\\03-vscode-extension\\sections",
+  "target_dir": "C:\\dev\\tools\\DevNeural",
+  "state_dir": "C:\\dev\\tools\\DevNeural\\03-vscode-extension\\implementation",
+  "git_root": "C:\\dev\\tools\\DevNeural",
+  "commit_style": "simple",
+  "test_command": "uv run pytest",
+  "sections": [
+    "section-01-schema",
+    "section-02-data-layer",
+    "section-03-api-server",
+    "section-04-scaffold",
+    "section-05-extension-host",
+    "section-06-threejs-scene",
+    "section-07-rendering",
+    "section-08-animation",
+    "section-09-camera-hud",
+    "section-10-node-actions",
+    "section-11-voice",
+    "section-12-integration"
+  ],
+  "sections_state": {
+    "section-01-schema": {
+      "status": "complete",
+      "commit_hash": "232bf0e"
+    },
+    "section-02-data-layer": {
+      "status": "complete",
+      "commit_hash": "5f03a75"
+    },
+    "section-03-api-server": {
+      "status": "complete",
+      "commit_hash": "9af5468"
+    },
+    "section-04-scaffold": {
+      "status": "complete",
+      "commit_hash": "5c73947"
+    },
+    "section-05-extension-host": {
+      "status": "complete",
+      "commit_hash": "e38b533"
+    },
+    "section-06-threejs-scene": {
+      "status": "complete",
+      "commit_hash": "765f4d3"
+    },
+    "section-07-rendering": {
+      "status": "complete",
+      "commit_hash": "95caa17"
+    }
+  },
+  "pre_commit": {
+    "present": false,
+    "type": "none",
+    "config_file": null,
+    "native_hook": null,
+    "may_modify_files": false,
+    "detected_formatters": []
+  },
+  "created_at": "2026-03-29T17:52:53.305530+00:00"
+}

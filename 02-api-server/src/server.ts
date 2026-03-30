@@ -1,13 +1,15 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyCors from '@fastify/cors';
 import fastifyWebsocket from '@fastify/websocket';
+import chokidar from 'chokidar';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { type ServerConfig, loadConfig } from './config.js';
 import { buildGraph } from './graph/builder.js';
-import type { InMemoryGraph, WeightsFile } from './graph/types.js';
+import { buildProjectRegistry } from './graph/registry.js';
+import type { InMemoryGraph, WeightsFile, ProjectRegistry } from './graph/types.js';
 import { getFullGraph } from './graph/queries.js';
 import { registerGraphRoutes } from './routes/graph.js';
 import { registerEventsRoutes } from './routes/events.js';
@@ -16,7 +18,7 @@ import { startWatchers, stopWatchers, getEventBuffer } from './watcher/index.js'
 
 export type { ServerConfig };
 
-const emptyWeights: WeightsFile = { connections: {}, last_updated: '', version: '1.0' };
+const emptyWeights: WeightsFile = { schema_version: 1, updated_at: '', connections: {} };
 
 export async function createServer(config: ServerConfig): Promise<{
   fastify: FastifyInstance;
@@ -24,7 +26,16 @@ export async function createServer(config: ServerConfig): Promise<{
   stop: () => Promise<void>;
 }> {
   const fastify = Fastify({ logger: true });
-  let graph: InMemoryGraph = buildGraph(emptyWeights);
+
+  // Build initial project registry from localReposRoot (empty if not configured)
+  let registry: ProjectRegistry = new Map();
+  if (config.localReposRoot) {
+    registry = await buildProjectRegistry(config.localReposRoot);
+  }
+
+  // Track latest weights so registry re-scans can re-enrich without re-reading disk
+  let latestWeights: WeightsFile = emptyWeights;
+  let graph: InMemoryGraph = buildGraph(emptyWeights, registry);
 
   // Register plugins (CORS first so headers apply to all routes including errors)
   await fastify.register(fastifyCors, { origin: '*' });
@@ -45,9 +56,10 @@ export async function createServer(config: ServerConfig): Promise<{
   startWatchers(
     path.join(config.dataRoot, 'weights.json'),
     path.join(config.dataRoot, 'logs'),
-    (newGraph) => {
-      graph = newGraph;
-      broadcast({ type: 'graph:snapshot', payload: getFullGraph(newGraph, new Date().toISOString()) });
+    (_unusedGraph, weights) => {
+      latestWeights = weights;
+      graph = buildGraph(weights, registry);
+      broadcast({ type: 'graph:snapshot', payload: getFullGraph(graph, new Date().toISOString()) });
     },
     (entry, isStartup) => {
       if (!isStartup) {
@@ -61,18 +73,34 @@ export async function createServer(config: ServerConfig): Promise<{
   // Pre-load graph from weights.json if it exists so first request gets real data
   try {
     const raw = await fs.readFile(path.join(config.dataRoot, 'weights.json'), 'utf-8');
-    graph = buildGraph(JSON.parse(raw) as WeightsFile);
+    latestWeights = JSON.parse(raw) as WeightsFile;
+    graph = buildGraph(latestWeights, registry);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       console.error('Failed to load initial weights.json:', err);
     }
   }
 
+  // Watch localReposRoot for devneural.json changes and rebuild registry on any change
+  let registryWatcher: ReturnType<typeof chokidar.watch> | null = null;
+  if (config.localReposRoot) {
+    const handleRegistryChange = async () => {
+      registry = await buildProjectRegistry(config.localReposRoot);
+      graph = buildGraph(latestWeights, registry);
+      broadcast({ type: 'graph:snapshot', payload: getFullGraph(graph, new Date().toISOString()) });
+    };
+    registryWatcher = chokidar.watch(
+      `${config.localReposRoot.replace(/\\/g, '/')}/**/devneural.json`,
+      { ignoreInitial: true, depth: 1 }
+    );
+    registryWatcher.on('add', handleRegistryChange).on('change', handleRegistryChange);
+  }
+
   try {
     await fastify.listen({ port: config.port, host: '127.0.0.1' });
   } catch (err) {
     // Clean up watchers if bind fails (e.g. port already in use)
-    await stopWatchers();
+    await Promise.all([stopWatchers(), registryWatcher?.close()]);
     throw err;
   }
 
@@ -85,7 +113,7 @@ export async function createServer(config: ServerConfig): Promise<{
   const stop = async () => {
     if (stopped) return;
     stopped = true;
-    await stopWatchers();
+    await Promise.all([stopWatchers(), registryWatcher?.close()]);
     try {
       await fastify.close();
     } catch {

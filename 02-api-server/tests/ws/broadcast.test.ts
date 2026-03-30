@@ -20,8 +20,8 @@ const fixtureWeights: WeightsFile = {
       last_seen: '2025-03-01T00:00:00.000Z',
     },
   },
-  last_updated: '2025-03-01T00:00:00.000Z',
-  version: '1.0',
+  schema_version: 1,
+  updated_at: '2025-03-01T00:00:00.000Z',
 };
 
 function waitForMessage(ws: WebSocket): Promise<unknown> {

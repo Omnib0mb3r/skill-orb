@@ -72,6 +72,8 @@ export interface LogEntry {
   connection_type: ConnectionType;
   source_node: string;                    // prefixed: "project:<id>"
   target_node: string;                    // prefixed: "tool:<name>", "skill:<name>", "project:<id>"
+  stage?: string;                         // from devneural.json — log enrichment only
+  tags?: string[];                        // from devneural.json — log enrichment only
 }
 
 // ── Weight graph ──────────────────────────────────────────────────────────────

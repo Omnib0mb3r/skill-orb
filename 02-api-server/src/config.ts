@@ -1,6 +1,7 @@
 export interface ServerConfig {
   port: number;
   dataRoot: string;
+  localReposRoot: string;  // Read from DEVNEURAL_LOCAL_REPOS_ROOT; empty string means skip registry scan
 }
 
 export function loadConfig(): ServerConfig {
@@ -28,5 +29,7 @@ export function loadConfig(): ServerConfig {
     process.exit(1);
   }
 
-  return { port: portNum, dataRoot };
+  const localReposRoot = process.env.DEVNEURAL_LOCAL_REPOS_ROOT ?? '';
+
+  return { port: portNum, dataRoot, localReposRoot };
 }
