@@ -146,3 +146,18 @@ This is a one-line change after the `registerEventsRoutes` call.
 - A connected WebSocket client receives the event after a successful POST
 - Existing tests (if any) continue to pass
 - `npm run build` (tsc) passes with no type errors
+
+## Implementation Notes (Actual)
+
+**Files created/modified:**
+- `02-api-server/src/ws/types.ts` — added 3 union members as planned
+- `02-api-server/src/routes/voice.ts` — created; two-step Zod validation; error messages use `.issues.map(i => i.message).join('; ')` instead of `.message` (JSON blob)
+- `02-api-server/src/server.ts` — one-line wiring as planned
+- `02-api-server/tests/voice.test.ts` — 15 tests (5 schema, 6 HTTP, 4 WS: focus + highlight + clear + invalid)
+
+**Deviations from plan:**
+- Added `voice:clear` WS broadcast test (plan listed 3 WS tests but omitted clear; added for completeness)
+- WS tests register snapshot listener before `waitForOpen` to avoid race condition with on-connect snapshot delivery
+- Inner WS timeout set to 2000ms (not 5000ms) to avoid conflating with Vitest's default per-test timeout
+
+**Test count:** 15 tests, all passing. Full suite: 108/108.
