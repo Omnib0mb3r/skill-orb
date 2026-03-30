@@ -220,6 +220,13 @@ If the format turns out to be different from what is documented above (e.g., con
 
 ---
 
+## Implementation Notes
+
+- Files created: `src/session/graph-reader.ts`, `tests/graph-reader.test.ts`, updated `tests/fixtures/sample-weights.json`
+- Real weights.json format is `connections` keyed object (not `edges` array) — handled via `Object.values(data.connections)`
+- Both API path and file fallback apply client-side project filter (source_node or target_node match)
+- All 24 tests pass
+
 ## Acceptance Criteria
 
 All 8 tests in `tests/graph-reader.test.ts` pass with `npm test`. Specifically:

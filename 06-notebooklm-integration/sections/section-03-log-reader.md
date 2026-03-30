@@ -174,3 +174,11 @@ The CLI entry point (section-08) wraps the call and handles a `null` return with
 ## Acceptance Criteria
 
 All eight tests in `tests/log-reader.test.ts` pass with `vitest run`. The function is exported as a named export from `src/session/log-reader.ts`. The fixture file exists at `tests/fixtures/sample-session.jsonl` and covers all four connection types.
+
+## Implementation Notes
+
+- Files created: `src/session/log-reader.ts`, `tests/log-reader.test.ts`
+- All 8 tests pass (16 total with config tests)
+- Uses `fs/promises` (`access` + `readFile`) for true async I/O
+- Timestamp sort uses `new Date().getTime()` comparator for timezone safety
+- `connection_events` maps ALL entries per spec (no filtering by type)

@@ -241,3 +241,14 @@ The section is complete when:
 4. `node dist/generate-summary.js` with a valid config writes the note to the Obsidian vault and prints the confirmation path
 5. Running the command a second time for the same date exits 0 with the "already exists" message
 6. Running with `--force` on the second run overwrites the existing entry
+
+## Implementation Notes
+
+- Files created: `src/generate-summary.ts`, `tests/generate-summary.integration.test.ts`
+- Also modified: `src/obsidian/writer.ts` (added `resolveNotePath` export)
+- All 55 tests pass (6 new integration tests + 49 from prior sections)
+- `_config` test escape hatch uses an unexported `InternalPipelineOptions` interface so the public API is clean
+- Execution sequence matches spec: resolve configPath → check API key → loadConfig → read log → generate
+- `resolveNotePath` signature matches spec exactly (no `existingSlugs` parameter)
+- `parseArgs` bounds-checks all value flags (`--date`, `--project`, `--config`)
+- Integration tests use `vi.mocked(AnthropicModule.default).mockImplementation(...)` pattern (matching generator.test.ts); `vi.clearAllMocks()` in beforeEach
