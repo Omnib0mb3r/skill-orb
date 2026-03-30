@@ -23,6 +23,14 @@
     "section-02-identity": {
       "status": "complete",
       "commit_hash": "5bab3a9"
+    },
+    "section-03-api-client": {
+      "status": "complete",
+      "commit_hash": "0151b15"
+    },
+    "section-04-formatter": {
+      "status": "complete",
+      "commit_hash": "e73271f"
     }
   },
   "pre_commit": {
