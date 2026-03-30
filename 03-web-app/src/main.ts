@@ -42,7 +42,7 @@ function main(): void {
       return c;
     })();
 
-  const { scene, camera, controls, startAnimationLoop } = createScene(canvas);
+  const { scene, camera, renderer: _renderer, controls, startAnimationLoop } = createScene(canvas);
   const meshes = initOrb(scene);
   const graph = getGraphInstance();
 
@@ -170,8 +170,8 @@ function main(): void {
     },
   });
 
-  // Any orbit drag → manual camera mode
-  canvas.addEventListener('pointerdown', () => {
+  // Only switch to manual camera when the user actually drags (not on every click)
+  controls.addEventListener('start', () => {
     cameraController.onUserInteraction();
   });
 

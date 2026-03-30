@@ -25,9 +25,9 @@ const STAGE_COLORS: Record<string, [number, number, number]> = {
 };
 
 const DEFAULT_NODE_COLORS: Record<string, THREE.Color> = {
-  project: new THREE.Color(0x3388ff),
-  tool:    new THREE.Color(0x33cc77),
-  skill:   new THREE.Color(0xff7733),
+  project: new THREE.Color(0x55aaff),   // bright sky-blue
+  tool:    new THREE.Color(0x44ff99),   // bright mint-green
+  skill:   new THREE.Color(0xff9944),   // bright amber-orange
 };
 
 /** Returns the badge color for a stage string. */
@@ -48,25 +48,26 @@ export function createNodeMeshes(maxNodes: number): {
   skillMesh: THREE.InstancedMesh;
   badgeMesh: THREE.InstancedMesh;
 } {
-  const mat = new THREE.MeshPhongMaterial();
+  const mat = new THREE.MeshPhongMaterial({ shininess: 80 });
 
+  // Node sizes scaled to ORB_RADIUS=120: needs to be ~4-6 units to be visible & clickable
   const projectMesh = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(1.2, 0.15, 0.9),
+    new THREE.BoxGeometry(7, 1.2, 5),      // wide flat slab — project node
     mat.clone(),
     maxNodes
   );
   const toolMesh = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.8, 0.8, 0.8),
+    new THREE.BoxGeometry(4.5, 4.5, 4.5),  // cube — tool node
     mat.clone(),
     maxNodes
   );
   const skillMesh = new THREE.InstancedMesh(
-    new THREE.OctahedronGeometry(0.7),
+    new THREE.OctahedronGeometry(4),        // gem — skill node
     mat.clone(),
     maxNodes
   );
   const badgeMesh = new THREE.InstancedMesh(
-    new THREE.TorusGeometry(0.55, 0.06, 8, 24),
+    new THREE.TorusGeometry(3.5, 0.4, 8, 24), // stage ring — scaled to match
     mat.clone(),
     maxNodes
   );
@@ -142,7 +143,7 @@ export function setNodePositions(
 
     // Badge: visible only for project nodes that have a stage
     if (node.type === 'project' && node.stage) {
-      dummy.position.set(node.x, node.y + 0.65, node.z);
+      dummy.position.set(node.x, node.y + 4.5, node.z);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       meshes.badgeMesh.setMatrixAt(globalIndex, dummy.matrix.clone());
