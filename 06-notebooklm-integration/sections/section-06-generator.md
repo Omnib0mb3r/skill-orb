@@ -151,3 +151,12 @@ This ensures the downstream writer still produces a valid (if incomplete) note.
 - The `skill:` prefix stripping must handle `skill:` with no suffix gracefully (produce an empty string, which is then filtered by deduplication if it appears).
 - The Anthropic SDK is a production dependency, not a devDependency — it must already be present in `package.json` from section-01-setup.
 - The `claude_model` default (`claude-haiku-4-5-20251001`) is defined in `config.ts` (section-02). The generator does not hardcode any model name.
+
+## Implementation Notes
+
+- Files created: `src/summary/generator.ts`, `tests/generator.test.ts`
+- All 37 tests pass
+- `tool_input` null guard: `entry.tool_input !== null && typeof entry.tool_input === 'object'`
+- Code fence stripping: `/^```(?:json)?\s*/i` handles both ` ```json ` and bare ` ``` `
+- Content block type check: `block.type !== 'text'` guard before accessing `.text`
+- Anthropic client instantiated inside function for clean mock support
