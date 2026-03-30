@@ -232,17 +232,22 @@ This installs `@anthropic-ai/sdk`, `zod`, `vitest`, `typescript`, `tsx`, and `@t
 
 ## Checklist
 
-- [ ] `package.json` created with correct `"type": "module"` and all four dependency groups
-- [ ] `tsconfig.json` created with `NodeNext` module resolution
-- [ ] `vitest.config.ts` created matching 02-api-server pattern
-- [ ] `config.example.json` created with all six fields (no real paths)
-- [ ] `.gitignore` includes `config.json` and `dist/`
-- [ ] `src/session/`, `src/summary/`, `src/obsidian/` directories exist
-- [ ] `tests/fixtures/` directory exists
-- [ ] `tests/fixtures/sample-session.jsonl` created with all four connection types and varied tool inputs
-- [ ] `tests/fixtures/sample-weights.json` created with milestone, new-connection, and high-weight edge examples
-- [ ] `npm install` runs cleanly
-- [ ] `npm test` exits 0 (passWithNoTests)
+- [x] `package.json` created with correct `"type": "module"` and all four dependency groups
+- [x] `tsconfig.json` created with `NodeNext` module resolution
+- [x] `vitest.config.ts` created matching 02-api-server pattern
+- [x] `config.example.json` created with all six fields (no real paths)
+- [x] `.gitignore` includes `config.json` and `dist/`
+- [x] `src/session/`, `src/summary/`, `src/obsidian/` directories exist (`.gitkeep` files)
+- [x] `tests/fixtures/` directory exists
+- [x] `tests/fixtures/sample-session.jsonl` created with all four connection types and varied tool inputs
+- [x] `tests/fixtures/sample-weights.json` created with milestone, new-connection, and high-weight edge examples (7 edges: 5 for DevNeural, 1 tool->skill, 1 skill-connections)
+- [x] `npm install` runs cleanly
+- [x] `npm test` exits 0 (passWithNoTests)
+
+## Implementation Notes
+
+- `.gitkeep` files added to `src/session/`, `src/summary/`, `src/obsidian/` to track directories in git
+- `sample-weights.json` extended to 7 edges: added `project->project` edge and `tool:Bash->skill:gsd-execute` edge for full connection type coverage in graph-reader tests
 
 ---
 
