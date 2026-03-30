@@ -71,6 +71,8 @@ function main(): void {
 
   const { renderer, scene, camera } = initRenderer(canvas);
 
+  const hud = initHud();
+
   const sceneRef: SceneRef = {
     clear() {
       if (!currentBuild) return;
@@ -82,6 +84,7 @@ function main(): void {
       sceneRef.clear();
       const result = build(toGraphData(snapshot), scene);
       currentBuild = { ...result, selectedNodeId: null };
+      hud.updateCounts({ nodes: snapshot.nodes.length, edges: snapshot.edges.length });
     },
 
     addEdge(edge) {
@@ -108,6 +111,7 @@ function main(): void {
         mat.opacity = highlightMaterialConfig.opacity;
         mat.emissiveIntensity = highlightMaterialConfig.emissiveIntensity ?? 0.6;
       }
+      hud.updateProjectLabel(nodeId);
     },
 
     setHighlightNodes(nodeIds: string[]) {
@@ -121,6 +125,7 @@ function main(): void {
       currentBuild.highlightedNodeIds.clear();
       currentBuild.focusedNodeId = null;
       applyHighlightMaterials(currentBuild);
+      hud.updateProjectLabel(null);
     },
 
     resetCamera() {
@@ -158,8 +163,6 @@ function main(): void {
     const istate = currentBuild as InteractionState | null;
     if (istate) onClick(getMeshNode(e.clientX, e.clientY), istate, camera);
   });
-
-  initHud();
 
   let sceneReady = false;
 
