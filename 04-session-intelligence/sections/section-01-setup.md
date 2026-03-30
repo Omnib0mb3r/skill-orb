@@ -120,11 +120,25 @@ If the directory is missing, run `npm run build` in `01-data-layer/` first.
 
 ## Checklist
 
-- [ ] Create `04-session-intelligence/package.json` with scripts and dev dependencies listed above
-- [ ] Create `04-session-intelligence/tsconfig.json` without `rootDir`, with `outDir: ./dist`
-- [ ] Create `04-session-intelligence/vitest.config.ts` with `testTimeout: 15000`
-- [ ] Run `npm install` in `04-session-intelligence/` to create `node_modules/`
-- [ ] Confirm `01-data-layer/dist/` exists (build it if not)
-- [ ] Create a minimal `src/index.ts` stub (empty export is sufficient) to validate the TypeScript config compiles without errors
-- [ ] Run `tsc --noEmit` and confirm it exits 0
-- [ ] Run `npm run build` and confirm `dist/` is created
+- [x] Create `04-session-intelligence/package.json` with scripts and dev dependencies listed above
+- [x] Create `04-session-intelligence/tsconfig.json` without `rootDir`, with `outDir: ./dist`
+- [x] Create `04-session-intelligence/vitest.config.ts` with `testTimeout: 15000`
+- [x] Run `npm install` in `04-session-intelligence/` to create `node_modules/`
+- [x] Confirm `01-data-layer/dist/` exists (build it if not)
+- [x] Create a minimal `src/index.ts` stub (empty export is sufficient) to validate the TypeScript config compiles without errors
+- [x] Run `tsc --noEmit` and confirm it exits 0
+- [x] Run `npm run build` and confirm `dist/` is created
+
+## Implementation Notes (Actual)
+
+### Files Created
+- `04-session-intelligence/package.json` — version `0.1.0` (aligned with sibling packages)
+- `04-session-intelligence/tsconfig.json` — no `rootDir`, `outDir: ./dist`
+- `04-session-intelligence/vitest.config.ts` — `testTimeout: 15000`
+- `04-session-intelligence/src/index.ts` — `export {}` stub for build validation
+- `04-session-intelligence/.gitignore` — `node_modules/`, `dist/` (added in code review)
+- `04-session-intelligence/package-lock.json` — committed for reproducible installs
+
+### Deviations from Plan
+- Version set to `0.1.0` (not `1.0.0`) to match `01-data-layer/package.json`
+- Added `.gitignore` (not in plan) for defensive packaging
