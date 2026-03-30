@@ -205,20 +205,28 @@ The `FormatterConfig` and `ApiClientConfig` types can be inlined as object liter
 - `src/identity.ts` (section-02): provides `resolveProjectIdentity`. Import from `./identity.js`.
 - `src/api-client.ts` (section-03): provides `fetchSubgraph`. The subgraph endpoint path (`/graph/subgraph?project=<id>`) is constructed inside `fetchSubgraph` — the entry point only passes the base URL.
 - `src/formatter.ts` (section-04): provides `formatSubgraph`. The entry point passes `identity.id`, the `GraphResponse`, and the config object.
-- `tests/helpers.ts` (section-07): provides `startMockApiServer` and `createTempDir`/`removeTempDir` used by the integration tests above.
+- `tests/helpers.ts` (created in section-05, extended in section-07): provides `startMockApiServer`, `runBinary`, `createTempDir`, and `removeTempDir` used by integration tests.
 
 ---
 
 ## Checklist
 
-- [ ] Create `src/session-start.ts` with `HookPayload` interface and `main()` function
-- [ ] `main()` reads stdin fully before parsing
-- [ ] `main()` silently exits 0 on JSON parse failure or missing `cwd`
-- [ ] `main()` constructs API URL from `DEVNEURAL_API_URL` or `DEVNEURAL_PORT`
-- [ ] `main()` writes offline message to stdout when `fetchSubgraph` returns null
-- [ ] `main()` calls `formatSubgraph` with `maxResultsPerType: 10` and `minWeight: 1.0`
-- [ ] `main()` ends with explicit `process.exit(0)`
-- [ ] Top-level `.catch()` writes error to stderr and exits 0
-- [ ] Write test stubs in `tests/session-start.test.ts`
-- [ ] Verify `npm run build` compiles without errors
-- [ ] Verify test stubs fail (red) before implementation, pass (green) after
+- [x] Create `src/session-start.ts` with `HookPayload` interface and `main()` function
+- [x] `main()` reads stdin fully before parsing
+- [x] `main()` silently exits 0 on JSON parse failure or missing `cwd`
+- [x] `main()` constructs API URL via `buildApiConfig()` from `api-client.ts`
+- [x] `main()` writes offline message to stdout when `fetchSubgraph` returns null
+- [x] `main()` calls `formatSubgraph` with `maxResultsPerType: 10` and `minWeight: 1.0`
+- [x] `main()` ends with explicit `process.exit(0)`
+- [x] Top-level `.catch()` writes error to stderr and exits 0
+- [x] Created `tests/helpers.ts` with `startMockApiServer`, `runBinary` (async spawn), `createTempDir`, `removeTempDir`
+- [x] Created `tests/session-start.test.ts` with 8 integration tests
+- [x] `npm run build` compiles without errors
+- [x] All 8 session-start tests pass (34 total)
+
+## Deviations from Plan
+
+- **`buildApiConfig()` used instead of inline URL construction**: `api-client.ts` already exports `buildApiConfig()` which encapsulates the `DEVNEURAL_API_URL`/`DEVNEURAL_PORT` logic. Used this directly rather than duplicating.
+- **`tests/helpers.ts` created in section-05, not section-07**: The tests required helpers immediately. The file is forward-compatible for section-07 to extend.
+- **`runBinary` helper added**: Tests use async `spawn` instead of `spawnSync` because `spawnSync` blocks the Node.js event loop, preventing in-process mock HTTP servers from handling requests. This is documented in the helper's JSDoc.
+- **`CWD with no git` test strengthened**: Added `expect(result.stdout).toContain('DevNeural Context for')` to verify the API was actually called with the fallback identity.
