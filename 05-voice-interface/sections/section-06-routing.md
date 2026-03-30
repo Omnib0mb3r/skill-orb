@@ -194,4 +194,15 @@ export function resolveLabel(
 - [ ] All 6 intent cases handled in `executeIntentRequest`
 - [ ] `fetchWithTimeout` returns null on network failure, timeout, and non-200 status
 - [ ] `resolveLabel` is case-insensitive and exported for direct testing
-- [ ] `npm test` passes in `05-voice-interface/`
+- [x] `npm test` passes in `05-voice-interface/`
+
+---
+
+## Implementation Notes (Actual)
+
+**Files created:**
+- `05-voice-interface/src/routing/api-client.ts`
+- `05-voice-interface/src/routing/intent-map.ts`
+- `05-voice-interface/tests/routing/intent-map.test.ts`
+
+**Notes:** Implemented per plan. `fetchWithTimeout` uses `AbortSignal.timeout()`. `resolveLabel` is case-insensitive. `get_top_skills` always uses `limit=100`. Two-request flow for `get_connections` (with nodeName) and `get_node`. `unknown` intent returns null immediately. **17 tests, all passing.**

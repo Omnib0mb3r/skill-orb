@@ -13,6 +13,7 @@ import type { InMemoryGraph, WeightsFile, ProjectRegistry } from './graph/types.
 import { getFullGraph } from './graph/queries.js';
 import { registerGraphRoutes } from './routes/graph.js';
 import { registerEventsRoutes } from './routes/events.js';
+import { registerVoiceRoutes } from './routes/voice.js';
 import { setWss, broadcast } from './ws/broadcaster.js';
 import { startWatchers, stopWatchers, getEventBuffer } from './watcher/index.js';
 
@@ -44,6 +45,7 @@ export async function createServer(config: ServerConfig): Promise<{
   // Register REST routes (closures over graph reference for live reads)
   registerGraphRoutes(fastify, () => graph);
   registerEventsRoutes(fastify, getEventBuffer);
+  registerVoiceRoutes(fastify, broadcast);
 
   // Register WebSocket route — send snapshot directly to the connecting client only
   fastify.get('/ws', { websocket: true }, (socket) => {

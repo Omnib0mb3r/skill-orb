@@ -184,8 +184,15 @@ These behaviors are specified here so the renderer implementation in section-10 
 
 ## Implementation Checklist
 
-1. Extend `src/types.ts` with the three new voice event variants on `WsMessage`.
-2. Create `src/ws/handlers.ts` with the `SceneRef` interface and five handler functions.
-3. Create `src/ws/client.ts` with reconnect backoff, `pendingSnapshot` buffer, and the `connect()` function.
-4. Write `tests/ws/handlers.test.ts` with `vi.mock('three')` and tests for all eight test cases listed above.
-5. Verify `npm test` passes in `03-web-app/`.
+1. Extend `src/types.ts` with the three new voice event variants on `WsMessage`. — done
+2. Create `src/ws/handlers.ts` with the `SceneRef` interface and five handler functions. — done
+3. Create `src/ws/client.ts` with reconnect backoff, `pendingSnapshot` buffer, and the `connect()` function. — done
+4. Write `tests/ws/handlers.test.ts` with `vi.mock('three')` and tests for all eight test cases listed above. — done (9 tests)
+5. Verify `npm test` passes in `03-web-app/`. — done (142/142)
+
+## Implementation Deviations
+
+- `connect()` returns `ConnectionHandle { applyPendingSnapshot }` instead of `void` — moves all mutable state (`reconnectDelay`, `pendingSnapshot`) into the closure per-connection, eliminating test contamination from module singletons.
+- `SceneRef` adds `resetCamera()` method — required by the plan's "camera returns to auto-orbit on voice:clear" spec; `handleVoiceClear` calls both `clearHighlights()` and `resetCamera()`.
+- `ConnectionNewPayload` derived from `WsMessage` union via `Extract<...>['payload']` — keeps types synchronized automatically.
+- `ws.onerror = () => {}` added — silences browser console errors on refused connections.

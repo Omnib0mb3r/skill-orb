@@ -250,3 +250,17 @@ Before marking this section complete:
 2. `npm run build` (`tsc`) produces a `dist/` directory with `dist/intent/types.js`, `dist/intent/types.d.ts`, `dist/identity/index.js`, `dist/identity/index.d.ts`.
 3. `npm test` passes both test files (`types.test.ts`, `identity.test.ts`).
 4. The `natural` package version installed is CommonJS-compatible (`require('natural')` works in a quick Node REPL check). If it is not, pin to `natural@6.12.0` in `package.json` and reinstall.
+
+## Implementation Notes (Actual)
+
+**Files created:**
+- `package.json` — `@types/natural` updated to `^6.0.1` (spec listed `^5.1.6` which does not exist on npm)
+- `tsconfig.json`, `vitest.config.ts` — match spec exactly
+- `src/intent/types.ts` — matches spec exactly
+- `src/identity/index.ts` — uses `../../../01-data-layer/...` (3 levels up, not 2 as in spec) because file is at `src/identity/index.ts` not `src/identity.ts`; also exports `ProjectSource` to match `04-session-intelligence` pattern
+
+**Deviations:**
+- Identity import path depth corrected: spec assumed flat `src/identity.ts` but file is `src/identity/index.ts`
+- `@types/natural@^6.0.1` used (only available version)
+
+**Test count:** 6 tests, all passing. Build: clean.

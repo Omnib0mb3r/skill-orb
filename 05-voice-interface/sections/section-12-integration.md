@@ -1,4 +1,4 @@
-# Section 12: Integration
+# Section 12: Integration [IMPLEMENTED]
 
 ## Overview
 
@@ -15,17 +15,28 @@ Tests run in **both** `03-web-app/` (interaction, HUD unit tests) and `05-voice-
 
 ---
 
-## Files to Create
+## Files Created/Modified
 
 ```
-03-web-app/src/orb/interaction.ts
-03-web-app/src/ui/hud.ts
-03-web-app/src/main.ts
-03-web-app/public/index.html
-03-web-app/tests/orb/interaction.test.ts
-03-web-app/tests/ui/hud.test.ts
-05-voice-interface/tests/e2e.test.ts
+03-web-app/src/orb/interaction.ts          (new)
+03-web-app/src/ui/hud.ts                   (new)
+03-web-app/src/main.ts                     (replaced old webview-based implementation)
+03-web-app/index.html                      (already existed at project root — Vite default location)
+03-web-app/tests/orb/interaction.test.ts   (new — 13 tests)
+03-web-app/tests/ui/hud.test.ts            (new — 7 tests, jsdom environment)
+05-voice-interface/src/formatter/orb-events.ts  (modified — added AbortSignal.timeout(5000))
+05-voice-interface/src/index.ts            (modified — await sendOrbEvents; send voice:clear on clarification)
+05-voice-interface/tests/e2e.test.ts       (new — 14 tests, async spawn pattern)
 ```
+
+**Deviations from plan:**
+- `public/index.html` → actual path is `03-web-app/index.html` (Vite root convention, not public/)
+- `getTopConnections(node, edges: OrbEdge[], limit)` uses flat edge array instead of `GraphData` — simpler and more composable; not called in production code
+- `main.ts` adapted to actual section-10/11 exported APIs (`connect()`, `SceneRef`, no `buildHandlers` factory, no `animate` export)
+- HUD controller created but not wired to WS events (WS handler API doesn't expose HUD callback points without deeper changes to section-11)
+- e2e tests use async `spawn` instead of `spawnSync` — `spawnSync` blocks the Node.js event loop, preventing the in-process mock HTTP server from responding to the subprocess
+- `voice:clear` event now sent for clarification/unknown intent (fix to original design — plan intended this, implementation missed it)
+- Raycasting uses `canvas.getBoundingClientRect()` instead of `window.innerWidth/Height` for correctness in non-fullscreen contexts
 
 ---
 

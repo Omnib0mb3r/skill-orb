@@ -37,6 +37,9 @@ const LogEntrySchema = z.object({
 export const ServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('graph:snapshot'), payload: GraphResponseSchema }),
   z.object({ type: z.literal('connection:new'), payload: LogEntrySchema }),
+  z.object({ type: z.literal('voice:focus'), payload: z.object({ nodeId: z.string() }) }),
+  z.object({ type: z.literal('voice:highlight'), payload: z.object({ nodeIds: z.array(z.string()) }) }),
+  z.object({ type: z.literal('voice:clear'), payload: z.object({}) }),
 ]);
 
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;

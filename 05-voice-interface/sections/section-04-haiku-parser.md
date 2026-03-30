@@ -158,3 +158,27 @@ The model is instructed to return confidence between 0 and 1, and the Zod schema
 - Model: `claude-haiku-4-5` — do not substitute
 - `source` field is NOT in the Zod schema; added after parsing
 - No confidence thresholding in this module — that is section-05's responsibility
+
+---
+
+## Implementation Notes (Actual)
+
+**Files created:**
+- `05-voice-interface/src/intent/haiku-parser.ts`
+- `05-voice-interface/tests/intent/haiku-parser.test.ts`
+
+**Deviations from plan:**
+
+1. **`messages.create()` used instead of `messages.parse()`.** SDK v0.24.3 has no `messages.parse()` method. The implementation uses `messages.create()` + `JSON.parse()` + `IntentResultSchema.parse()`. A comment in the source documents this workaround.
+
+2. **`import type` used for IntentResult.** TypeScript interface-only import uses `import type`.
+
+3. **Catch block distinguishes ZodError from SyntaxError** for better operational diagnostics.
+
+4. **System prompt updated** to show populated entities examples (nodeName, stageFilter, limit) to bias the model toward extraction.
+
+5. **Tests use `vi.hoisted()`** for the mock function to avoid Vitest hoisting issues.
+
+**UNREACHABLE_RESULT note for section-05:** Object identity check (`result === UNREACHABLE_RESULT`) requires importing the real constant. Do NOT substitute a Symbol mock — import `UNREACHABLE_RESULT` from `../intent/haiku-parser` in section-05's tests.
+
+**Final test count:** 14 tests (2 SDK params, 3 success paths, 4 error paths, 4 Zod enforcement + entities)

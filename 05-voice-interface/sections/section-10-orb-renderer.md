@@ -241,9 +241,17 @@ No changes to `package.json` are needed — `three` and `@types/three` are alrea
 
 ## File Checklist
 
-- `C:\dev\tools\DevNeural\03-web-app\src\orb\renderer.ts` — create
-- `C:\dev\tools\DevNeural\03-web-app\src\orb\physics.ts` — create
-- `C:\dev\tools\DevNeural\03-web-app\src\graph\builder.ts` — create
-- `C:\dev\tools\DevNeural\03-web-app\tests\graph\builder.test.ts` — create
-- `C:\dev\tools\DevNeural\03-web-app\tests\orb\physics.test.ts` — create
-- `C:\dev\tools\DevNeural\03-web-app\tests\orb\renderer.test.ts` — create
+- `C:\dev\tools\DevNeural\03-web-app\src\orb\renderer.ts` — created
+- `C:\dev\tools\DevNeural\03-web-app\src\orb\physics.ts` — created
+- `C:\dev\tools\DevNeural\03-web-app\src\graph\builder.ts` — created
+- `C:\dev\tools\DevNeural\03-web-app\tests\graph\builder.test.ts` — created (12 tests)
+- `C:\dev\tools\DevNeural\03-web-app\tests\orb\physics.test.ts` — created (6 tests)
+- `C:\dev\tools\DevNeural\03-web-app\tests\orb\renderer.test.ts` — created (5 tests)
+
+## Implementation Deviations
+
+- `GraphNode.type` is optional (`type?: NodeType`) to support the plan's id-prefix fallback for real-world API data.
+- `build()` returns `BuildResult` (extends `SceneState`) rather than plain `SceneState`; adds `meshes`, `edgeMeshes`, `simulation` fields needed by section-12.
+- `mesh.position` (Three.js `Vector3`) is used directly as `PhysicsNode.position` so physics mutations immediately affect the rendered mesh.
+- `createSimulation` pre-builds a `Map<string, PhysicsNode>` for O(1) spring-force lookups instead of O(N) `find`.
+- Factory form `vi.mock('three', () => ({...}))` used in tests to provide position mocks; physics tests have no Three.js mock.

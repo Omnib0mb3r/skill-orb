@@ -154,3 +154,29 @@ Import the mocks and call `.mockResolvedValue()` / `.mockReturnValue()` within e
 **No side effects:** `parser.ts` orchestrates but does not make HTTP calls, read files, or modify state. All side effects happen downstream in sections 06–08.
 
 **Entity extraction:** The local parser (section 03) returns `entities: {}` (empty). The Haiku parser (section 04) may return populated entities if the model extracts them. The pipeline passes through whichever result's entities to the caller — no additional entity extraction here.
+
+---
+
+## Implementation Notes (Actual)
+
+**Files created:**
+- `05-voice-interface/src/intent/parser.ts`
+- `05-voice-interface/tests/intent/parser.test.ts`
+
+**Deviations from plan:**
+
+1. **`await parseLocalIntent(query)` used** despite current synchronous implementation. Plan specified it may be async; `await` is a no-op on sync return values but future-proofs the pipeline.
+
+2. **`parseWithHaiku` wrapped in try/catch** for defense against unexpected throws (parseWithHaiku should never throw per its contract but the contract is external).
+
+3. **Null fallback `base` uses `source: 'haiku'`** (not `'local'`) to reflect the last attempted parser when neither succeeded.
+
+4. **Tests use `vi.importActual`** to get the real `UNREACHABLE_RESULT` frozen object. This ensures the `===` identity check in the pipeline is tested against the actual exported sentinel, not a Symbol mock.
+
+5. **Confidence gate boundary tests added** at exactly 0.74 (Haiku called) and 0.75 (Haiku not called).
+
+6. **parseWithHaiku throw test added** to verify pipeline survives unexpected rejections.
+
+7. **Empty query test added** — voice transcription can produce empty strings.
+
+**Final test count:** 17 tests

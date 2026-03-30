@@ -30,6 +30,9 @@ export type WsMessage =
       payload: Pick<GraphEdge, 'id' | 'source' | 'target' | 'connection_type'> & {
         timestamp: string;
       };
-    };
+    }
+  | { type: 'voice:focus'; payload: { nodeId: string } }
+  | { type: 'voice:highlight'; payload: { nodeIds: string[] } }
+  | { type: 'voice:clear'; payload: Record<string, never> };
 
 export type CachedSnapshot = GraphSnapshot; // edges already capped to 500

@@ -164,6 +164,21 @@ The user invokes as: `/voice what skills am I using most?`
 
 ---
 
+## Implementation Notes
+
+**Files created:**
+- `05-voice-interface/src/index.ts` — main pipeline orchestrator
+- `05-voice-interface/tests/entry-point.test.ts` — 7 subprocess tests
+- `.claude/commands/voice.md` — `/voice` skill definition (portable path)
+
+**Deviations from plan:**
+- `unreachable` wrapper now guarded by `apiResult !== null` to prevent stacked contradictory messages (review fix).
+- `voice.md` uses `$(dirname ...)` portable expansion rather than hardcoded absolute path (review fix).
+- `NO_MARKDOWN` regex in tests expanded to include `_>|` characters.
+- Added 1 extra test: verifies `unreachable+null` does NOT produce compound message.
+
+**Final test count:** 100 total (7 entry-point, 93 prior)
+
 ## Checklist
 
 1. Run `npm run build` in `05-voice-interface/` — `dist/index.js` emitted
