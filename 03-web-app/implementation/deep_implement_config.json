@@ -22,6 +22,14 @@
     "section-02-animation": {
       "status": "complete",
       "commit_hash": "b7fb107"
+    },
+    "section-03-camera-hud": {
+      "status": "complete",
+      "commit_hash": "8934242"
+    },
+    "section-04-node-actions": {
+      "status": "complete",
+      "commit_hash": "9ce8a84"
     }
   },
   "pre_commit": {
