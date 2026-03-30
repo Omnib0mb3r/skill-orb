@@ -192,3 +192,12 @@ afterEach(() => {
 Build a minimal `ObsidianSyncConfig` stub for each test — only populate the fields `writeSessionEntry` actually reads: `vault_path`, `notes_subfolder`, and `prepend_sessions`. Point `vault_path` at `tmpDir`.
 
 Build a minimal `SessionSummary` stub with at least `date` and `project` populated.
+
+## Implementation Notes
+
+- Files created: `src/obsidian/writer.ts`, `tests/writer.test.ts`
+- All 49 tests pass
+- `removeSessionBlock`: removes session heading → `---` (inclusive) + trailing blank; correct for multi-session files
+- Append mode: `content.endsWith('\n') ? content : content + '\n'` guard before appending
+- Known limitation: YAML frontmatter in manually-created files could confuse `---` detection in removeSessionBlock
+- Uses `node:fs` and `node:path` protocol imports (better ESM practice than bare specifiers)
