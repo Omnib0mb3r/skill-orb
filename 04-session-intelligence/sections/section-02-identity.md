@@ -126,9 +126,21 @@ The function is used in both the PostToolUse hook (writes data) and the SessionS
 
 ## TODO List for Implementer
 
-1. Confirm `01-data-layer` is built: check that `C:/dev/tools/DevNeural/01-data-layer/dist/identity/index.js` and `C:/dev/tools/DevNeural/01-data-layer/dist/types.js` exist. If not, run `npm run build` in `C:/dev/tools/DevNeural/01-data-layer/`.
-2. Create `C:/dev/tools/DevNeural/04-session-intelligence/tests/identity.test.ts` with the three test stubs above.
-3. Run `npm test` — confirm tests fail (module not found or import error).
-4. Create `C:/dev/tools/DevNeural/04-session-intelligence/src/identity.ts` with the two re-export lines shown above.
-5. Run `npm test` — confirm all three identity tests pass.
-6. Run `tsc --noEmit` from `C:/dev/tools/DevNeural/04-session-intelligence/` — confirm no TypeScript errors.
+1. [x] Confirm `01-data-layer` is built
+2. [x] Create `tests/identity.test.ts` with three test stubs
+3. [x] Run `npm test` — confirm tests fail (module not found)
+4. [x] Create `src/identity.ts` with the two re-export lines
+5. [x] Run `npm test` — all three pass
+6. [x] Run `tsc --noEmit` — exits 0
+
+## Implementation Notes (Actual)
+
+### Files Created
+- `04-session-intelligence/src/identity.ts` — two re-export lines, exact paths from plan
+- `04-session-intelligence/tests/identity.test.ts` — 3 tests, all pass
+
+### Deviations from Plan
+- Test 2: replaced hardcoded `'C:/dev/tools/DevNeural'` with `path.resolve(__dirname, '../../')` for portability
+- Test 2: assertion changed from `toContain(['git-remote', 'git-root', 'cwd'])` to `not.toBe('cwd')` — stricter
+- Test 3: replaced `fs.rmdirSync` (deprecated) with `fs.rmSync({ recursive: true, force: true })`
+- Test 3: strengthened `result.id` assertion to verify exact normalized path form
