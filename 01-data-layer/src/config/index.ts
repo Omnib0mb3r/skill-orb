@@ -3,7 +3,7 @@ import * as path from 'path';
 import type { Config } from '../types';
 
 const DEFAULT_DATA_ROOT = 'C:/dev/data/skill-connections';
-const DEFAULT_ALLOWLIST = ['Bash', 'Write', 'Edit', 'Agent'];
+const DEFAULT_ALLOWLIST = ['Bash', 'Write', 'Edit', 'Agent', 'Skill'];
 
 /**
  * Loads config from <dataRoot>/config.json and merges with defaults.

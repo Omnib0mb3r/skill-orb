@@ -115,17 +115,30 @@ export async function deriveConnections(
   payload: HookPayload,
   identity: ProjectIdentity,
 ): Promise<DerivedConnection[]> {
-  const primary: DerivedConnection = payload.tool_name === 'Agent'
-    ? {
-        connectionType: 'project->skill',
-        sourceNode: `project:${identity.id}`,
-        targetNode: `skill:${extractSkillName(payload.tool_input)}`,
-      }
-    : {
-        connectionType: 'project->tool',
-        sourceNode: `project:${identity.id}`,
-        targetNode: `tool:${payload.tool_name}`,
-      };
+  let primary: DerivedConnection;
+  if (payload.tool_name === 'Agent') {
+    primary = {
+      connectionType: 'project->skill',
+      sourceNode: `project:${identity.id}`,
+      targetNode: `skill:${extractSkillName(payload.tool_input)}`,
+    };
+  } else if (payload.tool_name === 'Skill') {
+    // Skill tool: tool_input.skill holds the skill name (e.g. "autolisp")
+    const skillName = typeof payload.tool_input['skill'] === 'string'
+      ? payload.tool_input['skill']
+      : 'unknown-skill';
+    primary = {
+      connectionType: 'project->skill',
+      sourceNode: `project:${identity.id}`,
+      targetNode: `skill:${skillName}`,
+    };
+  } else {
+    primary = {
+      connectionType: 'project->tool',
+      sourceNode: `project:${identity.id}`,
+      targetNode: `tool:${payload.tool_name}`,
+    };
+  }
 
   try {
     const secondary = await extractProjectRefs(payload, identity);
