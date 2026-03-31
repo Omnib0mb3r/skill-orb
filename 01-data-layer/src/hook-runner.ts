@@ -21,7 +21,7 @@ const SKILL_STOP = new Set([
   'right-click', 'left-click', 'double-click', 'error-prone', 'first-class',
 ]);
 
-const ABS_PATH_RE = /(?:[A-Za-z]:[/\\]\S*|\/\S+)/g;
+const ABS_PATH_RE = /(?:[A-Za-z]:[/\\][^\s"']*|\/[^\s"']+)/g;
 const URL_RE = /(?:https?:\/\/[^\s]+|git@[^\s]+)(?<![.,;:)\]'"<>])/g;
 
 /** Extracts a skill name from an Agent tool invocation's tool_input.

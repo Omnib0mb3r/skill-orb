@@ -49,7 +49,8 @@ export function createSimulation(nodes: PhysicsNode[], edges: PhysicsEdge[]): Si
         const dy = target.position.y - source.position.y;
         const dz = target.position.z - source.position.z;
         const dist = Math.max(Math.sqrt(dx * dx + dy * dy + dz * dz), 0.1);
-        const force = (dist - REST_LENGTH) * SPRING_STRENGTH * edge.weight;
+        const restLength = REST_LENGTH / Math.sqrt(edge.weight + 1);
+        const force = (dist - restLength) * SPRING_STRENGTH * edge.weight;
 
         source.velocity.x += (dx / dist) * force;
         source.velocity.y += (dy / dist) * force;

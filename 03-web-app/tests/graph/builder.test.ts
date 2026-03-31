@@ -95,9 +95,8 @@ describe('build(graphData)', () => {
     expect(matArgs.color).toBe(getMaterialForNodeType('tool').color);
   });
 
-  it('edges: LineBasicMaterial opacity is based on node degree, not raw weight', () => {
-    // Both edges connect the same two nodes — both have degree 2 (max).
-    // So both get colorWeight=1.0 regardless of their raw weight values.
+  it('edges: opacity based on degree — both edges have degree 2 (max), both get colorWeight=1.0', () => {
+    // Both nodes have degree 2 (each appears in 2 edges). skillNode is skill endpoint → degree 2.
     const data: GraphData = {
       nodes: [projectNode, skillNode],
       edges: [
@@ -109,8 +108,8 @@ describe('build(graphData)', () => {
     const ops = vi.mocked(THREE.LineBasicMaterial).mock.calls.map(
       c => (c[0] as { opacity: number }).opacity,
     );
-    expect(ops[0]).toBeCloseTo(ops[1], 5);
     expect(ops[0]).toBeCloseTo(getEdgeOpacity(1.0), 5);
+    expect(ops[1]).toBeCloseTo(getEdgeOpacity(1.0), 5);
   });
 
   it('edge with weight=0 → opacity ≥ minimum threshold (not zero)', () => {
@@ -134,28 +133,10 @@ describe('build(graphData)', () => {
     expect(op).toBeLessThanOrEqual(1.0);
   });
 
-  it('edge color uses skill/tool degree, not project degree', () => {
-    // projectNode connects to 2 skills → project degree=2, but that doesn't matter
-    // skillNode and toolNode each connect to 1 project → skill/tool degree=1
-    // maxSkillDegree=1, so both edges get normalized=1.0 → colorWeight=1.0
-    const data: GraphData = {
-      nodes: [projectNode, skillNode, toolNode],
-      edges: [
-        { sourceId: projectNode.id, targetId: skillNode.id, weight: 3 },
-        { sourceId: projectNode.id, targetId: toolNode.id, weight: 10 },
-      ],
-    };
-    build(data, makeScene());
-    const ops = vi.mocked(THREE.LineBasicMaterial).mock.calls.map(
-      c => (c[0] as { opacity: number }).opacity,
-    );
-    expect(ops[0]).toBeCloseTo(getEdgeOpacity(1.0), 5);
-    expect(ops[1]).toBeCloseTo(getEdgeOpacity(1.0), 5);
-  });
-
-  it('skill used by 2 projects gets hotter edge than skill used by 1', () => {
-    // skillNode connected to 2 projects → degree 2 → max → colorWeight=1.0
-    // toolNode connected to 1 project → degree 1 → normalized=0.5 → colorWeight=0.625
+  it('skill with 2 connections gets hotter edge than skill with 1 connection', () => {
+    // skillNode used by 2 projects → degree 2 (max) → colorWeight=1.0
+    // toolNode used by 1 project → degree 1, maxColorDegree=2 → normalized=0.5 → colorWeight=MIN+0.5*(1-MIN)
+    const MIN = 0.35;
     const project2 = { id: 'project:qux', label: 'Qux', type: 'project' as const };
     const data: GraphData = {
       nodes: [projectNode, project2, skillNode, toolNode],
@@ -169,12 +150,41 @@ describe('build(graphData)', () => {
     const ops = vi.mocked(THREE.LineBasicMaterial).mock.calls.map(
       c => (c[0] as { opacity: number }).opacity,
     );
-    // edges 0 and 1 → skillNode degree=2 (max) → colorWeight=1.0
     expect(ops[0]).toBeCloseTo(getEdgeOpacity(1.0), 5);
     expect(ops[1]).toBeCloseTo(getEdgeOpacity(1.0), 5);
-    // edge 2 → toolNode degree=1, maxSkillDegree=2 → normalized=0.5 → colorWeight=0.625
-    expect(ops[2]).toBeCloseTo(getEdgeOpacity(0.25 + 0.5 * 0.75), 5);
+    expect(ops[2]).toBeCloseTo(getEdgeOpacity(MIN + 0.5 * (1 - MIN)), 5);
     expect(ops[0]).toBeGreaterThan(ops[2]);
+  });
+
+  it('P→P edges use P→P-only degree; skill connections on same project do not inflate it', () => {
+    // skill used by 3 projects → skillDegree=3 (max) → skill edges colorWeight=1.0
+    // P→P pair each have ppDegree=1, maxPPDegree=1, maxColorDegree=3
+    // → P→P edges normalized=1/3 → cooler than the widely-used skill
+    const MIN = 0.35;
+    const project2 = { id: 'project:qux',  label: 'Qux',  type: 'project' as const };
+    const project3 = { id: 'project:quux', label: 'Quux', type: 'project' as const };
+    const project4 = { id: 'project:r',    label: 'R',    type: 'project' as const };
+    const project5 = { id: 'project:s',    label: 'S',    type: 'project' as const };
+    const data: GraphData = {
+      nodes: [project2, project3, project4, project5, skillNode],
+      edges: [
+        { sourceId: project2.id, targetId: skillNode.id, weight: 1 }, // skillDegree=3
+        { sourceId: project3.id, targetId: skillNode.id, weight: 1 },
+        { sourceId: project4.id, targetId: skillNode.id, weight: 1 },
+        { sourceId: project4.id, targetId: project5.id,  weight: 1 }, // ppDegree=1 each
+      ],
+    };
+    build(data, makeScene());
+    const ops = vi.mocked(THREE.LineBasicMaterial).mock.calls.map(
+      c => (c[0] as { opacity: number }).opacity,
+    );
+    // skill edges: skillDegree=3=max → colorWeight=1.0
+    expect(ops[0]).toBeCloseTo(getEdgeOpacity(1.0), 5);
+    expect(ops[1]).toBeCloseTo(getEdgeOpacity(1.0), 5);
+    expect(ops[2]).toBeCloseTo(getEdgeOpacity(1.0), 5);
+    // P→P edge: ppDegree=1, maxColorDegree=3 → normalized=1/3
+    expect(ops[3]).toBeCloseTo(getEdgeOpacity(MIN + (1 / 3) * (1 - MIN)), 5);
+    expect(ops[0]).toBeGreaterThan(ops[3]);
   });
 
   it('build() called with empty graph → no Three.js constructors called, no errors', () => {
