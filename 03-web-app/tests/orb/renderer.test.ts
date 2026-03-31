@@ -1,5 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('three/examples/jsm/controls/OrbitControls.js', () => ({
+  OrbitControls: vi.fn(() => ({
+    enableDamping: false,
+    dampingFactor: 0,
+    minDistance: 0,
+    maxDistance: 0,
+    update: vi.fn(),
+    reset: vi.fn(),
+  })),
+}));
+
 vi.mock('three', () => ({
   WebGLRenderer: vi.fn(() => ({
     setPixelRatio: vi.fn(),

@@ -20,11 +20,14 @@ export interface Simulation {
 const REST_LENGTH = 3;
 const SPRING_STRENGTH = 0.02;
 const REPULSION_STRENGTH = 50;
-const DAMPING = 0.85;
-const VELOCITY_THRESHOLD = 0.001;
+const DAMPING = 0.80;
+const VELOCITY_THRESHOLD = 0.005;
+const CENTER_STRENGTH = 0.008; // gentle pull to origin; prevents edgeless nodes drifting to infinity
+const MAX_TICKS = 600;         // hard-stop after ~10s at 60fps regardless of velocity
 
 export function createSimulation(nodes: PhysicsNode[], edges: PhysicsEdge[]): Simulation {
   let _cooled = false;
+  let _tickCount = 0;
 
   // Pre-build O(1) lookup for spring force calculations
   const nodeMap = new Map<string, PhysicsNode>(nodes.map(n => [n.id, n]));
@@ -34,6 +37,7 @@ export function createSimulation(nodes: PhysicsNode[], edges: PhysicsEdge[]): Si
 
     tick() {
       if (_cooled) return;
+      if (++_tickCount >= MAX_TICKS) { _cooled = true; return; }
 
       // Spring forces (attraction along edges)
       for (const edge of edges) {
@@ -45,7 +49,8 @@ export function createSimulation(nodes: PhysicsNode[], edges: PhysicsEdge[]): Si
         const dy = target.position.y - source.position.y;
         const dz = target.position.z - source.position.z;
         const dist = Math.max(Math.sqrt(dx * dx + dy * dy + dz * dz), 0.1);
-        const force = (dist - REST_LENGTH) * SPRING_STRENGTH * edge.weight;
+        const restLength = REST_LENGTH / Math.sqrt(edge.weight + 1);
+        const force = (dist - restLength) * SPRING_STRENGTH * edge.weight;
 
         source.velocity.x += (dx / dist) * force;
         source.velocity.y += (dy / dist) * force;
@@ -75,6 +80,13 @@ export function createSimulation(nodes: PhysicsNode[], edges: PhysicsEdge[]): Si
           b.velocity.y += fy;
           b.velocity.z += fz;
         }
+      }
+
+      // Centering force — pulls all nodes gently toward origin
+      for (const node of nodes) {
+        node.velocity.x -= node.position.x * CENTER_STRENGTH;
+        node.velocity.y -= node.position.y * CENTER_STRENGTH;
+        node.velocity.z -= node.position.z * CENTER_STRENGTH;
       }
 
       // Apply damping, update positions, check cooldown
@@ -112,6 +124,7 @@ export function createSimulation(nodes: PhysicsNode[], edges: PhysicsEdge[]): Si
 
     reset() {
       _cooled = false;
+      _tickCount = 0;
       for (const node of nodes) {
         node.velocity.x = 0;
         node.velocity.y = 0;

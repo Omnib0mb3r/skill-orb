@@ -7,9 +7,9 @@ import { createTempDir, removeTempDir } from './helpers/tempDir.js';
 
 const fixtureWeights = {
   connections: {
-    'project:test-project||tool:test-tool': {
-      source_node: 'project:test-project',
-      target_node: 'tool:test-tool',
+    'project:github.com/user/test-project||tool:Agent': {
+      source_node: 'project:github.com/user/test-project',
+      target_node: 'tool:Agent',
       connection_type: 'project->tool',
       raw_count: 3,
       weight: 0.75,

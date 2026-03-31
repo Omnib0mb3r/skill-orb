@@ -39,21 +39,21 @@ function lerpColor(a: number, b: number, t: number): number {
 }
 
 /**
- * Map edge weight to a cool→warm color gradient.
- * Handles both 0–1 and 0–10 weight ranges.
+ * Map a normalized edge weight [0,1] to a cool→warm color gradient.
+ * Callers must pre-normalize relative to the graph's max weight.
  * Weak = deep blue, Medium = cyan, Strong = hot orange-red.
  */
-export function getEdgeColor(weight: number): number {
-  const w = Math.max(0, Math.min(1, weight > 1 ? weight / 10 : weight));
+export function getEdgeColor(normalizedWeight: number): number {
+  const w = Math.max(0, Math.min(1, normalizedWeight));
   if (w < 0.25) return lerpColor(0x0d1f5c, 0x1a5faa, w / 0.25);
   if (w < 0.5)  return lerpColor(0x1a5faa, 0x22bbcc, (w - 0.25) / 0.25);
   if (w < 0.75) return lerpColor(0x22bbcc, 0xeecc22, (w - 0.5)  / 0.25);
   return              lerpColor(0xeecc22, 0xff4411, (w - 0.75) / 0.25);
 }
 
-export function getEdgeOpacity(weight: number): number {
-  const w = Math.max(0, Math.min(1, weight > 1 ? weight / 10 : weight));
-  return Math.max(0.15, w * 0.9);
+export function getEdgeOpacity(normalizedWeight: number): number {
+  const w = Math.max(0, Math.min(1, normalizedWeight));
+  return Math.max(0.38, w * 0.85);
 }
 
 export const defaultMaterialConfig: MaterialConfig = {

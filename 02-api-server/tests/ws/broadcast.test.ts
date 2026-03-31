@@ -10,9 +10,9 @@ import type { WeightsFile } from '../../src/graph/types.js';
 
 const fixtureWeights: WeightsFile = {
   connections: {
-    'project:repo||tool:Edit': {
-      source_node: 'project:repo',
-      target_node: 'tool:Edit',
+    'project:github.com/user/repo||tool:Agent': {
+      source_node: 'project:github.com/user/repo',
+      target_node: 'tool:Agent',
       connection_type: 'project->tool',
       raw_count: 3,
       weight: 0.9,

@@ -22,7 +22,7 @@ export interface OrbEdge {
   sourceId: string;
   /** Target node ID. */
   targetId: string;
-  /** Connection weight in range 0.0–10.0. */
+  /** Normalized color weight in range 0.0–1.0 (relative to max edge weight in graph). */
   weight: number;
 }
 

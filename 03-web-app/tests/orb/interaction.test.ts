@@ -84,10 +84,10 @@ describe('onHover', () => {
 
     onHover(null, state);
 
-    expect(mat.opacity).toBe(0.9);
+    expect(mat.opacity).toBe(0.92); // getMaterialForNodeType('skill').opacity
   });
 
-  it('onHover(null) after hover → emissiveIntensity restored to default 0.1', () => {
+  it('onHover(null) after hover → emissiveIntensity restored to default 0.15', () => {
     const state = makeState(['a']);
     const node = state.nodes.get('a')!;
     const mat = state.meshes.get('a')!.material as unknown as { opacity: number; emissiveIntensity: number };
@@ -95,7 +95,7 @@ describe('onHover', () => {
     onHover(node, state);
     onHover(null, state);
 
-    expect(mat.emissiveIntensity).toBe(0.1);
+    expect(mat.emissiveIntensity).toBe(0.15); // getMaterialForNodeType('skill').emissiveIntensity
   });
 
   it('hovering a new node restores the previously hovered node', () => {
@@ -108,7 +108,7 @@ describe('onHover', () => {
     expect(matA.opacity).toBe(1.0);
 
     onHover(nodeB, state); // hover b, should restore a
-    expect(matA.opacity).toBe(0.9);
+    expect(matA.opacity).toBe(0.92); // getMaterialForNodeType('skill').opacity
   });
 });
 

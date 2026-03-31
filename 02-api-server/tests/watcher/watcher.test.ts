@@ -23,18 +23,18 @@ const fixtureWeights: WeightsFile = {
   schema_version: 1,
   updated_at: '2024-01-02T00:00:00.000Z',
   connections: {
-    'project:github.com/user/repo||tool:Read': {
+    'project:github.com/user/repo||tool:Agent': {
       source_node: 'project:github.com/user/repo',
-      target_node: 'tool:Read',
+      target_node: 'tool:Agent',
       connection_type: 'project->tool',
       raw_count: 5,
       weight: 0.8,
       first_seen: '2024-01-01T00:00:00.000Z',
       last_seen: '2024-01-02T00:00:00.000Z',
     },
-    'project:github.com/user/repo||tool:Write': {
+    'project:github.com/user/repo||tool:WebSearch': {
       source_node: 'project:github.com/user/repo',
-      target_node: 'tool:Write',
+      target_node: 'tool:WebSearch',
       connection_type: 'project->tool',
       raw_count: 3,
       weight: 0.5,

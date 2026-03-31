@@ -29,9 +29,9 @@ export interface BuildResult extends SceneState {
 }
 
 const NODE_RADII: Record<NodeType, number> = {
-  project: 0.65,
-  skill: 0.42,
-  tool: 0.35,
+  project: 1.8,
+  skill:   1.2,
+  tool:    0.9,
 };
 
 function inferType(id: string): NodeType {
@@ -94,7 +94,7 @@ export function build(graphData: GraphData, scene: THREE.Scene): BuildResult {
     const material = new THREE.MeshStandardMaterial(materialConfig);
     const mesh = new THREE.Mesh(geometry, material);
 
-    const initPos = randomInSphere(5);
+    const initPos = randomInSphere(10);
     mesh.position.set(initPos.x, initPos.y, initPos.z);
     scene.add(mesh);
     meshMap.set(node.id, mesh);
@@ -123,22 +123,52 @@ export function build(graphData: GraphData, scene: THREE.Scene): BuildResult {
   const orbEdges: OrbEdge[] = [];
   const edgeMeshes: THREE.Line[] = [];
 
+  // Edge color rules:
+  //  - project→skill/tool: use the skill/tool's count of project connections
+  //  - project→project:    use the project's count of P→P connections only
+  //    (skill connections do not inflate a project's P→P color)
+  // Both normalized against the same max so a project with 2 P→P connections
+  // is as warm as a skill used by 2 projects.
+  const MIN_COLOR_WEIGHT = 0.35;
+  const skillDegree = new Map<string, number>();
+  const ppDegree    = new Map<string, number>();
+  for (const edge of graphData.edges) {
+    const isPP = edge.sourceId.startsWith('project:') && edge.targetId.startsWith('project:');
+    if (isPP) {
+      ppDegree.set(edge.sourceId, (ppDegree.get(edge.sourceId) ?? 0) + 1);
+      ppDegree.set(edge.targetId, (ppDegree.get(edge.targetId) ?? 0) + 1);
+    } else {
+      const stId = !edge.targetId.startsWith('project:') ? edge.targetId : edge.sourceId;
+      skillDegree.set(stId, (skillDegree.get(stId) ?? 0) + 1);
+    }
+  }
+  const maxSkillDegree = Math.max(0, ...skillDegree.values());
+  const maxPPDegree    = Math.max(0, ...ppDegree.values());
+  const maxColorDegree = Math.max(maxSkillDegree, maxPPDegree);
+
   for (const edge of graphData.edges) {
     const srcMesh = meshMap.get(edge.sourceId);
     const tgtMesh = meshMap.get(edge.targetId);
     if (!srcMesh || !tgtMesh) continue;
 
+    const isPP = edge.sourceId.startsWith('project:') && edge.targetId.startsWith('project:');
+    const edgeDegree = isPP
+      ? Math.max(ppDegree.get(edge.sourceId) ?? 0, ppDegree.get(edge.targetId) ?? 0)
+      : skillDegree.get(!edge.targetId.startsWith('project:') ? edge.targetId : edge.sourceId) ?? 0;
+    const normalized = maxColorDegree > 0 ? edgeDegree / maxColorDegree : 0;
+    const colorWeight = MIN_COLOR_WEIGHT + normalized * (1 - MIN_COLOR_WEIGHT);
+
     const lineGeo = new THREE.BufferGeometry();
     lineGeo.setFromPoints([srcMesh.position, tgtMesh.position]);
-    const color = getEdgeColor(edge.weight);
-    const opacity = getEdgeOpacity(edge.weight);
+    const color = getEdgeColor(colorWeight);
+    const opacity = getEdgeOpacity(colorWeight);
     const lineMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
     const line = new THREE.Line(lineGeo, lineMat);
     scene.add(line);
     edgeMeshes.push(line);
 
     physicsEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: edge.weight });
-    orbEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: edge.weight });
+    orbEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: colorWeight });
   }
 
   const simulation = createSimulation(physicsNodes, physicsEdges);

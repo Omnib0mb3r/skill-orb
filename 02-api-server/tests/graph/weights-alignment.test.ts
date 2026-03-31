@@ -25,9 +25,9 @@ describe('WeightsFile field-name alignment with data-layer', () => {
       schema_version: 1,
       updated_at: '2026-01-01T00:00:00.000Z',
       connections: {
-        'project:github.com/user/repo||tool:Edit': {
+        'project:github.com/user/repo||tool:Agent': {
           source_node: 'project:github.com/user/repo',
-          target_node: 'tool:Edit',
+          target_node: 'tool:Agent',
           connection_type: 'project->tool',
           raw_count: 5,
           weight: 0.5,
@@ -50,9 +50,9 @@ describe('WeightsFile field-name alignment with data-layer', () => {
       version: '1.0',
       last_updated: '2024-01-01T00:00:00.000Z',
       connections: {
-        'project:a||tool:Bash': {
-          source_node: 'project:a',
-          target_node: 'tool:Bash',
+        'project:github.com/user/repo-a||tool:Agent': {
+          source_node: 'project:github.com/user/repo-a',
+          target_node: 'tool:Agent',
           connection_type: 'project->tool',
           raw_count: 3,
           weight: 0.3,
