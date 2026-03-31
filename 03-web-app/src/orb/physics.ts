@@ -79,6 +79,7 @@ export function createSimulation(nodes: PhysicsNode[], edges: PhysicsEdge[]): Si
 
       // Apply damping, update positions, check cooldown
       let allCooled = true;
+      let cx = 0, cy = 0, cz = 0;
       for (const node of nodes) {
         node.velocity.x *= DAMPING;
         node.velocity.y *= DAMPING;
@@ -86,11 +87,24 @@ export function createSimulation(nodes: PhysicsNode[], edges: PhysicsEdge[]): Si
         node.position.x += node.velocity.x;
         node.position.y += node.velocity.y;
         node.position.z += node.velocity.z;
+        cx += node.position.x;
+        cy += node.position.y;
+        cz += node.position.z;
 
         const speed = Math.sqrt(
           node.velocity.x ** 2 + node.velocity.y ** 2 + node.velocity.z ** 2,
         );
         if (speed >= VELOCITY_THRESHOLD) allCooled = false;
+      }
+
+      // Keep cluster centered at origin
+      if (nodes.length > 0) {
+        cx /= nodes.length; cy /= nodes.length; cz /= nodes.length;
+        for (const node of nodes) {
+          node.position.x -= cx;
+          node.position.y -= cy;
+          node.position.z -= cz;
+        }
       }
 
       if (allCooled) _cooled = true;

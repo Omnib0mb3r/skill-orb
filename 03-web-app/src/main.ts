@@ -82,6 +82,7 @@ function main(): void {
 
     rebuild(snapshot: GraphSnapshot) {
       sceneRef.clear();
+      _didFitCamera = false;
       const result = build(toGraphData(snapshot), scene);
       currentBuild = { ...result, selectedNodeId: null };
       hud.updateCounts({ nodes: snapshot.nodes.length, edges: snapshot.edges.length });
@@ -181,10 +182,28 @@ function main(): void {
 
   let sceneReady = false;
 
+  let _didFitCamera = false;
+
+  function fitCamera(): void {
+    if (!currentBuild) return;
+    let maxR = 0;
+    for (const mesh of currentBuild.meshes.values()) {
+      const r = mesh.position.length();
+      if (r > maxR) maxR = r;
+    }
+    camera.position.set(0, 0, maxR * 0.0002);
+    controls.target.set(0, 0, 0);
+    controls.update();
+  }
+
   function animate(): void {
     requestAnimationFrame(animate);
     if (currentBuild) {
       currentBuild.simulation.tick();
+      if (currentBuild.simulation.isCooled() && !_didFitCamera) {
+        fitCamera();
+        _didFitCamera = true;
+      }
       for (let i = 0; i < currentBuild.edgeMeshes.length; i++) {
         const line = currentBuild.edgeMeshes[i];
         const edge = currentBuild.edges[i];

@@ -17,7 +17,7 @@ export function initRenderer(canvas: HTMLCanvasElement): RendererState {
   scene.background = new THREE.Color(0x0d0d1a);
 
   const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.z = 20;
+  camera.position.z = 40;
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
