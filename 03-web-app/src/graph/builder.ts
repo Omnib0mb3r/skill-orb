@@ -123,22 +123,52 @@ export function build(graphData: GraphData, scene: THREE.Scene): BuildResult {
   const orbEdges: OrbEdge[] = [];
   const edgeMeshes: THREE.Line[] = [];
 
+  // Color edges by how many projects use the skill/tool at the other end.
+  // A skill used by 2 projects is hotter than one used by 1.
+  // We use the skill/tool endpoint's degree, not the project's degree —
+  // otherwise a project with many skills would make all its edges red
+  // regardless of whether each skill is widely used.
+  // Remapped to [MIN_COLOR_WEIGHT, 1.0] so all edges stay visible.
+  // Physics spring forces use the raw weight unchanged.
+  const MIN_COLOR_WEIGHT = 0.25;
+  const degree = new Map<string, number>();
+  for (const edge of graphData.edges) {
+    degree.set(edge.sourceId, (degree.get(edge.sourceId) ?? 0) + 1);
+    degree.set(edge.targetId, (degree.get(edge.targetId) ?? 0) + 1);
+  }
+  // Max degree among skill/tool nodes only
+  const maxSkillDegree = Math.max(0, ...graphData.edges
+    .flatMap(e => [e.sourceId, e.targetId])
+    .filter(id => !id.startsWith('project:'))
+    .map(id => degree.get(id) ?? 0));
+
   for (const edge of graphData.edges) {
     const srcMesh = meshMap.get(edge.sourceId);
     const tgtMesh = meshMap.get(edge.targetId);
     if (!srcMesh || !tgtMesh) continue;
 
+    // Pick the skill/tool endpoint; fall back to max for project→project edges
+    const skillId = !edge.targetId.startsWith('project:') ? edge.targetId
+      : !edge.sourceId.startsWith('project:') ? edge.sourceId
+      : null;
+    const edgeDegree = skillId !== null
+      ? (degree.get(skillId) ?? 0)
+      : Math.max(degree.get(edge.sourceId) ?? 0, degree.get(edge.targetId) ?? 0);
+    const denom = skillId !== null ? maxSkillDegree : Math.max(0, ...degree.values());
+    const normalized = denom > 0 ? edgeDegree / denom : 0;
+    const colorWeight = MIN_COLOR_WEIGHT + normalized * (1 - MIN_COLOR_WEIGHT);
+
     const lineGeo = new THREE.BufferGeometry();
     lineGeo.setFromPoints([srcMesh.position, tgtMesh.position]);
-    const color = getEdgeColor(edge.weight);
-    const opacity = getEdgeOpacity(edge.weight);
+    const color = getEdgeColor(colorWeight);
+    const opacity = getEdgeOpacity(colorWeight);
     const lineMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
     const line = new THREE.Line(lineGeo, lineMat);
     scene.add(line);
     edgeMeshes.push(line);
 
     physicsEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: edge.weight });
-    orbEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: edge.weight });
+    orbEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: colorWeight });
   }
 
   const simulation = createSimulation(physicsNodes, physicsEdges);
