@@ -55,29 +55,35 @@ function clearBuild(scene: THREE.Scene, b: AppState): void {
 
 // ── Camera fit ────────────────────────────────────────────────────────────────
 
+function computeCameraFit(
+  ids: Iterable<string>,
+  meshes: Map<string, THREE.Mesh>,
+): { position: THREE.Vector3; target: THREE.Vector3 } | null {
+  const positions: THREE.Vector3[] = [];
+  for (const id of ids) {
+    const m = meshes.get(id);
+    if (m) positions.push(m.position.clone());
+  }
+  if (positions.length === 0) return null;
+
+  const c = positions.reduce((acc, p) => acc.add(p), new THREE.Vector3()).divideScalar(positions.length);
+  let r = 0;
+  for (const p of positions) r = Math.max(r, c.distanceTo(p));
+  const dist = Math.max(r * 2.8, 14);
+
+  return { position: new THREE.Vector3(c.x, c.y, c.z + dist), target: c };
+}
+
 function fitCameraToIds(
   ids: Iterable<string>,
   meshes: Map<string, THREE.Mesh>,
   camera: THREE.PerspectiveCamera,
   controls: { target: THREE.Vector3; update(): void },
 ): void {
-  const positions: THREE.Vector3[] = [];
-  for (const id of ids) {
-    const m = meshes.get(id);
-    if (m) positions.push(m.position.clone());
-  }
-  if (positions.length === 0) return;
-
-  // Centroid
-  const c = positions.reduce((acc, p) => acc.add(p), new THREE.Vector3()).divideScalar(positions.length);
-
-  // Bounding radius from centroid
-  let r = 0;
-  for (const p of positions) r = Math.max(r, c.distanceTo(p));
-  const dist = Math.max(r * 2.8, 14);
-
-  controls.target.copy(c);
-  camera.position.set(c.x, c.y, c.z + dist);
+  const fit = computeCameraFit(ids, meshes);
+  if (!fit) return;
+  controls.target.copy(fit.target);
+  camera.position.copy(fit.position);
   controls.update();
 }
 
@@ -255,11 +261,11 @@ function main(): void {
     else voice.startListening();
   });
   hud.onReturnToAuto(() => {
-    if (currentBuild && currentBuild.meshes.size > 0) {
-      fitCameraToIds(currentBuild.meshes.keys(), currentBuild.meshes, camera, controls);
-    }
     if (currentBuild) { clearHighlights(currentBuild); currentBuild.selectedNodeId = null; }
-    cameraController.returnToAuto();
+    const fit = currentBuild && currentBuild.meshes.size > 0
+      ? computeCameraFit(currentBuild.meshes.keys(), currentBuild.meshes)
+      : null;
+    cameraController.returnToAuto(fit?.position, fit?.target);
   });
   hud.onSearch(applySearch);
 

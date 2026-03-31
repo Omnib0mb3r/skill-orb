@@ -7,7 +7,7 @@ export interface CameraController {
   readonly state: CameraState;
   onActiveProjectsChanged(nodeIds: string[]): void;
   onUserInteraction(): void;
-  returnToAuto(): void;
+  returnToAuto(overridePos?: THREE.Vector3, overrideTarget?: THREE.Vector3): void;
   focusOnCluster(centroid: THREE.Vector3, radius: number): void;
   tick(deltaMs: number): void;
 }
@@ -86,9 +86,9 @@ export function createCameraController(
       targetLookAt = null;
     },
 
-    returnToAuto(): void {
+    returnToAuto(overridePos?: THREE.Vector3, overrideTarget?: THREE.Vector3): void {
       _state = 'full-sphere';
-      beginTransition(FULL_POS, FULL_TARGET);
+      beginTransition(overridePos ?? FULL_POS, overrideTarget ?? FULL_TARGET);
     },
 
     focusOnCluster(centroid: THREE.Vector3, radius: number): void {
