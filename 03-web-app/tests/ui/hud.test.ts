@@ -8,9 +8,10 @@ describe('initHud', () => {
     document.head.innerHTML = '';
   });
 
-  it('setCounts(12, 30) → body contains both numbers', () => {
+  it('setCounts(3, 12, 30) → body contains all three numbers', () => {
     const hud = initHud();
-    hud.setCounts(12, 30);
+    hud.setCounts(3, 12, 30);
+    expect(document.body.textContent).toContain('3');
     expect(document.body.textContent).toContain('12');
     expect(document.body.textContent).toContain('30');
   });
@@ -19,6 +20,12 @@ describe('initHud', () => {
     const hud = initHud();
     hud.setMatchCount(5);
     expect(document.body.textContent).toContain('5');
+  });
+
+  it('setTopSkill sets the bar label', () => {
+    const hud = initHud();
+    hud.setTopSkill('deep-plan');
+    expect(document.body.textContent).toContain('deep-plan');
   });
 
   it('setMatchCount(0) → shows em-dash placeholder', () => {

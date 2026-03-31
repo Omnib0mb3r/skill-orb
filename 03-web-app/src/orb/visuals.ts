@@ -53,7 +53,7 @@ export function getEdgeColor(weight: number): number {
 
 export function getEdgeOpacity(weight: number): number {
   const w = Math.max(0, Math.min(1, weight > 1 ? weight / 10 : weight));
-  return Math.max(0.15, w * 0.9);
+  return Math.max(0.38, w * 0.85);
 }
 
 export const defaultMaterialConfig: MaterialConfig = {

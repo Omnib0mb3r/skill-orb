@@ -5,19 +5,25 @@ import type { VoiceStatus } from '../../webview/voice';
 
 const HUD_CSS = `
 @keyframes dn-pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-@keyframes dn-scanline {
-  0% { background-position: 0 0; }
-  100% { background-position: 0 4px; }
+@keyframes dn-live-glow {
+  0%,100% { box-shadow: 0 0 6px 1px #44ff88, 0 0 14px 2px #44ff8866; transform: scale(1); }
+  50%      { box-shadow: 0 0 14px 4px #44ff88, 0 0 28px 6px #44ff8844; transform: scale(1.25); }
 }
+@keyframes dn-live-text {
+  0%,100% { opacity: 1; text-shadow: 0 0 8px #44ff88; }
+  50%      { opacity: 0.65; text-shadow: 0 0 2px #44ff88; }
+}
+.dn-status-dot-live { animation: dn-live-glow 1.4s ease-in-out infinite; }
+.dn-bar-live        { animation: dn-live-text 1.4s ease-in-out infinite; color: #44ff88 !important; }
 .dn-panel {
-  background: linear-gradient(160deg,rgba(2,8,24,0.88) 0%,rgba(4,14,40,0.82) 100%);
-  border: 1px solid rgba(60,140,255,0.35);
-  border-radius: 6px;
+  background: linear-gradient(160deg,rgba(2,8,24,0.92) 0%,rgba(4,14,40,0.88) 100%);
+  border: 1px solid rgba(60,140,255,0.4);
+  border-radius: 8px;
   box-shadow:
-    0 0 18px rgba(40,100,255,0.18),
-    inset 0 0 30px rgba(20,60,180,0.08);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+    0 0 32px rgba(40,100,255,0.22),
+    inset 0 0 40px rgba(20,60,180,0.1);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   color: #8ec8ff;
   font-family: 'Courier New', Courier, monospace;
   letter-spacing: 0.05em;
@@ -28,42 +34,42 @@ const HUD_CSS = `
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: repeating-linear-gradient(
     to bottom,
     transparent 0px,
-    transparent 3px,
-    rgba(60,120,255,0.03) 3px,
-    rgba(60,120,255,0.03) 4px
+    transparent 5px,
+    rgba(60,120,255,0.03) 5px,
+    rgba(60,120,255,0.03) 6px
   );
   pointer-events: none;
 }
-.dn-label { color: rgba(100,160,255,0.55); font-size: 10px; text-transform: uppercase; }
-.dn-value { color: #b8daff; font-size: 13px; font-weight: bold; }
+.dn-label { color: rgba(100,160,255,0.6); font-size: 15px; text-transform: uppercase; letter-spacing: 0.1em; }
+.dn-value { color: #b8daff; font-size: 34px; font-weight: bold; line-height: 1.2; }
 .dn-divider {
   border: none;
   border-top: 1px solid rgba(60,140,255,0.2);
-  margin: 8px 0;
+  margin: 14px 0;
 }
 .dn-status-dot {
   display: inline-block;
-  width: 7px; height: 7px;
+  width: 16px; height: 16px;
   border-radius: 50%;
   vertical-align: middle;
-  margin-right: 5px;
-  box-shadow: 0 0 6px currentColor;
+  margin-right: 10px;
+  box-shadow: 0 0 10px currentColor;
 }
 .dn-btn {
   pointer-events: auto;
   background: rgba(30,70,160,0.45);
   border: 1px solid rgba(80,150,255,0.4);
-  border-radius: 4px;
+  border-radius: 5px;
   color: #8ec8ff;
   cursor: pointer;
   font-family: inherit;
-  font-size: 11px;
-  letter-spacing: 0.05em;
-  padding: 3px 8px;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  padding: 6px 14px;
   transition: background 0.15s;
 }
 .dn-btn:hover { background: rgba(40,100,200,0.6); }
@@ -71,47 +77,49 @@ const HUD_CSS = `
   pointer-events: auto;
   background: rgba(5,15,40,0.7);
   border: 1px solid rgba(60,140,255,0.3);
-  border-radius: 4px;
+  border-radius: 5px;
   color: #b8daff;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 16px;
   letter-spacing: 0.04em;
-  padding: 4px 10px;
+  padding: 7px 14px;
   outline: none;
-  width: 200px;
+  width: 260px;
 }
 .dn-search::placeholder { color: rgba(100,160,255,0.4); }
-.dn-search:focus { border-color: rgba(80,180,255,0.7); box-shadow: 0 0 8px rgba(60,140,255,0.3); }
+.dn-search:focus { border-color: rgba(80,180,255,0.7); box-shadow: 0 0 12px rgba(60,140,255,0.3); }
 .dn-voice-btn {
   pointer-events: auto;
   background: rgba(30,70,160,0.45);
   border: 1px solid rgba(80,150,255,0.4);
-  border-radius: 4px;
+  border-radius: 5px;
   color: #8ec8ff;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 20px;
   line-height: 1;
-  padding: 4px 8px;
+  padding: 6px 12px;
   transition: background 0.15s;
 }
 .dn-voice-btn.listening { animation: dn-pulse 0.8s infinite; color: #ff5555; }
 .dn-bottom-bar {
   display: flex;
   align-items: center;
-  gap: 28px;
-  padding: 6px 20px;
-  font-size: 11px;
+  gap: 36px;
+  padding: 12px 36px;
+  font-size: 14px;
   overflow: hidden;
 }
 .dn-bottom-bar .dn-seg {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  min-width: 60px;
+  gap: 3px;
+  min-width: 80px;
 }
+.dn-bottom-bar .dn-label { font-size: 12px; }
+.dn-bottom-bar .dn-value { font-size: 18px; }
 .dn-bottom-bar .dn-sep {
   width: 1px;
-  height: 28px;
+  height: 38px;
   background: rgba(60,140,255,0.25);
   flex-shrink: 0;
 }
@@ -128,9 +136,10 @@ function injectCss(): void {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface HudRef {
-  setCounts(nodes: number, edges: number): void;
+  setCounts(projects: number, nodes: number, edges: number): void;
   setMatchCount(n: number): void;
   setSearchValue(v: string): void;
+  setTopSkill(label: string): void;
   onSearch(cb: (q: string) => void): void;
   onVoiceClick(cb: () => void): void;
   onReturnToAuto(cb: () => void): void;
@@ -149,10 +158,10 @@ export function initHud(): HudRef {
   const panel = document.createElement('div');
   panel.className = 'dn-panel';
   Object.assign(panel.style, {
-    bottom: '72px',
-    right: '16px',
-    width: '260px',
-    padding: '14px 18px',
+    bottom: '60px',
+    right: '20px',
+    width: '560px',
+    padding: '28px 34px',
     zIndex: '20',
   });
 
@@ -169,21 +178,21 @@ export function initHud(): HudRef {
   statusDot.style.color = '#888';
   statusDot.style.background = '#888';
   const titleEl = document.createElement('span');
-  titleEl.style.fontSize = '13px';
+  titleEl.style.fontSize = '26px';
   titleEl.style.fontWeight = 'bold';
   titleEl.style.color = '#c8e8ff';
-  titleEl.style.letterSpacing = '0.12em';
+  titleEl.style.letterSpacing = '0.16em';
   titleEl.textContent = 'DEVNEURAL';
   titleRow.appendChild(statusDot);
   titleRow.appendChild(titleEl);
   panel.appendChild(titleRow);
 
-  // Counts grid
+  // Counts grid — 3 cols for PROJECTS / NODES / EDGES, then MATCHES / CAMERA
   const grid = document.createElement('div');
   Object.assign(grid.style, {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '8px 16px',
+    gridTemplateColumns: '1fr 1fr 1fr',
+    gap: '8px 12px',
     marginBottom: '10px',
   });
 
@@ -201,25 +210,56 @@ export function initHud(): HudRef {
     return v;
   }
 
+  const projectsEl = makeMetric('PROJECTS', '—');
   const nodesEl = makeMetric('NODES', '—');
   const edgesEl = makeMetric('EDGES', '—');
-  const matchEl = makeMetric('MATCHES', '—');
-  const cameraEl = makeMetric('CAMERA', 'full-sphere');
+
+  // Second row: MATCHES + CAMERA span 2 cols each
+  const grid2 = document.createElement('div');
+  Object.assign(grid2.style, {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '8px 12px',
+    marginBottom: '10px',
+  });
+  function makeMetric2(label: string, initVal: string): HTMLElement {
+    const seg = document.createElement('div');
+    const l = document.createElement('div');
+    l.className = 'dn-label';
+    l.textContent = label;
+    const v = document.createElement('div');
+    v.className = 'dn-value';
+    v.textContent = initVal;
+    seg.appendChild(l);
+    seg.appendChild(v);
+    grid2.appendChild(seg);
+    return v;
+  }
+
   panel.appendChild(grid);
+  const matchEl = makeMetric2('MATCHES', '—');
+  const cameraEl = makeMetric2('CAMERA', 'full-sphere');
+  panel.appendChild(grid2);
 
   // Divider
   const hr = document.createElement('hr');
   hr.className = 'dn-divider';
   panel.appendChild(hr);
 
-  // Legend
+  // Legend — shapes match the actual orb geometry
   const legend = document.createElement('div');
-  legend.style.cssText = 'font-size:11px;line-height:1.9;margin-bottom:10px;opacity:0.75';
+  legend.style.cssText = 'font-size:16px;line-height:2.1;margin-bottom:10px;opacity:0.92';
   legend.innerHTML = [
-    '<span style="color:#3388ff">■</span> project &nbsp;',
-    '<span style="color:#33cc77">⬡</span> skill &nbsp;',
-    '<span style="color:#ff7733">◆</span> tool',
-    '<br>edge: <span style="color:#3344aa">cold</span> → <span style="color:#ff7733">hot</span> weight',
+    '<span style="color:#4488ff;font-size:24px;vertical-align:middle">●</span>&nbsp;project &nbsp;&nbsp;',
+    '<span style="color:#44cc55;font-size:22px;vertical-align:middle">◆</span>&nbsp;skill &nbsp;&nbsp;',
+    '<span style="color:#ff8833;font-size:20px;vertical-align:middle">■</span>&nbsp;tool',
+    '<div style="margin-top:8px">',
+    '  <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">',
+    '    <span style="color:#1a9fcc;font-weight:bold;letter-spacing:0.08em">COLD</span>',
+    '    <span style="color:#ff6622;font-weight:bold;letter-spacing:0.08em">HOT</span>',
+    '  </div>',
+    '  <div style="height:5px;border-radius:3px;background:linear-gradient(to right,#0d1f5c,#1a5faa,#22bbcc,#eecc22,#ff4411);box-shadow:0 0 6px rgba(255,68,17,0.3)"></div>',
+    '</div>',
   ].join('');
   panel.appendChild(legend);
 
@@ -247,6 +287,8 @@ export function initHud(): HudRef {
     width: '100%',
     textAlign: 'center',
   });
+  returnBtn.style.fontSize = '14px';
+  returnBtn.style.padding = '8px 0';
   returnBtn.textContent = '⟳  RETURN TO AUTO';
   panel.appendChild(returnBtn);
 
@@ -275,7 +317,7 @@ export function initHud(): HudRef {
     l.textContent = label;
     const v = document.createElement('div');
     v.className = 'dn-value';
-    v.style.fontSize = '12px';
+    v.style.fontSize = '18px';
     v.textContent = initVal;
     seg.appendChild(l);
     seg.appendChild(v);
@@ -293,9 +335,9 @@ export function initHud(): HudRef {
   sep();
   const barCameraEl = barSeg('VIEW', 'full-sphere');
   sep();
-  barSeg('WS', 'ws://localhost:3747');
+  barSeg('WS', 'localhost:3747');
   sep();
-  barSeg('ENGINE', 'd3-force / instanced');
+  const barTopSkillEl = barSeg('TOP SKILL', '—');
   sep();
   const barMatchEl = barSeg('FILTER', 'all');
 
@@ -311,7 +353,8 @@ export function initHud(): HudRef {
   });
 
   return {
-    setCounts(nodes, edges) {
+    setCounts(projects, nodes, edges) {
+      projectsEl.textContent = String(projects);
       nodesEl.textContent = String(nodes);
       edgesEl.textContent = String(edges);
     },
@@ -321,6 +364,9 @@ export function initHud(): HudRef {
     },
     setSearchValue(v) {
       searchInput.value = v;
+    },
+    setTopSkill(label) {
+      barTopSkillEl.textContent = label || '—';
     },
     onSearch(cb) {
       searchCb = cb;
@@ -348,11 +394,24 @@ export function setConnectionStatus(
   status: 'connected' | 'disconnected' | 'unknown',
 ): void {
   const colors = { connected: '#44ff88', disconnected: '#ff4444', unknown: '#888888' };
-  const labels = { connected: 'LIVE', disconnected: 'OFFLINE', unknown: 'CONNECTING' };
+  const labels = { connected: '⬤ LIVE', disconnected: 'OFFLINE', unknown: 'CONNECTING…' };
   hud._statusDot.style.background = colors[status];
   hud._statusDot.style.color = colors[status];
+  // Pulse animation only when connected
+  if (status === 'connected') {
+    hud._statusDot.classList.add('dn-status-dot-live');
+  } else {
+    hud._statusDot.classList.remove('dn-status-dot-live');
+  }
   const h = hud as HudRef & { _barStatusEl?: HTMLElement };
-  if (h._barStatusEl) h._barStatusEl.textContent = labels[status];
+  if (h._barStatusEl) {
+    h._barStatusEl.textContent = labels[status];
+    if (status === 'connected') {
+      h._barStatusEl.classList.add('dn-bar-live');
+    } else {
+      h._barStatusEl.classList.remove('dn-bar-live');
+    }
+  }
 }
 
 export function setCameraMode(hud: HudRef, state: CameraState): void {
