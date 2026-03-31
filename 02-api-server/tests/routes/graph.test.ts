@@ -7,27 +7,27 @@ import type { WeightsFile, InMemoryGraph } from '../../src/graph/types.js';
 
 const fixtureWeights: WeightsFile = {
   connections: {
-    'project:github.com/user/repo||tool:Bash': {
+    'project:github.com/user/repo||tool:Agent': {
       source_node: 'project:github.com/user/repo',
-      target_node: 'tool:Bash',
+      target_node: 'tool:Agent',
       connection_type: 'project->tool',
       raw_count: 5,
       weight: 0.8,
       first_seen: '2025-01-01T00:00:00.000Z',
       last_seen: '2025-03-01T00:00:00.000Z',
     },
-    'project:github.com/user/repo||tool:Edit': {
+    'project:github.com/user/repo||tool:WebSearch': {
       source_node: 'project:github.com/user/repo',
-      target_node: 'tool:Edit',
+      target_node: 'tool:WebSearch',
       connection_type: 'project->tool',
       raw_count: 10,
       weight: 0.9,
       first_seen: '2025-01-01T00:00:00.000Z',
       last_seen: '2025-03-01T00:00:00.000Z',
     },
-    'project:github.com/user/other||tool:Read': {
+    'project:github.com/user/other||tool:Agent': {
       source_node: 'project:github.com/user/other',
-      target_node: 'tool:Read',
+      target_node: 'tool:Agent',
       connection_type: 'project->tool',
       raw_count: 3,
       weight: 0.5,
@@ -135,12 +135,12 @@ describe('GET /graph/node/:id', () => {
   });
 
   it('URL-decodes the :id parameter', async () => {
-    // project:c%3A/dev → project:c:/dev
+    // project%3Agithub.com%2Fuser%2Frepo → project:github.com/user/repo
     const pathWeights: WeightsFile = {
       connections: {
-        'project:c:/dev||tool:Edit': {
-          source_node: 'project:c:/dev',
-          target_node: 'tool:Edit',
+        'project:github.com/user/url-test||tool:Agent': {
+          source_node: 'project:github.com/user/url-test',
+          target_node: 'tool:Agent',
           connection_type: 'project->tool',
           raw_count: 1,
           weight: 1.0,
@@ -154,11 +154,11 @@ describe('GET /graph/node/:id', () => {
     graph = buildGraph(pathWeights);
     const res = await app.inject({
       method: 'GET',
-      url: '/graph/node/project%3Ac%3A%2Fdev',
+      url: '/graph/node/project%3Agithub.com%2Fuser%2Furl-test',
     });
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
-    expect(body.node.id).toBe('project:c:/dev');
+    expect(body.node.id).toBe('project:github.com/user/url-test');
   });
 });
 
@@ -225,10 +225,10 @@ describe('GET /graph/top', () => {
     // Build a graph with 101 edges to distinguish clamped (100) from unclamped (101)
     const connections: WeightsFile['connections'] = {};
     for (let i = 0; i < 101; i++) {
-      const key = `project:repo-${i}||tool:Edit`;
+      const key = `project:github.com/user/repo-${i}||tool:Agent`;
       connections[key] = {
-        source_node: `project:repo-${i}`,
-        target_node: 'tool:Edit',
+        source_node: `project:github.com/user/repo-${i}`,
+        target_node: 'tool:Agent',
         connection_type: 'project->tool',
         raw_count: 1,
         weight: i / 100,

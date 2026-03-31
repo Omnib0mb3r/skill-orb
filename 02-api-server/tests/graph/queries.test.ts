@@ -40,8 +40,8 @@ const emptyWeights: WeightsFile = {
 describe('getFullGraph', () => {
   it('returns all nodes and edges from a populated InMemoryGraph', () => {
     const weights = makeWeights({
-      'project:repo-a||tool:Edit': { source: 'project:repo-a', target: 'tool:Edit', weight: 1.0 },
-      'project:repo-b||tool:Write': { source: 'project:repo-b', target: 'tool:Write', weight: 0.5 },
+      'project:github.com/user/repo-a||tool:Agent': { source: 'project:github.com/user/repo-a', target: 'tool:Agent', weight: 1.0 },
+      'project:github.com/user/repo-b||tool:WebSearch': { source: 'project:github.com/user/repo-b', target: 'tool:WebSearch', weight: 0.5 },
     });
     const graph = buildGraph(weights);
     const result = getFullGraph(graph, UPDATED_AT);
@@ -62,18 +62,18 @@ describe('getFullGraph', () => {
 describe('getNodeById', () => {
   it('returns { node, edges } for a node that exists in the graph', () => {
     const weights = makeWeights({
-      'project:repo-a||tool:Edit': { source: 'project:repo-a', target: 'tool:Edit', weight: 1.0 },
-      'project:repo-a||tool:Write': { source: 'project:repo-a', target: 'tool:Write', weight: 0.5 },
-      'project:repo-b||tool:Edit': { source: 'project:repo-b', target: 'tool:Edit', weight: 0.8 },
+      'project:github.com/user/repo-a||tool:Agent': { source: 'project:github.com/user/repo-a', target: 'tool:Agent', weight: 1.0 },
+      'project:github.com/user/repo-a||tool:WebSearch': { source: 'project:github.com/user/repo-a', target: 'tool:WebSearch', weight: 0.5 },
+      'project:github.com/user/repo-b||tool:Agent': { source: 'project:github.com/user/repo-b', target: 'tool:Agent', weight: 0.8 },
     });
     const graph = buildGraph(weights);
-    const result = getNodeById(graph, 'project:repo-a');
+    const result = getNodeById(graph, 'project:github.com/user/repo-a');
     expect(result).not.toBeNull();
-    expect(result!.node.id).toBe('project:repo-a');
-    // Only edges where project:repo-a is source or target
+    expect(result!.node.id).toBe('project:github.com/user/repo-a');
+    // Only edges where project:github.com/user/repo-a is source or target
     expect(result!.edges.length).toBe(2);
     for (const edge of result!.edges) {
-      expect(edge.source === 'project:repo-a' || edge.target === 'project:repo-a').toBe(true);
+      expect(edge.source === 'project:github.com/user/repo-a' || edge.target === 'project:github.com/user/repo-a').toBe(true);
     }
   });
 
@@ -84,24 +84,24 @@ describe('getNodeById', () => {
 
   it('returns edges for a node that only appears as target (not source)', () => {
     const weights = makeWeights({
-      'project:a||tool:Edit': { source: 'project:a', target: 'tool:Edit', weight: 1.0 },
-      'project:b||tool:Edit': { source: 'project:b', target: 'tool:Edit', weight: 0.5 },
+      'project:github.com/user/repo-a||tool:Agent': { source: 'project:github.com/user/repo-a', target: 'tool:Agent', weight: 1.0 },
+      'project:github.com/user/repo-b||tool:Agent': { source: 'project:github.com/user/repo-b', target: 'tool:Agent', weight: 0.5 },
     });
     const graph = buildGraph(weights);
-    // tool:Edit only appears as target
-    const result = getNodeById(graph, 'tool:Edit');
+    // tool:Agent only appears as target
+    const result = getNodeById(graph, 'tool:Agent');
     expect(result).not.toBeNull();
-    expect(result!.node.id).toBe('tool:Edit');
+    expect(result!.node.id).toBe('tool:Agent');
     expect(result!.edges.length).toBe(2);
     for (const edge of result!.edges) {
-      expect(edge.target).toBe('tool:Edit');
+      expect(edge.target).toBe('tool:Agent');
     }
   });
 
   it('returns node with empty edges array for isolated node', () => {
     // Build a graph then verify adjacency-based lookup handles missing adjacency entry
     const weights = makeWeights({
-      'project:a||tool:Edit': { source: 'project:a', target: 'tool:Edit', weight: 1.0 },
+      'project:github.com/user/repo-a||tool:Agent': { source: 'project:github.com/user/repo-a', target: 'tool:Agent', weight: 1.0 },
     });
     const graph = buildGraph(weights);
     // Manually insert an isolated node with no adjacency entry
@@ -114,9 +114,9 @@ describe('getNodeById', () => {
 
 describe('getSubgraph', () => {
   const weights = makeWeights({
-    'project:github.com/user/repo||tool:Edit': {
+    'project:github.com/user/repo||tool:Agent': {
       source: 'project:github.com/user/repo',
-      target: 'tool:Edit',
+      target: 'tool:Agent',
       weight: 1.0,
     },
     'project:github.com/user/repo||skill:gsd': {
@@ -125,9 +125,9 @@ describe('getSubgraph', () => {
       weight: 0.8,
       type: 'project->skill',
     },
-    'project:github.com/user/other||tool:Bash': {
+    'project:github.com/user/other||tool:WebSearch': {
       source: 'project:github.com/user/other',
-      target: 'tool:Bash',
+      target: 'tool:WebSearch',
       weight: 0.5,
     },
   });
@@ -162,19 +162,19 @@ describe('getSubgraph', () => {
     expect(result.edges).toEqual([]);
   });
 
-  it('uses exact string equality — project:c:/dev does not match project:c:/dev/sub', () => {
+  it('uses exact string equality — project:github.com/user/repo does not match project:github.com/user/repo-sub', () => {
     const pathWeights = makeWeights({
-      'project:c:/dev||tool:Edit': { source: 'project:c:/dev', target: 'tool:Edit', weight: 1.0 },
-      'project:c:/dev/sub||tool:Write': {
-        source: 'project:c:/dev/sub',
-        target: 'tool:Write',
+      'project:github.com/user/repo||tool:Agent': { source: 'project:github.com/user/repo', target: 'tool:Agent', weight: 1.0 },
+      'project:github.com/user/repo-sub||tool:WebSearch': {
+        source: 'project:github.com/user/repo-sub',
+        target: 'tool:WebSearch',
         weight: 0.5,
       },
     });
     const graph = buildGraph(pathWeights);
-    const result = getSubgraph(graph, 'project:c:/dev');
+    const result = getSubgraph(graph, 'project:github.com/user/repo');
     expect(result.edges.length).toBe(1);
-    expect(result.edges[0].source).toBe('project:c:/dev');
+    expect(result.edges[0].source).toBe('project:github.com/user/repo');
   });
 
   it('collects only the nodes referenced by the matched edges', () => {
@@ -187,7 +187,7 @@ describe('getSubgraph', () => {
     }
     // Should not include nodes from unmatched edges
     expect(nodeIds.has('project:github.com/user/other')).toBe(false);
-    expect(nodeIds.has('tool:Bash')).toBe(false);
+    expect(nodeIds.has('tool:WebSearch')).toBe(false);
   });
 
   it('returns empty GraphResponse when graph is empty', () => {
@@ -207,11 +207,11 @@ describe('getSubgraph', () => {
 
 describe('getTopEdges', () => {
   const weights = makeWeights({
-    'project:a||tool:Edit': { source: 'project:a', target: 'tool:Edit', weight: 5.0 },
-    'project:b||tool:Write': { source: 'project:b', target: 'tool:Write', weight: 3.0 },
-    'project:c||skill:gsd': { source: 'project:c', target: 'skill:gsd', weight: 2.0, type: 'project->skill' },
-    'project:d||tool:Bash': { source: 'project:d', target: 'tool:Bash', weight: 1.5 },
-    'project:e||tool:Read': { source: 'project:e', target: 'tool:Read', weight: 1.0 },
+    'project:github.com/user/repo-a||tool:Agent': { source: 'project:github.com/user/repo-a', target: 'tool:Agent', weight: 5.0 },
+    'project:github.com/user/repo-b||tool:WebSearch': { source: 'project:github.com/user/repo-b', target: 'tool:WebSearch', weight: 3.0 },
+    'project:github.com/user/repo-c||skill:gsd': { source: 'project:github.com/user/repo-c', target: 'skill:gsd', weight: 2.0, type: 'project->skill' },
+    'project:github.com/user/repo-d||tool:Agent': { source: 'project:github.com/user/repo-d', target: 'tool:Agent', weight: 1.5 },
+    'project:github.com/user/repo-e||tool:WebSearch': { source: 'project:github.com/user/repo-e', target: 'tool:WebSearch', weight: 1.0 },
   });
 
   it('returns the top N edges by weight in descending order', () => {
@@ -233,9 +233,9 @@ describe('getTopEdges', () => {
       expect(nodeIds.has(edge.target)).toBe(true);
     }
     // Nodes from edges 3–5 should not appear
-    expect(nodeIds.has('project:c')).toBe(false);
-    expect(nodeIds.has('project:d')).toBe(false);
-    expect(nodeIds.has('project:e')).toBe(false);
+    expect(nodeIds.has('project:github.com/user/repo-c')).toBe(false);
+    expect(nodeIds.has('project:github.com/user/repo-d')).toBe(false);
+    expect(nodeIds.has('project:github.com/user/repo-e')).toBe(false);
   });
 
   it('returns all edges when limit exceeds total edge count', () => {
