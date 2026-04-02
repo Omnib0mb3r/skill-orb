@@ -6,6 +6,7 @@ import {
   getMaterialForNodeType,
   getEdgeColor,
   getEdgeOpacity,
+  getEdgeLinewidth,
   highlightMaterialConfig,
   dimmedMaterialConfig,
   defaultMaterialConfig,
@@ -87,5 +88,27 @@ describe('material config variants', () => {
 
   it('dimmedMaterialConfig has lower opacity than defaultMaterialConfig', () => {
     expect(dimmedMaterialConfig.opacity).toBeLessThan(defaultMaterialConfig.opacity);
+  });
+});
+
+describe('getEdgeLinewidth', () => {
+  it('returns minimum 1.5 at heat=0 (cold edge)', () => {
+    expect(getEdgeLinewidth(0)).toBeCloseTo(1.5, 5);
+  });
+
+  it('returns maximum 3.0 at heat=1 (hot edge)', () => {
+    expect(getEdgeLinewidth(1)).toBeCloseTo(3.0, 5);
+  });
+
+  it('is monotonically increasing — heat=0.75 > heat=0.25', () => {
+    expect(getEdgeLinewidth(0.75)).toBeGreaterThan(getEdgeLinewidth(0.25));
+  });
+
+  it('clamps below 0 to 1.5', () => {
+    expect(getEdgeLinewidth(-1)).toBeCloseTo(1.5, 5);
+  });
+
+  it('clamps above 1 to 3.0', () => {
+    expect(getEdgeLinewidth(2)).toBeCloseTo(3.0, 5);
   });
 });

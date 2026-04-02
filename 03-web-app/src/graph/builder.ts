@@ -1,5 +1,9 @@
 import * as THREE from 'three';
-import { getMaterialForNodeType, getEdgeColor, getEdgeOpacity } from '../orb/visuals';
+import { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { getMaterialForNodeType, getEdgeColor, getEdgeOpacity, getEdgeLinewidth } from '../orb/visuals';
+import { generateEdgeCurve, CURVE_SEGMENTS } from './edge-curve';
 import { createSimulation } from '../orb/physics';
 import type { PhysicsNode, PhysicsEdge, Simulation } from '../orb/physics';
 import type { SceneState, NodeType, OrbNode, OrbEdge } from './types';
@@ -24,7 +28,7 @@ export interface GraphData {
 
 export interface BuildResult extends SceneState {
   meshes: Map<string, THREE.Mesh>;
-  edgeMeshes: THREE.Line[];
+  edgeMeshes: Line2[];
   simulation: Simulation;
 }
 
@@ -66,7 +70,47 @@ function randomInSphere(radius: number): { x: number; y: number; z: number } {
   };
 }
 
-export function build(graphData: GraphData, scene: THREE.Scene): BuildResult {
+/**
+ * Deterministic integer seed from two node ID strings.
+ * Note: order-dependent — hashEdgeSeed(a, b) !== hashEdgeSeed(b, a).
+ * Edges in this graph always have a fixed sourceId/targetId from the data layer,
+ * so curve shapes are consistent within and across sessions.
+ */
+export function hashEdgeSeed(sourceId: string, targetId: string): number {
+  const str = sourceId + '|' + targetId;
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (Math.imul(h ^ str.charCodeAt(i), 0x9e3779b9)) >>> 0;
+  }
+  return h;
+}
+
+/** Create a Line2 edge mesh and add it to the scene. */
+export function createEdgeMesh(
+  scene: THREE.Scene,
+  resolution: THREE.Vector2,
+  initialOpacity: number,
+): Line2 {
+  const geo = new LineGeometry();
+  geo.setPositions(new Float32Array((CURVE_SEGMENTS + 1) * 3));
+  geo.setColors(new Float32Array((CURVE_SEGMENTS + 1) * 3));
+  const mat = new LineMaterial({
+    linewidth: 1.5,
+    vertexColors: true,
+    transparent: true,
+    opacity: initialOpacity,
+    resolution,
+  });
+  const line = new Line2(geo, mat);
+  scene.add(line);
+  return line;
+}
+
+export function build(
+  graphData: GraphData,
+  scene: THREE.Scene,
+  resolution = new THREE.Vector2(1920, 1080),
+): BuildResult {
   if (graphData.nodes.length === 0 && graphData.edges.length === 0) {
     const sim = createSimulation([], []);
     return {
@@ -99,15 +143,10 @@ export function build(graphData: GraphData, scene: THREE.Scene): BuildResult {
     scene.add(mesh);
     meshMap.set(node.id, mesh);
 
-    // Share mesh.position so physics mutations are reflected in the Three.js mesh
     const sharedPos = mesh.position as unknown as { x: number; y: number; z: number };
     const velocity = { x: 0, y: 0, z: 0 };
 
-    const physNode: PhysicsNode = {
-      id: node.id,
-      position: sharedPos,
-      velocity,
-    };
+    const physNode: PhysicsNode = { id: node.id, position: sharedPos, velocity };
     physicsNodes.push(physNode);
 
     orbNodes.set(node.id, {
@@ -121,21 +160,15 @@ export function build(graphData: GraphData, scene: THREE.Scene): BuildResult {
 
   const physicsEdges: PhysicsEdge[] = [];
   const orbEdges: OrbEdge[] = [];
-  const edgeMeshes: THREE.Line[] = [];
+  const edgeMeshes: Line2[] = [];
 
   for (const edge of graphData.edges) {
     const srcMesh = meshMap.get(edge.sourceId);
     const tgtMesh = meshMap.get(edge.targetId);
     if (!srcMesh || !tgtMesh) continue;
 
-    const lineGeo = new THREE.BufferGeometry();
-    lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((N_SEGMENTS + 1) * 3), 3));
-    lineGeo.setAttribute('color',    new THREE.BufferAttribute(new Float32Array((N_SEGMENTS + 1) * 3), 3));
-    const lineMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: getEdgeOpacity(0.25) });
-    const line = new THREE.Line(lineGeo, lineMat);
-    scene.add(line);
+    const line = createEdgeMesh(scene, resolution, getEdgeOpacity(0.25));
     edgeMeshes.push(line);
-
     physicsEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: edge.weight });
     orbEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: 0.25 });
   }
@@ -156,20 +189,18 @@ export function build(graphData: GraphData, scene: THREE.Scene): BuildResult {
   };
 }
 
-/** Number of segments per edge line — more segments = smoother heat dissipation gradient. */
-export const N_SEGMENTS = 8;
+/** Number of segments per edge line — re-exported from edge-curve for use in main.ts. */
+export const N_SEGMENTS = CURVE_SEGMENTS;
 
 /** Power applied to the dissipation curve. t^HEAT_POWER keeps heat near the source longer. */
 const HEAT_POWER = 2;
 
 /**
- * Assigns per-vertex colors to each edge using a heat-dissipation curve.
- * Heat is generated at the hotter endpoint (more connections) and dissipates
- * toward the cooler endpoint. The t^HEAT_POWER curve keeps the hot color
- * concentrated near the source and drops quickly toward the cold end.
- * Also sets edge.weight to the average heat for the opacity pulse.
+ * Assigns per-vertex colors and linewidth to each Line2 edge using heat-dissipation.
+ * Heat flows from the hotter endpoint (more connections) to the cooler endpoint.
+ * Also sets edge.weight to average heat for the opacity pulse.
  */
-export function recomputeEdgeHeat(edges: OrbEdge[], edgeMeshes: THREE.Line[]): void {
+export function recomputeEdgeHeat(edges: OrbEdge[], edgeMeshes: Line2[]): void {
   const degree = new Map<string, number>();
   for (const e of edges) {
     degree.set(e.sourceId, (degree.get(e.sourceId) ?? 0) + 1);
@@ -192,22 +223,55 @@ export function recomputeEdgeHeat(edges: OrbEdge[], edgeMeshes: THREE.Line[]): v
 
     edge.weight = (srcHeat + tgtHeat) / 2;
 
-    const colorAttr = mesh.geometry.attributes['color'] as THREE.BufferAttribute;
-    if (!colorAttr) continue;
+    const geo = mesh.geometry as LineGeometry;
+    const mat = mesh.material as LineMaterial;
 
-    // Hot end is whichever node has more connections — heat flows from there
+    const colors = new Float32Array((N_SEGMENTS + 1) * 3);
     const hotFirst = srcDeg >= tgtDeg;
     const hotHeat  = hotFirst ? srcHeat : tgtHeat;
     const coldHeat = hotFirst ? tgtHeat : srcHeat;
 
     for (let v = 0; v <= N_SEGMENTS; v++) {
-      // t=0 at hot end, t=1 at cold end — direction depends on which node is hotter
       const t = hotFirst ? v / N_SEGMENTS : (N_SEGMENTS - v) / N_SEGMENTS;
       const heat = hotHeat + (coldHeat - hotHeat) * Math.pow(t, HEAT_POWER);
       c.set(getEdgeColor(heat));
-      colorAttr.setXYZ(v, c.r, c.g, c.b);
+      colors[v * 3]     = c.r;
+      colors[v * 3 + 1] = c.g;
+      colors[v * 3 + 2] = c.b;
     }
-    colorAttr.needsUpdate = true;
+    geo.setColors(colors);
+
+    mat.linewidth = getEdgeLinewidth(edge.weight);
   }
 }
 
+/**
+ * Update edge curve positions each animation frame.
+ * Reads live node positions (physics-updated) and applies organic curve + drift.
+ *
+ * @param driftTime  Slowly-advancing time value (pass performance.now()/1000 * 0.3)
+ */
+export function updateEdgeDrift(
+  driftTime: number,
+  edges: OrbEdge[],
+  edgeMeshes: Line2[],
+  meshes: Map<string, THREE.Mesh>,
+): void {
+  for (let i = 0; i < edges.length; i++) {
+    const edge = edges[i];
+    const mesh = edgeMeshes[i];
+    if (!mesh || !edge) continue;
+    const src = meshes.get(edge.sourceId);
+    const tgt = meshes.get(edge.targetId);
+    if (!src || !tgt) continue;
+
+    const seed = hashEdgeSeed(edge.sourceId, edge.targetId);
+    const positions = generateEdgeCurve(
+      src.position.x, src.position.y, src.position.z,
+      tgt.position.x, tgt.position.y, tgt.position.z,
+      seed,
+      driftTime,
+    );
+    (mesh.geometry as LineGeometry).setPositions(positions);
+  }
+}

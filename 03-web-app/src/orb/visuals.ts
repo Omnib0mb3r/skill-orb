@@ -77,3 +77,12 @@ export const dimmedMaterialConfig: MaterialConfig = {
   transparent: true,
   emissiveIntensity: 0.0,
 };
+
+/**
+ * Map normalized heat [0,1] to linewidth in screen pixels.
+ * Cold (0.0) = 1.5px, Hot (1.0) = 3.0px.
+ */
+export function getEdgeLinewidth(heat: number): number {
+  const h = Math.max(0, Math.min(1, heat));
+  return 1.5 + h * 1.5;
+}

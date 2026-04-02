@@ -1,12 +1,21 @@
 import * as THREE from 'three';
-import { createScene } from '../webview/renderer';
+import { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { createScene, addResizeListener } from '../webview/renderer';
 import { createCameraController } from '../webview/camera';
 import { initVoice } from '../webview/voice';
 import { detectVoiceIntent, evaluateQuery } from '../webview/search';
 import { createTooltip, deriveGitHubUrl } from '../webview/nodeActions';
-import { build, recomputeEdgeHeat, N_SEGMENTS } from './graph/builder';
+import {
+  build,
+  recomputeEdgeHeat,
+  updateEdgeDrift,
+  createEdgeMesh,
+  N_SEGMENTS,
+} from './graph/builder';
 import type { BuildResult, GraphData } from './graph/builder';
-import { getMaterialForNodeType, getEdgeColor, getEdgeOpacity } from './orb/visuals';
+import { getMaterialForNodeType, getEdgeOpacity } from './orb/visuals';
 import { connect } from './ws/client';
 import type { SceneRef } from './ws/handlers';
 import type { GraphSnapshot, GraphNode, GraphEdge } from './types';
@@ -16,6 +25,7 @@ import { initHud, setConnectionStatus, setCameraMode, updateVoiceStatus } from '
 
 type AppState = BuildResult & {
   selectedNodeId: string | null;
+  isSearchHighlightActive: boolean;
   nodeDataMap: Map<string, GraphNode>;
   edgeData: GraphEdge[];
 };
@@ -47,9 +57,7 @@ function clearBuild(scene: THREE.Scene, b: AppState): void {
   for (const line of b.edgeMeshes) {
     scene.remove(line);
     line.geometry.dispose();
-    const mat = line.material;
-    if (Array.isArray(mat)) mat.forEach(m => m.dispose());
-    else mat.dispose();
+    (line.material as LineMaterial).dispose();
   }
 }
 
@@ -115,17 +123,17 @@ function applySearchHighlight(b: AppState, matchIds: Set<string>): void {
     mat.needsUpdate = true;
   }
   recomputeEdgeHeat(b.edges, b.edgeMeshes);
+  const dimColors = new Float32Array((N_SEGMENTS + 1) * 3);
+  for (let v = 0; v <= N_SEGMENTS; v++) {
+    dimColors[v * 3] = 0.04; dimColors[v * 3 + 1] = 0.06; dimColors[v * 3 + 2] = 0.10;
+  }
   for (let i = 0; i < b.edgeMeshes.length; i++) {
     const mesh = b.edgeMeshes[i];
-    const mat = mesh.material as THREE.LineBasicMaterial;
+    const mat = mesh.material as LineMaterial;
     if (connectedEdgeIdx.has(i)) {
       mat.opacity = 0.85;
     } else {
-      const colorAttr = mesh.geometry.attributes['color'] as THREE.BufferAttribute;
-      if (colorAttr) {
-        for (let v = 0; v <= N_SEGMENTS; v++) colorAttr.setXYZ(v, 0.04, 0.06, 0.10);
-        colorAttr.needsUpdate = true;
-      }
+      (mesh.geometry as LineGeometry).setColors(dimColors);
       mat.opacity = 0.04;
     }
     mat.needsUpdate = true;
@@ -147,11 +155,12 @@ function clearHighlights(b: AppState): void {
     mat.emissiveIntensity = cfg.emissiveIntensity ?? 0.255;
     mat.needsUpdate = true;
   }
+  b.isSearchHighlightActive = false;
   recomputeEdgeHeat(b.edges, b.edgeMeshes);
   for (let i = 0; i < b.edgeMeshes.length; i++) {
     const edge = b.edges[i];
     if (!edge) continue;
-    const mat = b.edgeMeshes[i].material as THREE.LineBasicMaterial;
+    const mat = b.edgeMeshes[i].material as LineMaterial;
     mat.opacity = getEdgeOpacity(edge.weight);
     mat.needsUpdate = true;
   }
@@ -197,21 +206,22 @@ function applyHighlight(b: AppState, clickedId: string): void {
   }
 
   recomputeEdgeHeat(b.edges, b.edgeMeshes);
+  const whiteColors = new Float32Array((N_SEGMENTS + 1) * 3);
+  for (let v = 0; v <= N_SEGMENTS; v++) {
+    whiteColors[v * 3] = 1; whiteColors[v * 3 + 1] = 1; whiteColors[v * 3 + 2] = 1;
+  }
+  const dimColors = new Float32Array((N_SEGMENTS + 1) * 3);
+  for (let v = 0; v <= N_SEGMENTS; v++) {
+    dimColors[v * 3] = 0.04; dimColors[v * 3 + 1] = 0.06; dimColors[v * 3 + 2] = 0.10;
+  }
   for (let i = 0; i < b.edgeMeshes.length; i++) {
     const mesh = b.edgeMeshes[i];
-    const mat = mesh.material as THREE.LineBasicMaterial;
-    const colorAttr = mesh.geometry.attributes['color'] as THREE.BufferAttribute;
+    const mat = mesh.material as LineMaterial;
     if (connectedEdgeIdx.has(i)) {
-      if (colorAttr) {
-        for (let v = 0; v <= N_SEGMENTS; v++) colorAttr.setXYZ(v, 1, 1, 1);
-        colorAttr.needsUpdate = true;
-      }
+      (mesh.geometry as LineGeometry).setColors(whiteColors);
       mat.opacity = 1.0;
     } else {
-      if (colorAttr) {
-        for (let v = 0; v <= N_SEGMENTS; v++) colorAttr.setXYZ(v, 0.04, 0.06, 0.10);
-        colorAttr.needsUpdate = true;
-      }
+      (mesh.geometry as LineGeometry).setColors(dimColors);
       mat.opacity = 0.04;
     }
     mat.needsUpdate = true;
@@ -234,6 +244,18 @@ function main(): void {
   // so bring the camera in close rather than the webview default of ~197 units.
   const { scene, camera, controls, startAnimationLoop } = createScene(canvas);
   controls.update();
+
+  // Track canvas resolution for LineMaterial (needed for pixel-accurate linewidth)
+  const edgeResolution = new THREE.Vector2(canvas.clientWidth || 1920, canvas.clientHeight || 1080);
+  addResizeListener((w: number, h: number) => {
+    edgeResolution.set(w, h);
+    if (currentBuild) {
+      for (const line of currentBuild.edgeMeshes) {
+        (line.material as LineMaterial).resolution.set(w, h);
+        (line.material as LineMaterial).needsUpdate = true;
+      }
+    }
+  });
 
   const hud = initHud();
 
@@ -405,6 +427,7 @@ function main(): void {
     if (currentBuild && result.matchingNodeIds.size > 0) {
       applySearchHighlight(currentBuild, result.matchingNodeIds);
       currentBuild.selectedNodeId = null;
+      currentBuild.isSearchHighlightActive = true;
 
       // Collect matched nodes + all their direct neighbours for the fit box
       const fitIds = new Set<string>(result.matchingNodeIds);
@@ -432,10 +455,11 @@ function main(): void {
       _didFitCamera = true;
       if (currentBuild) clearBuild(scene, currentBuild);
       currentSnapshot = snapshot;
-      const result = build(toGraphData(snapshot), scene);
+      const result = build(toGraphData(snapshot), scene, edgeResolution);
       currentBuild = {
         ...result,
         selectedNodeId: null,
+        isSearchHighlightActive: false,
         nodeDataMap: new Map(snapshot.nodes.map(n => [n.id, n])),
         edgeData: snapshot.edges,
       };
@@ -467,12 +491,7 @@ function main(): void {
       const srcMesh = currentBuild.meshes.get(edge.source);
       const tgtMesh = currentBuild.meshes.get(edge.target);
       if (!srcMesh || !tgtMesh) return;
-      const lineGeo = new THREE.BufferGeometry();
-      lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((N_SEGMENTS + 1) * 3), 3));
-      lineGeo.setAttribute('color',    new THREE.BufferAttribute(new Float32Array((N_SEGMENTS + 1) * 3), 3));
-      const lineMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: getEdgeOpacity(0.25) });
-      const line = new THREE.Line(lineGeo, lineMat);
-      scene.add(line);
+      const line = createEdgeMesh(scene, edgeResolution, getEdgeOpacity(0.25));
       currentBuild.edgeMeshes.push(line);
       currentBuild.edges.push({ sourceId: edge.source, targetId: edge.target, weight: 0 });
       recomputeEdgeHeat(currentBuild.edges, currentBuild.edgeMeshes);
@@ -503,34 +522,16 @@ function main(): void {
         _didFitCamera = true;
       }
       currentBuild.simulation.tick();
-      // Keep edge line endpoints in sync with physics positions
-      for (let i = 0; i < currentBuild.edgeMeshes.length; i++) {
-        const line = currentBuild.edgeMeshes[i];
-        const edge = currentBuild.edges[i];
-        if (!edge) continue;
-        const src = currentBuild.meshes.get(edge.sourceId);
-        const tgt = currentBuild.meshes.get(edge.targetId);
-        if (!src || !tgt) continue;
-        const pos = line.geometry.attributes['position'] as THREE.BufferAttribute;
-        if (pos) {
-          for (let v = 0; v <= N_SEGMENTS; v++) {
-            const t = v / N_SEGMENTS;
-            pos.setXYZ(v,
-              src.position.x + (tgt.position.x - src.position.x) * t,
-              src.position.y + (tgt.position.y - src.position.y) * t,
-              src.position.z + (tgt.position.z - src.position.z) * t,
-            );
-          }
-          pos.needsUpdate = true;
-        }
-      }
+      // Update organic edge curves (positions + drift)
+      const driftTime = t * 0.3; // 0.3 Hz drift
+      updateEdgeDrift(driftTime, currentBuild.edges, currentBuild.edgeMeshes, currentBuild.meshes);
 
       // Living synaptic pulse — only when no node/search highlight active
-      if (!currentBuild.selectedNodeId) {
+      if (!currentBuild.selectedNodeId && !currentBuild.isSearchHighlightActive) {
         for (let i = 0; i < currentBuild.edgeMeshes.length; i++) {
           const edge = currentBuild.edges[i];
           if (!edge) continue;
-          const mat = currentBuild.edgeMeshes[i].material as THREE.LineBasicMaterial;
+          const mat = currentBuild.edgeMeshes[i].material as LineMaterial;
           const phase = i * 1.618; // golden-ratio spread so each edge fires at a different time
           const speed = 0.4 + (i % 7) * 0.08; // 0.4–0.88 Hz — slow organic rhythm
           const pulse = 0.5 + 0.5 * Math.sin(t * speed + phase);
