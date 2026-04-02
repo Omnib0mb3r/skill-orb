@@ -14,6 +14,8 @@ import { getFullGraph } from './graph/queries.js';
 import { registerGraphRoutes } from './routes/graph.js';
 import { registerEventsRoutes } from './routes/events.js';
 import { registerVoiceRoutes } from './routes/voice.js';
+import { registerSyncRoute } from './routes/sync.js';
+import { callMondaySync } from './monday/sync-caller.js';
 import { setWss, broadcast } from './ws/broadcaster.js';
 import { startWatchers, stopWatchers, getEventBuffer } from './watcher/index.js';
 
@@ -46,6 +48,7 @@ export async function createServer(config: ServerConfig): Promise<{
   registerGraphRoutes(fastify, () => graph);
   registerEventsRoutes(fastify, getEventBuffer);
   registerVoiceRoutes(fastify, broadcast);
+  registerSyncRoute(fastify, callMondaySync);
 
   // Register WebSocket route — send snapshot directly to the connecting client only
   fastify.get('/ws', { websocket: true }, (socket) => {

@@ -220,7 +220,6 @@ function main(): void {
   // Deep-space renderer (stars, fog, lighting) — but old per-mesh physics runs at ~radius 15,
   // so bring the camera in close rather than the webview default of ~197 units.
   const { scene, camera, controls, startAnimationLoop } = createScene(canvas);
-  camera.position.set(0, 0, 28);
   controls.update();
 
   const hud = initHud();
@@ -295,6 +294,8 @@ function main(): void {
   // ── Pointer events ──────────────────────────────────────────────────────────
 
   let pointerDownPos = { x: 0, y: 0 };
+  let lastClickTime = 0;
+  let lastClickNodeId = '';
 
   canvas.addEventListener('pointerdown', (e: PointerEvent) => {
     pointerDownPos = { x: e.clientX, y: e.clientY };
@@ -320,6 +321,18 @@ function main(): void {
     const rect = canvas.getBoundingClientRect();
     const screenPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
 
+    const now = performance.now();
+    const isDoubleClick = nodeId === lastClickNodeId && (now - lastClickTime) < 300;
+    lastClickTime = now;
+    lastClickNodeId = nodeId;
+
+    // Double-click on project: open GitHub
+    if (isDoubleClick && graphNode.type === 'project') {
+      const url = deriveGitHubUrl(nodeId);
+      if (url) window.open(url, '_blank');
+      return;
+    }
+
     // Toggle: clicking the same node again clears the highlight
     if (currentBuild && currentBuild.selectedNodeId === nodeId) {
       clearHighlights(currentBuild);
@@ -334,8 +347,6 @@ function main(): void {
     }
 
     if (graphNode.type === 'project') {
-      const url = deriveGitHubUrl(nodeId);
-      if (url) window.open(url, '_blank');
       tooltip.show(graphNode, edges, screenPos.x, screenPos.y);
     } else {
       // tool or skill: focus camera on every project that uses this node
@@ -405,6 +416,7 @@ function main(): void {
     },
 
     rebuild(snapshot: GraphSnapshot) {
+      _didFitCamera = false;
       if (currentBuild) clearBuild(scene, currentBuild);
       currentSnapshot = snapshot;
       const result = build(toGraphData(snapshot), scene);
@@ -459,26 +471,36 @@ function main(): void {
 
   // ── Animation loop ──────────────────────────────────────────────────────────
 
+  let _didFitCamera = false;
+
   startAnimationLoop((deltaS: number) => {
     const t = performance.now() / 1000;
 
     if (currentBuild) {
-      if (!currentBuild.simulation.isCooled()) {
-        currentBuild.simulation.tick();
-        // Keep edge line endpoints in sync with physics positions
-        for (let i = 0; i < currentBuild.edgeMeshes.length; i++) {
-          const line = currentBuild.edgeMeshes[i];
-          const edge = currentBuild.edges[i];
-          if (!edge) continue;
-          const src = currentBuild.meshes.get(edge.sourceId);
-          const tgt = currentBuild.meshes.get(edge.targetId);
-          if (!src || !tgt) continue;
-          const pos = line.geometry.attributes['position'] as THREE.BufferAttribute;
-          if (pos) {
-            pos.setXYZ(0, src.position.x, src.position.y, src.position.z);
-            pos.setXYZ(1, tgt.position.x, tgt.position.y, tgt.position.z);
-            pos.needsUpdate = true;
-          }
+      if (currentBuild.simulation.isCooled() && !_didFitCamera) {
+        let maxR = 0;
+        for (const mesh of currentBuild.meshes.values()) {
+          const r = mesh.position.length();
+          if (r > maxR) maxR = r;
+        }
+        camera.position.set(0, 0, maxR * 0.002);
+        controls.update();
+        _didFitCamera = true;
+      }
+      currentBuild.simulation.tick();
+      // Keep edge line endpoints in sync with physics positions
+      for (let i = 0; i < currentBuild.edgeMeshes.length; i++) {
+        const line = currentBuild.edgeMeshes[i];
+        const edge = currentBuild.edges[i];
+        if (!edge) continue;
+        const src = currentBuild.meshes.get(edge.sourceId);
+        const tgt = currentBuild.meshes.get(edge.targetId);
+        if (!src || !tgt) continue;
+        const pos = line.geometry.attributes['position'] as THREE.BufferAttribute;
+        if (pos) {
+          pos.setXYZ(0, src.position.x, src.position.y, src.position.z);
+          pos.setXYZ(1, tgt.position.x, tgt.position.y, tgt.position.z);
+          pos.needsUpdate = true;
         }
       }
 
