@@ -18,7 +18,7 @@ function cleanup(dir: string): void {
 
 function writeDevNeuralJson(dir: string, content: object): void {
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'devneural.json'), JSON.stringify(content));
+  fs.writeFileSync(path.join(dir, 'devneural.jsonc'), JSON.stringify(content));
 }
 
 const validConfig = {
@@ -80,7 +80,7 @@ describe('buildProjectRegistry', () => {
     try {
       const badDir = path.join(root, 'bad-json-repo');
       fs.mkdirSync(badDir);
-      fs.writeFileSync(path.join(badDir, 'devneural.json'), '{ not valid json !!!');
+      fs.writeFileSync(path.join(badDir, 'devneural.jsonc'), '{ not valid json !!!');
       const registry = await buildProjectRegistry(root);
       expect(registry.size).toBe(0);
     } finally {
@@ -110,7 +110,7 @@ describe('buildProjectRegistry', () => {
       // Malformed JSON
       const badDir = path.join(root, 'bad-json-repo');
       fs.mkdirSync(badDir);
-      fs.writeFileSync(path.join(badDir, 'devneural.json'), 'not-json');
+      fs.writeFileSync(path.join(badDir, 'devneural.jsonc'), 'not-json');
       // Missing fields
       writeDevNeuralJson(path.join(root, 'missing-fields-repo'), { name: 'Only Name' });
       // No devneural.json at all

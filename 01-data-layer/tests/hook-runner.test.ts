@@ -362,44 +362,44 @@ describe('readDevneuralJson', () => {
   beforeEach(() => { tempDir = createTempDir(); });
   afterEach(() => { removeTempDir(tempDir); });
 
-  it('reads stage and tags from devneural.json in the current directory', async () => {
-    fs.writeFileSync(path.join(tempDir, 'devneural.json'), JSON.stringify(validConfig), 'utf8');
+  it('reads stage and tags from devneural.jsonc in the current directory', async () => {
+    fs.writeFileSync(path.join(tempDir, 'devneural.jsonc'), JSON.stringify(validConfig), 'utf8');
     const result = await readDevneuralJson(tempDir);
     expect(result).toBeDefined();
     expect(result!.stage).toBe('beta');
     expect(result!.tags).toEqual(['sandbox']);
   });
 
-  it('walks up 3 directory levels to find devneural.json', async () => {
+  it('walks up 3 directory levels to find devneural.jsonc', async () => {
     const deepDir = path.join(tempDir, 'a', 'b', 'c');
     fs.mkdirSync(deepDir, { recursive: true });
-    fs.writeFileSync(path.join(tempDir, 'devneural.json'), JSON.stringify(validConfig), 'utf8');
+    fs.writeFileSync(path.join(tempDir, 'devneural.jsonc'), JSON.stringify(validConfig), 'utf8');
     const result = await readDevneuralJson(deepDir);
     expect(result).toBeDefined();
     expect(result!.stage).toBe('beta');
   });
 
-  it('returns undefined when no devneural.json exists anywhere in the path', async () => {
-    // Use a deeply nested temp path with no devneural.json
+  it('returns undefined when no devneural.jsonc exists anywhere in the path', async () => {
+    // Use a deeply nested temp path with no devneural.jsonc
     const deepDir = path.join(tempDir, 'x', 'y', 'z');
     fs.mkdirSync(deepDir, { recursive: true });
     const result = await readDevneuralJson(deepDir);
     expect(result).toBeUndefined();
   });
 
-  it('returns undefined and emits a warning when devneural.json contains malformed JSON', async () => {
+  it('returns undefined and emits a warning when devneural.jsonc contains malformed JSON', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    fs.writeFileSync(path.join(tempDir, 'devneural.json'), '{ not json', 'utf8');
+    fs.writeFileSync(path.join(tempDir, 'devneural.jsonc'), '{ not json', 'utf8');
     const result = await readDevneuralJson(tempDir);
     expect(result).toBeUndefined();
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[DevNeural]'), expect.anything());
     warnSpy.mockRestore();
   });
 
-  it('returns result without stage key when devneural.json is missing the stage field', async () => {
+  it('returns result without stage key when devneural.jsonc is missing the stage field', async () => {
     const withoutStage = { ...validConfig };
     delete (withoutStage as Record<string, unknown>)['stage'];
-    fs.writeFileSync(path.join(tempDir, 'devneural.json'), JSON.stringify(withoutStage), 'utf8');
+    fs.writeFileSync(path.join(tempDir, 'devneural.jsonc'), JSON.stringify(withoutStage), 'utf8');
     const result = await readDevneuralJson(tempDir);
     expect(result).toBeDefined();
     expect(result!.stage).toBeUndefined();
@@ -461,10 +461,10 @@ describe('weights.json does not contain stage/tags', () => {
   afterEach(() => { removeTempDir(dataRoot); });
 
   it('ConnectionRecord has no stage or tags fields after hook run', () => {
-    // Create a devneural.json in a temp cwd
+    // Create a devneural.jsonc in a temp cwd
     const cwd = createTempDir();
     try {
-      fs.writeFileSync(path.join(cwd, 'devneural.json'), JSON.stringify({
+      fs.writeFileSync(path.join(cwd, 'devneural.jsonc'), JSON.stringify({
         name: 'Proj',
         localPath: cwd,
         githubUrl: 'https://github.com/user/proj',
@@ -490,18 +490,18 @@ describe('weights.json does not contain stage/tags', () => {
   });
 });
 
-// ── devneural.json enrichment in subprocess ───────────────────────────────────
+// ── devneural.jsonc enrichment in subprocess ───────────────────────────────────
 
-describe('Hook runner orchestration: devneural.json enrichment (subprocess)', () => {
+describe('Hook runner orchestration: devneural.jsonc enrichment (subprocess)', () => {
   let dataRoot: string;
 
   beforeEach(() => { dataRoot = createTempDir(); });
   afterEach(() => { removeTempDir(dataRoot); });
 
-  it('JSONL log entry contains stage and tags when devneural.json is in cwd', () => {
+  it('JSONL log entry contains stage and tags when devneural.jsonc is in cwd', () => {
     const cwd = createTempDir();
     try {
-      fs.writeFileSync(path.join(cwd, 'devneural.json'), JSON.stringify({
+      fs.writeFileSync(path.join(cwd, 'devneural.jsonc'), JSON.stringify({
         name: 'TestProject',
         localPath: cwd,
         githubUrl: 'https://github.com/user/testproj',
@@ -531,7 +531,7 @@ describe('Hook runner orchestration: devneural.json enrichment (subprocess)', ()
     }
   });
 
-  it('JSONL log entry omits stage and tags when no devneural.json in path', () => {
+  it('JSONL log entry omits stage and tags when no devneural.jsonc in path', () => {
     const cwd = createTempDir();
     try {
       const payload = makePayload({ tool_name: 'Bash', tool_input: { command: 'ls' }, cwd });
@@ -556,10 +556,10 @@ describe('Hook runner orchestration: devneural.json enrichment (subprocess)', ()
     }
   });
 
-  it('hook runner exits 0 and proceeds normally when devneural.json is malformed', () => {
+  it('hook runner exits 0 and proceeds normally when devneural.jsonc is malformed', () => {
     const cwd = createTempDir();
     try {
-      fs.writeFileSync(path.join(cwd, 'devneural.json'), '{ bad json !!', 'utf8');
+      fs.writeFileSync(path.join(cwd, 'devneural.jsonc'), '{ bad json !!', 'utf8');
       const payload = makePayload({ tool_name: 'Bash', tool_input: { command: 'ls' }, cwd });
       const result = spawnHook(JSON.stringify(payload), { DEVNEURAL_DATA_ROOT: dataRoot });
       expect(result.status).toBe(0);
