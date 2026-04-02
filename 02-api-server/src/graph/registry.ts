@@ -2,8 +2,14 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { ProjectMeta, ProjectRegistry } from './types.js';
 
+/** Strips // line and /* block comments from JSONC content before JSON.parse. */
+function stripJsoncComments(src: string): string {
+  return src.replace(/("(?:[^"\\]|\\.)*")|\/\/[^\n]*|\/\*[\s\S]*?\*\//g,
+    (_, str: string | undefined) => str ?? '');
+}
+
 /**
- * Scans `localReposRoot` one level deep for devneural.json files.
+ * Scans `localReposRoot` one level deep for devneural.jsonc files.
  * Returns a registry Map keyed by the project node id derived from
  * the githubUrl field ('project:' + stripped URL scheme).
  *
@@ -25,23 +31,23 @@ export async function buildProjectRegistry(
   }
 
   for (const entry of entries) {
-    const configPath = path.join(localReposRoot, entry, 'devneural.json');
+    const configPath = path.join(localReposRoot, entry, 'devneural.jsonc');
     let raw: string;
     try {
       raw = await fs.readFile(configPath, 'utf-8');
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== 'ENOENT') {
-        console.warn(`[DevNeural] registry: could not read devneural.json in ${entry}:`, err instanceof Error ? err.message : String(err));
+        console.warn(`[DevNeural] registry: could not read devneural.jsonc in ${entry}:`, err instanceof Error ? err.message : String(err));
       }
       continue;
     }
 
     let parsed: unknown;
     try {
-      parsed = JSON.parse(raw);
+      parsed = JSON.parse(stripJsoncComments(raw));
     } catch (err) {
-      console.warn(`[DevNeural] registry: malformed devneural.json in ${entry}:`, err instanceof Error ? err.message : String(err));
+      console.warn(`[DevNeural] registry: malformed devneural.jsonc in ${entry}:`, err instanceof Error ? err.message : String(err));
       continue;
     }
 

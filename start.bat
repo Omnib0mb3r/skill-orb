@@ -18,7 +18,7 @@ REM ── Brief pause so ports are fully released ─────────�
 timeout /t 1 /nobreak >nul
 
 REM ── API Server (port 3747) ─────────────────────────────────────────────────
-start "DevNeural API :3747" cmd /k "cd /d c:\dev\Projects\DevNeural\02-api-server && npm run dev"
+start "DevNeural API :3747" cmd /k "set DEVNEURAL_LOCAL_REPOS_ROOT=c:\dev\Projects&& cd /d c:\dev\Projects\DevNeural\02-api-server && npm run dev"
 
 REM ── Web App (port 5173, strict — fails loudly if port is still taken) ──────
 start "DevNeural Web :5173" cmd /k "cd /d c:\dev\Projects\DevNeural\03-web-app && npm run dev -- --port 5173 --strictPort"

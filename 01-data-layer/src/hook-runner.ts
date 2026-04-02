@@ -148,8 +148,14 @@ export async function deriveConnections(
   }
 }
 
+/** Strips // line and /* block comments from JSONC content before JSON.parse. */
+function stripJsoncComments(src: string): string {
+  return src.replace(/("(?:[^"\\]|\\.)*")|\/\/[^\n]*|\/\*[\s\S]*?\*\//g,
+    (_, str: string | undefined) => str ?? '');
+}
+
 /**
- * Walks up from startDir looking for a devneural.json file.
+ * Walks up from startDir looking for a devneural.jsonc file.
  * Returns { stage?, tags? } if found, undefined if not found or if JSON is malformed.
  * Never throws.
  */
@@ -158,14 +164,14 @@ export async function readDevneuralJson(
 ): Promise<{ stage?: string; tags?: string[] } | undefined> {
   let current = startDir;
   while (true) {
-    const candidate = path.join(current, 'devneural.json');
+    const candidate = path.join(current, 'devneural.jsonc');
     try {
       const content = await fs.promises.readFile(candidate, 'utf-8');
       let parsed: unknown;
       try {
-        parsed = JSON.parse(content);
+        parsed = JSON.parse(stripJsoncComments(content));
       } catch (err) {
-        console.warn('[DevNeural] devneural.json parse error:', err instanceof Error ? err.message : String(err));
+        console.warn('[DevNeural] devneural.jsonc parse error:', err instanceof Error ? err.message : String(err));
         return undefined;
       }
       if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -180,7 +186,7 @@ export async function readDevneuralJson(
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== 'ENOENT') {
-        console.warn('[DevNeural] devneural.json read error:', err instanceof Error ? err.message : String(err));
+        console.warn('[DevNeural] devneural.jsonc read error:', err instanceof Error ? err.message : String(err));
         return undefined;
       }
       // ENOENT — file not found at this level, walk up

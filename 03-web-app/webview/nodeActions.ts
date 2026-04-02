@@ -63,10 +63,10 @@ export function createTooltip(): TooltipController {
     borderRadius: '6px',
     color: '#e0e0e0',
     fontFamily: 'monospace',
-    fontSize: '12px',
-    padding: '8px 12px',
+    fontSize: '16px',
+    padding: '14px 20px',
     lineHeight: '1.6',
-    maxWidth: '260px',
+    maxWidth: '520px',
     zIndex: '100',
   });
 

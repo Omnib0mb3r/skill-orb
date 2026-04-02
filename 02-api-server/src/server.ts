@@ -33,7 +33,11 @@ export async function createServer(config: ServerConfig): Promise<{
   // Build initial project registry from localReposRoot (empty if not configured)
   let registry: ProjectRegistry = new Map();
   if (config.localReposRoot) {
+    console.log(`[DevNeural] scanning registry at: ${config.localReposRoot}`);
     registry = await buildProjectRegistry(config.localReposRoot);
+    console.log(`[DevNeural] registry loaded: ${registry.size} project(s)`);
+  } else {
+    console.log('[DevNeural] registry scan skipped: DEVNEURAL_LOCAL_REPOS_ROOT not set');
   }
 
   // Track latest weights so registry re-scans can re-enrich without re-reading disk
@@ -86,7 +90,7 @@ export async function createServer(config: ServerConfig): Promise<{
     }
   }
 
-  // Watch localReposRoot for devneural.json changes and rebuild registry on any change
+  // Watch localReposRoot for devneural.jsonc changes and rebuild registry on any change
   let registryWatcher: ReturnType<typeof chokidar.watch> | null = null;
   if (config.localReposRoot) {
     const handleRegistryChange = async () => {
@@ -95,7 +99,7 @@ export async function createServer(config: ServerConfig): Promise<{
       broadcast({ type: 'graph:snapshot', payload: getFullGraph(graph, new Date().toISOString()) });
     };
     registryWatcher = chokidar.watch(
-      `${config.localReposRoot.replace(/\\/g, '/')}/**/devneural.json`,
+      `${config.localReposRoot.replace(/\\/g, '/')}/**/devneural.jsonc`,
       { ignoreInitial: true, depth: 1 }
     );
     registryWatcher.on('add', handleRegistryChange).on('change', handleRegistryChange);
