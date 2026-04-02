@@ -4,6 +4,21 @@ A living neural network of everything you build — projects, tools, skills, and
 
 ---
 
+## Current State
+
+**Repo:** `C:\dev\Projects\DevNeural` (master branch)
+**Archive reference:** `C:\dev\tools\Archive\DevNeural` — the working orb build this codebase was synced to
+
+**What's working:**
+- API server (`02-api-server`) — Fastify REST + WebSocket on port 3747, Monday sync route wired
+- Orb (`03-web-app`) — Three.js visualization, single-click highlight, double-click opens GitHub, auto camera-fit on simulation cool
+- Session intelligence (`04-session-intelligence`) — SessionStart hook installed in `~/.claude/settings.json`
+- Data layer (`01-data-layer`) — PostToolUse hook logging to `C:\dev\data\skill-connections\`
+
+**To resume:** run `start.bat` from `C:\dev\Projects\DevNeural`, open `http://localhost:5173`
+
+---
+
 ## What It Does
 
 DevNeural is not just a visualizer — it is a neural network Claude actively uses. It tracks every skill invocation, repo reference, and tool usage across all your projects, building a weighted dependency graph over time. When starting a new project, Claude queries DevNeural to surface existing tools, skills, and patterns — preventing duplicate work and unlocking cross-project intelligence.
