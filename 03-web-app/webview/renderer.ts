@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-export const ORB_RADIUS = 120;
+export const ORB_RADIUS = 60;
 
 type ResizeCallback = (width: number, height: number) => void;
 const resizeListeners: ResizeCallback[] = [];

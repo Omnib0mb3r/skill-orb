@@ -158,7 +158,7 @@ export function initHud(): HudRef {
   const panel = document.createElement('div');
   panel.className = 'dn-panel';
   Object.assign(panel.style, {
-    bottom: '60px',
+    top: '20px',
     right: '20px',
     width: '560px',
     padding: '28px 34px',

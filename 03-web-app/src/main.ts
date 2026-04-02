@@ -416,7 +416,7 @@ function main(): void {
     },
 
     rebuild(snapshot: GraphSnapshot) {
-      _didFitCamera = false;
+      _didFitCamera = true;
       if (currentBuild) clearBuild(scene, currentBuild);
       currentSnapshot = snapshot;
       const result = build(toGraphData(snapshot), scene);
@@ -471,7 +471,7 @@ function main(): void {
 
   // ── Animation loop ──────────────────────────────────────────────────────────
 
-  let _didFitCamera = false;
+  let _didFitCamera = true;
 
   startAnimationLoop((deltaS: number) => {
     const t = performance.now() / 1000;
