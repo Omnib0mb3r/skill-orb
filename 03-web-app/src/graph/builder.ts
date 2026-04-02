@@ -123,53 +123,24 @@ export function build(graphData: GraphData, scene: THREE.Scene): BuildResult {
   const orbEdges: OrbEdge[] = [];
   const edgeMeshes: THREE.Line[] = [];
 
-  // Edge color rules:
-  //  - project→skill/tool: use the skill/tool's count of project connections
-  //  - project→project:    use the project's count of P→P connections only
-  //    (skill connections do not inflate a project's P→P color)
-  // Both normalized against the same max so a project with 2 P→P connections
-  // is as warm as a skill used by 2 projects.
-  const MIN_COLOR_WEIGHT = 0.35;
-  const skillDegree = new Map<string, number>();
-  const ppDegree    = new Map<string, number>();
-  for (const edge of graphData.edges) {
-    const isPP = edge.sourceId.startsWith('project:') && edge.targetId.startsWith('project:');
-    if (isPP) {
-      ppDegree.set(edge.sourceId, (ppDegree.get(edge.sourceId) ?? 0) + 1);
-      ppDegree.set(edge.targetId, (ppDegree.get(edge.targetId) ?? 0) + 1);
-    } else {
-      const stId = !edge.targetId.startsWith('project:') ? edge.targetId : edge.sourceId;
-      skillDegree.set(stId, (skillDegree.get(stId) ?? 0) + 1);
-    }
-  }
-  const maxSkillDegree = Math.max(0, ...skillDegree.values());
-  const maxPPDegree    = Math.max(0, ...ppDegree.values());
-  const maxColorDegree = Math.max(maxSkillDegree, maxPPDegree);
-
   for (const edge of graphData.edges) {
     const srcMesh = meshMap.get(edge.sourceId);
     const tgtMesh = meshMap.get(edge.targetId);
     if (!srcMesh || !tgtMesh) continue;
 
-    const isPP = edge.sourceId.startsWith('project:') && edge.targetId.startsWith('project:');
-    const edgeDegree = isPP
-      ? Math.max(ppDegree.get(edge.sourceId) ?? 0, ppDegree.get(edge.targetId) ?? 0)
-      : skillDegree.get(!edge.targetId.startsWith('project:') ? edge.targetId : edge.sourceId) ?? 0;
-    const normalized = maxColorDegree > 0 ? edgeDegree / maxColorDegree : 0;
-    const colorWeight = MIN_COLOR_WEIGHT + normalized * (1 - MIN_COLOR_WEIGHT);
-
     const lineGeo = new THREE.BufferGeometry();
-    lineGeo.setFromPoints([srcMesh.position, tgtMesh.position]);
-    const color = getEdgeColor(colorWeight);
-    const opacity = getEdgeOpacity(colorWeight);
-    const lineMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
+    lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((N_SEGMENTS + 1) * 3), 3));
+    lineGeo.setAttribute('color',    new THREE.BufferAttribute(new Float32Array((N_SEGMENTS + 1) * 3), 3));
+    const lineMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: getEdgeOpacity(0.25) });
     const line = new THREE.Line(lineGeo, lineMat);
     scene.add(line);
     edgeMeshes.push(line);
 
     physicsEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: edge.weight });
-    orbEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: colorWeight });
+    orbEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: 0.25 });
   }
+
+  recomputeEdgeHeat(orbEdges, edgeMeshes);
 
   const simulation = createSimulation(physicsNodes, physicsEdges);
 
@@ -184,3 +155,59 @@ export function build(graphData: GraphData, scene: THREE.Scene): BuildResult {
     simulation,
   };
 }
+
+/** Number of segments per edge line — more segments = smoother heat dissipation gradient. */
+export const N_SEGMENTS = 8;
+
+/** Power applied to the dissipation curve. t^HEAT_POWER keeps heat near the source longer. */
+const HEAT_POWER = 2;
+
+/**
+ * Assigns per-vertex colors to each edge using a heat-dissipation curve.
+ * Heat is generated at the hotter endpoint (more connections) and dissipates
+ * toward the cooler endpoint. The t^HEAT_POWER curve keeps the hot color
+ * concentrated near the source and drops quickly toward the cold end.
+ * Also sets edge.weight to the average heat for the opacity pulse.
+ */
+export function recomputeEdgeHeat(edges: OrbEdge[], edgeMeshes: THREE.Line[]): void {
+  const degree = new Map<string, number>();
+  for (const e of edges) {
+    degree.set(e.sourceId, (degree.get(e.sourceId) ?? 0) + 1);
+    degree.set(e.targetId, (degree.get(e.targetId) ?? 0) + 1);
+  }
+  let maxDeg = 0;
+  for (const d of degree.values()) if (d > maxDeg) maxDeg = d;
+
+  const c = new THREE.Color();
+
+  for (let i = 0; i < edges.length; i++) {
+    const edge = edges[i];
+    const mesh = edgeMeshes[i];
+    if (!mesh) continue;
+
+    const srcDeg = degree.get(edge.sourceId) ?? 1;
+    const tgtDeg = degree.get(edge.targetId) ?? 1;
+    const srcHeat = maxDeg <= 1 ? 0.25 : 0.25 + ((srcDeg - 1) / (maxDeg - 1)) * 0.75;
+    const tgtHeat = maxDeg <= 1 ? 0.25 : 0.25 + ((tgtDeg - 1) / (maxDeg - 1)) * 0.75;
+
+    edge.weight = (srcHeat + tgtHeat) / 2;
+
+    const colorAttr = mesh.geometry.attributes['color'] as THREE.BufferAttribute;
+    if (!colorAttr) continue;
+
+    // Hot end is whichever node has more connections — heat flows from there
+    const hotFirst = srcDeg >= tgtDeg;
+    const hotHeat  = hotFirst ? srcHeat : tgtHeat;
+    const coldHeat = hotFirst ? tgtHeat : srcHeat;
+
+    for (let v = 0; v <= N_SEGMENTS; v++) {
+      // t=0 at hot end, t=1 at cold end — direction depends on which node is hotter
+      const t = hotFirst ? v / N_SEGMENTS : (N_SEGMENTS - v) / N_SEGMENTS;
+      const heat = hotHeat + (coldHeat - hotHeat) * Math.pow(t, HEAT_POWER);
+      c.set(getEdgeColor(heat));
+      colorAttr.setXYZ(v, c.r, c.g, c.b);
+    }
+    colorAttr.needsUpdate = true;
+  }
+}
+

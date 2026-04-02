@@ -4,7 +4,7 @@ import { createCameraController } from '../webview/camera';
 import { initVoice } from '../webview/voice';
 import { detectVoiceIntent, evaluateQuery } from '../webview/search';
 import { createTooltip, deriveGitHubUrl } from '../webview/nodeActions';
-import { build } from './graph/builder';
+import { build, recomputeEdgeHeat, N_SEGMENTS } from './graph/builder';
 import type { BuildResult, GraphData } from './graph/builder';
 import { getMaterialForNodeType, getEdgeColor, getEdgeOpacity } from './orb/visuals';
 import { connect } from './ws/client';
@@ -109,19 +109,23 @@ function applySearchHighlight(b: AppState, matchIds: Set<string>): void {
       mat.color.setHex(0x112233);
       mat.emissive.setHex(0x000000);
       mat.emissiveIntensity = 0.0;
-      mat.opacity = 0.1;
+      mat.opacity = 0.25;
       mat.transparent = true;
     }
     mat.needsUpdate = true;
   }
+  recomputeEdgeHeat(b.edges, b.edgeMeshes);
   for (let i = 0; i < b.edgeMeshes.length; i++) {
-    const mat = b.edgeMeshes[i].material as THREE.LineBasicMaterial;
+    const mesh = b.edgeMeshes[i];
+    const mat = mesh.material as THREE.LineBasicMaterial;
     if (connectedEdgeIdx.has(i)) {
-      const edge = b.edges[i];
-      mat.color.setHex(getEdgeColor(edge?.weight ?? 0.5));
       mat.opacity = 0.85;
     } else {
-      mat.color.setHex(0x0a0f1a);
+      const colorAttr = mesh.geometry.attributes['color'] as THREE.BufferAttribute;
+      if (colorAttr) {
+        for (let v = 0; v <= N_SEGMENTS; v++) colorAttr.setXYZ(v, 0.04, 0.06, 0.10);
+        colorAttr.needsUpdate = true;
+      }
       mat.opacity = 0.04;
     }
     mat.needsUpdate = true;
@@ -140,14 +144,14 @@ function clearHighlights(b: AppState): void {
     mat.opacity = cfg.opacity;
     mat.transparent = cfg.transparent;
     mat.emissive.setHex(cfg.emissive ?? cfg.color);
-    mat.emissiveIntensity = cfg.emissiveIntensity ?? 0.15;
+    mat.emissiveIntensity = cfg.emissiveIntensity ?? 0.255;
     mat.needsUpdate = true;
   }
+  recomputeEdgeHeat(b.edges, b.edgeMeshes);
   for (let i = 0; i < b.edgeMeshes.length; i++) {
     const edge = b.edges[i];
     if (!edge) continue;
     const mat = b.edgeMeshes[i].material as THREE.LineBasicMaterial;
-    mat.color.setHex(getEdgeColor(edge.weight));
     mat.opacity = getEdgeOpacity(edge.weight);
     mat.needsUpdate = true;
   }
@@ -186,19 +190,28 @@ function applyHighlight(b: AppState, clickedId: string): void {
       mat.color.setHex(0x112233);
       mat.emissive.setHex(0x000000);
       mat.emissiveIntensity = 0.0;
-      mat.opacity = 0.12;
+      mat.opacity = 0.252;
       mat.transparent = true;
     }
     mat.needsUpdate = true;
   }
 
+  recomputeEdgeHeat(b.edges, b.edgeMeshes);
   for (let i = 0; i < b.edgeMeshes.length; i++) {
-    const mat = b.edgeMeshes[i].material as THREE.LineBasicMaterial;
+    const mesh = b.edgeMeshes[i];
+    const mat = mesh.material as THREE.LineBasicMaterial;
+    const colorAttr = mesh.geometry.attributes['color'] as THREE.BufferAttribute;
     if (connectedEdgeIdx.has(i)) {
-      mat.color.setHex(0xffffff);
+      if (colorAttr) {
+        for (let v = 0; v <= N_SEGMENTS; v++) colorAttr.setXYZ(v, 1, 1, 1);
+        colorAttr.needsUpdate = true;
+      }
       mat.opacity = 1.0;
     } else {
-      mat.color.setHex(0x0a0f1a);
+      if (colorAttr) {
+        for (let v = 0; v <= N_SEGMENTS; v++) colorAttr.setXYZ(v, 0.04, 0.06, 0.10);
+        colorAttr.needsUpdate = true;
+      }
       mat.opacity = 0.04;
     }
     mat.needsUpdate = true;
@@ -455,12 +468,14 @@ function main(): void {
       const tgtMesh = currentBuild.meshes.get(edge.target);
       if (!srcMesh || !tgtMesh) return;
       const lineGeo = new THREE.BufferGeometry();
-      lineGeo.setFromPoints([srcMesh.position, tgtMesh.position]);
-      const lineMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.3 });
+      lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((N_SEGMENTS + 1) * 3), 3));
+      lineGeo.setAttribute('color',    new THREE.BufferAttribute(new Float32Array((N_SEGMENTS + 1) * 3), 3));
+      const lineMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: getEdgeOpacity(0.25) });
       const line = new THREE.Line(lineGeo, lineMat);
       scene.add(line);
       currentBuild.edgeMeshes.push(line);
-      currentBuild.edges.push({ sourceId: edge.source, targetId: edge.target, weight: 1.0 });
+      currentBuild.edges.push({ sourceId: edge.source, targetId: edge.target, weight: 0 });
+      recomputeEdgeHeat(currentBuild.edges, currentBuild.edgeMeshes);
     },
 
     setFocusNode(nodeId: string) { cameraController.onActiveProjectsChanged([nodeId]); },
@@ -498,8 +513,14 @@ function main(): void {
         if (!src || !tgt) continue;
         const pos = line.geometry.attributes['position'] as THREE.BufferAttribute;
         if (pos) {
-          pos.setXYZ(0, src.position.x, src.position.y, src.position.z);
-          pos.setXYZ(1, tgt.position.x, tgt.position.y, tgt.position.z);
+          for (let v = 0; v <= N_SEGMENTS; v++) {
+            const t = v / N_SEGMENTS;
+            pos.setXYZ(v,
+              src.position.x + (tgt.position.x - src.position.x) * t,
+              src.position.y + (tgt.position.y - src.position.y) * t,
+              src.position.z + (tgt.position.z - src.position.z) * t,
+            );
+          }
           pos.needsUpdate = true;
         }
       }
