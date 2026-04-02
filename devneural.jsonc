@@ -1,0 +1,19 @@
+// DevNeural Project Metadata
+//
+// stage — accepted values:
+//   "alpha"     → R&D / early development
+//   "beta"      → feature complete, in testing
+//   "deployed"  → live / released
+//   "archived"  → inactive
+//   NOTE: "pre-release" is a manual promotion on monday.com only — never set it here
+//
+// tags — free-form strings, e.g.:
+//   "autocad", "autolisp", "claude", "skill", "conveyor", "website", "api", "tool", "design"
+{
+  "name": "DevNeural",
+  "localPath": "c:/dev/Projects/DevNeural",
+  "githubUrl": "https://github.com/Omnib0mb3r/DevNeural",
+  "stage": "alpha",
+  "tags": ["Claude", "Skill", "Tool" ],
+  "description": "Living neural network of project interconnections — data layer, API server, and VS Code extension"
+}
