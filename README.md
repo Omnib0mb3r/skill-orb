@@ -7,7 +7,6 @@ A living neural network of everything you build — projects, tools, skills, and
 ## Current State
 
 **Repo:** `C:\dev\Projects\DevNeural` (master branch)
-**Archive reference:** `C:\dev\tools\Archive\DevNeural` — the working orb build this codebase was synced to
 
 **What's working:**
 - API server (`02-api-server`) — Fastify REST + WebSocket on port 3747, Monday sync route wired
@@ -56,6 +55,46 @@ Shared runtime data lives **outside this repo** at `C:\dev\data\skill-connection
 
 ---
 
+## Machine Migration Guide
+
+> If you move DevNeural to a new machine or new path, every item below must be updated. This is the complete list — nothing else outside this table holds a hard-coded path.
+
+### External files that reference this repo
+
+| File | What to update |
+|---|---|
+| `C:\Users\mcollins\.claude\settings.json` | All hook `command` values pointing to DevNeural (see table below) |
+| `C:\Users\mcollins\.claude\hooks\devneural-skill-tracker.js` | Standalone PreToolUse hook — not in this repo, must be copied to new machine manually |
+
+### Hook paths in `~/.claude/settings.json`
+
+These are the exact command strings that must be updated when the repo moves:
+
+| Hook type | Matcher | Command |
+|---|---|---|
+| `SessionStart` | `startup`, `resume`, `clear`, `compact` | `node "C:/dev/Projects/DevNeural/04-session-intelligence/dist/session-start.js"` |
+| `PostToolUse` | _(all tools)_ | `node C:/dev/Projects/DevNeural/01-data-layer/dist/hook-runner.js` |
+| `PreToolUse` | `Write\|Edit` | `node "C:/Users/mcollins/.claude/hooks/devneural-skill-tracker.js"` _(standalone — not in repo)_ |
+| `SessionStart` | _(all)_ | `node c:/dev/Projects/devneural-projects/scripts/fill-devneural.mjs` _(separate repo — see below)_ |
+
+### Related repos and directories that must also move
+
+| Path | What it is |
+|---|---|
+| `C:\dev\Projects\DevNeural\` | **This repo** |
+| `C:\dev\Projects\devneural-projects\` | Separate repo — contains `scripts/fill-devneural.mjs` (auto-fills `devneural.jsonc` on session start) |
+| `C:\dev\data\skill-connections\` | Shared data directory — `weights.json` and raw event logs. Not in any repo. Create manually: `mkdir -p C:/dev/data/skill-connections/logs` |
+
+### After moving — checklist
+
+1. Update all hook paths in `~/.claude/settings.json` to the new repo location
+2. Rebuild all modules: `npm install && npm run build` in each numbered subdirectory
+3. Copy `devneural-skill-tracker.js` to `~/.claude/hooks/` on the new machine
+4. Create the shared data directory: `mkdir -p C:/dev/data/skill-connections/logs`
+5. Start the API server and open a new Claude session — verify the SessionStart banner appears
+
+---
+
 ## Prerequisites
 
 - **Node.js 18+**
@@ -69,8 +108,6 @@ Shared runtime data lives **outside this repo** at `C:\dev\data\skill-connection
 
 ### 1. Clone and place the repo
 
-The built artefacts are served from `C:\dev\tools\DevNeural`. Clone to your preferred projects location:
-
 ```bash
 git clone https://github.com/Omnib0mb3r/DevNeural c:/dev/Projects/DevNeural
 ```
@@ -83,47 +120,57 @@ mkdir -p "C:/dev/data/skill-connections/logs"
 
 This directory holds `weights.json` and raw event logs. It is **not** inside the repo — every project on the machine writes here.
 
-### 3. Install dependencies for each module
-
-Run from the repo root:
+### 3. Install and build all modules
 
 ```bash
 cd c:/dev/Projects/DevNeural
 
-cd 01-data-layer && npm install && cd ..
-cd 02-api-server && npm install && cd ..
-cd 03-web-app && npm install && cd ..
-cd 04-session-intelligence && npm install && cd ..
-cd 05-voice-interface && npm install && cd ..
-cd 06-notebooklm-integration && npm install && cd ..
+cd 01-data-layer && npm install && npm run build && cd ..
+cd 02-api-server && npm install && npm run build && cd ..
+cd 03-web-app && npm install && npm run build && cd ..
+cd 04-session-intelligence && npm install && npm run build && cd ..
+cd 05-voice-interface && npm install && npm run build && cd ..
+cd 06-notebooklm-integration && npm install && npm run build && cd ..
 ```
 
-### 4. Build all modules
+### 4. Wire the Claude hooks
 
-```bash
-cd 01-data-layer && npm run build && cd ..
-cd 02-api-server && npm run build && cd ..
-cd 03-web-app && npm run build && cd ..
-cd 04-session-intelligence && npm run build && cd ..
-cd 05-voice-interface && npm run build && cd ..
-cd 06-notebooklm-integration && npm run build && cd ..
+Add the following to `~/.claude/settings.json` under the `hooks` key:
+
+```json
+"SessionStart": [
+  {
+    "matcher": "startup",
+    "hooks": [{ "type": "command", "command": "node \"C:/dev/Projects/DevNeural/04-session-intelligence/dist/session-start.js\"", "timeout": 10, "statusMessage": "Loading DevNeural context..." }]
+  },
+  {
+    "matcher": "resume",
+    "hooks": [{ "type": "command", "command": "node \"C:/dev/Projects/DevNeural/04-session-intelligence/dist/session-start.js\"", "timeout": 10 }]
+  },
+  {
+    "matcher": "clear",
+    "hooks": [{ "type": "command", "command": "node \"C:/dev/Projects/DevNeural/04-session-intelligence/dist/session-start.js\"", "timeout": 10 }]
+  },
+  {
+    "matcher": "compact",
+    "hooks": [{ "type": "command", "command": "node \"C:/dev/Projects/DevNeural/04-session-intelligence/dist/session-start.js\"", "timeout": 10 }]
+  },
+  {
+    "hooks": [{ "type": "command", "command": "node c:/dev/Projects/devneural-projects/scripts/fill-devneural.mjs", "timeout": 10 }]
+  }
+],
+"PostToolUse": [
+  {
+    "hooks": [{ "type": "command", "command": "node C:/dev/Projects/DevNeural/01-data-layer/dist/hook-runner.js" }]
+  }
+],
+"PreToolUse": [
+  {
+    "matcher": "Write|Edit",
+    "hooks": [{ "type": "command", "command": "node \"C:/Users/mcollins/.claude/hooks/devneural-skill-tracker.js\"" }]
+  }
+]
 ```
-
-### 5. Wire the Claude hooks
-
-Register the PostToolUse hook (data layer) and SessionStart hook (session intelligence) into `~/.claude/settings.json`:
-
-```bash
-# PostToolUse hook — logs every tool call
-# Add this manually to ~/.claude/settings.json hooks section,
-# pointing to: node "C:/dev/tools/DevNeural/01-data-layer/dist/hook-runner.js"
-
-# SessionStart hook — auto-installs via script:
-cd 04-session-intelligence
-npm run install-hook
-```
-
-The `install-hook` script is idempotent — safe to run again after rebuilds.
 
 After registration, start a new Claude Code session. The session start banner will show:
 
@@ -132,41 +179,15 @@ DevNeural Context for <project-id>:
   Skills (top connections): ...
 ```
 
-### 6. Add a devneural.json to each tracked project
+### 5. Add a devneural.jsonc to each tracked project
 
-Place a `devneural.json` at the root of every project you want to appear in the graph:
-
-```json
-{
-  "name": "MyProject",
-  "localPath": "C:/dev/Projects/MyProject",
-  "githubUrl": "https://github.com/youruser/MyProject",
-  "stage": "alpha",
-  "tags": [],
-  "description": "Short description shown in the orb tooltip"
-}
-```
-
-**Fields:**
-
-| Field | Required | Values |
-|---|---|---|
-| `name` | yes | Display label in the orb |
-| `localPath` | yes | Absolute path to the project root |
-| `githubUrl` | yes | Canonical GitHub URL — used as the node ID |
-| `stage` | yes | `alpha` \| `beta` \| `deployed` \| `archived` |
-| `tags` | yes | `[]` or `["revision-needed"]` or `["sandbox"]` |
-| `description` | yes | Short tooltip text |
-
-The API server watches for `devneural.json` changes and rebuilds the graph automatically.
+Use the [dev-template](https://github.com/Omnib0mb3r/dev-template) — it includes a pre-configured `devneural.jsonc` that auto-fills on first session start.
 
 ---
 
 ## Running
 
 ### Quick start (Windows)
-
-Double-click `start.bat` or run from a terminal:
 
 ```bat
 start.bat
@@ -183,8 +204,6 @@ cd 02-api-server && npm run dev
 # Terminal 2 — Web app / orb (port 5173)
 cd 03-web-app && npm run dev
 ```
-
-Then open `http://localhost:5173` in your browser, or open it in the VS Code webview panel.
 
 ### Environment variables
 
@@ -204,12 +223,10 @@ After pulling new commits:
 cd 01-data-layer && npm install && npm run build && cd ..
 cd 02-api-server && npm install && npm run build && cd ..
 cd 03-web-app && npm install && npm run build && cd ..
-cd 04-session-intelligence && npm install && npm run build && npm run install-hook && cd ..
+cd 04-session-intelligence && npm install && npm run build && cd ..
 cd 05-voice-interface && npm install && npm run build && cd ..
 cd 06-notebooklm-integration && npm install && npm run build && cd ..
 ```
-
-Re-running `npm run install-hook` after a session-intelligence update is safe — it is idempotent.
 
 ---
 
@@ -234,28 +251,7 @@ Edit `config.json`:
 }
 ```
 
-Run a sync:
-
-```bash
-cd 06-notebooklm-integration && npm run dev
-```
-
 Requires a valid `ANTHROPIC_API_KEY` environment variable.
-
----
-
-## Tests
-
-Each module has its own test suite:
-
-```bash
-cd 01-data-layer && npm test
-cd 02-api-server && npm test
-cd 03-web-app && npm test
-cd 04-session-intelligence && npm test
-cd 05-voice-interface && npm test
-cd 06-notebooklm-integration && npm test
-```
 
 ---
 
@@ -268,13 +264,16 @@ Check that port 3747 is free: `netstat -aon | findstr :3747`
 The `04-session-intelligence` hook fires before the API server is running. Start the API server first, then open a new Claude session.
 
 **Orb shows no nodes**
-Verify at least one `devneural.json` file is present in a directory under `localReposRoot` and that the API server is running. Check stderr in the API server terminal for validation warnings.
+Verify at least one `devneural.jsonc` file is present in a tracked project and that the API server is running. Check stderr in the API server terminal for validation warnings.
 
 **Hook not firing**
-Confirm `~/.claude/settings.json` contains a `SessionStart` entry pointing to `session-start.js`. Restart Claude Code — hook config is read at session startup, not hot-reloaded.
+Confirm `~/.claude/settings.json` contains the correct `SessionStart` entries. Restart Claude Code — hook config is read at session startup, not hot-reloaded.
 
 **Port 5173 already in use**
 `start.bat` kills it automatically. For manual starts: `npx kill-port 5173`
+
+**Moved the repo and hooks stopped working**
+See the [Machine Migration Guide](#machine-migration-guide) above — update every path in `~/.claude/settings.json` and rebuild all modules.
 
 ---
 
