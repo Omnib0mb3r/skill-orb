@@ -4,6 +4,83 @@ A living neural network of everything you build — projects, tools, skills, and
 
 ---
 
+## Ecosystem Map
+
+> Every repo, every hook, every external path. Start here if you're lost or setting up a new machine.
+
+### Repos and their roles
+
+| Repo | Role | Stage |
+|---|---|---|
+| [DevNeural](https://github.com/Omnib0mb3r/DevNeural) | **Graph brain** — API server, orb visualization, session context injection, tool-use logging | infrastructure |
+| [devneural-projects](https://github.com/Omnib0mb3r/devneural-projects) | **Project lifecycle** — monday.com MCP, stage sync, task boards, `fill-devneural.mjs` hook | infrastructure |
+| [dev-template](https://github.com/Omnib0mb3r/dev-template) | **Project starter** — `devneural.jsonc`, `OTLC-Brainstorm.MD`, `CLAUDE.md` for every new project | infrastructure |
+| [Claude-Setup](https://github.com/Omnib0mb3r/Claude-Setup) | **Config backup** — reference copy of `~/.claude/settings.json` and global `CLAUDE.md` | deployed |
+| [autolisp-skill](https://github.com/Omnib0mb3r/autolisp-skill) | AutoLISP Claude Code skill — rules and best practices | deployed |
+| [blkbom](https://github.com/Omnib0mb3r/blkbom) | AutoLISP Block BOM Generator for AutoCAD | deployed |
+| [conveyornum](https://github.com/Omnib0mb3r/conveyornum) | AHK v2 conveyor number keyboard wedge for AutoCAD | deployed |
+| [conveyor-designer](https://github.com/Omnib0mb3r/conveyor-designer) | Conveyor system design tool | alpha |
+| [Landmark40](https://github.com/Omnib0mb3r/Landmark40) | Landmark Lodge No. 40 official website | deployed |
+| [omnibomber-site](https://github.com/Omnib0mb3r/omnibomber-site) | OmniB0mb3r personal brand website | deployed |
+
+### Tag connections (graph edges)
+
+Tags in `devneural.jsonc` are what create edges in the graph. Projects that share tags are connected.
+
+| Tag cluster | Projects |
+|---|---|
+| `autolisp` · `autocad` | autolisp-skill, blkbom, conveyornum |
+| `conveyor` | conveyor-designer, conveyornum |
+| `claude` · `skill` | autolisp-skill, Claude-Setup |
+| `tool` | blkbom, conveyornum |
+| `website` | Landmark40, omnibomber-site |
+
+### How a session flows
+
+```
+Claude opens in any project
+  │
+  ├─ SessionStart: fill-devneural.mjs        [devneural-projects]
+  │    └─ auto-fills devneural.jsonc REPLACE_ME values on first run
+  │
+  ├─ SessionStart: session-start.js          [DevNeural/04-session-intelligence]
+  │    └─ queries graph API → injects top skill/project connections into context
+  │
+  └─ Claude is now running
+       │
+       ├─ PostToolUse: hook-runner.js        [DevNeural/01-data-layer]
+       │    └─ logs every tool call → updates weights.json
+       │
+       ├─ PreToolUse: devneural-skill-tracker.js  [~/.claude/hooks/ — standalone]
+       │    └─ tracks skill invocations
+       │
+       ├─ stage changes in devneural.jsonc
+       │    └─ Claude calls move_project MCP  [devneural-projects] → monday.com
+       │
+       └─ bug or task identified
+            └─ Claude calls add_task MCP      [devneural-projects] → monday.com
+```
+
+### External paths (all hard-coded references)
+
+Everything outside a git repo that must exist on the machine:
+
+| Path | What it is | Owned by |
+|---|---|---|
+| `C:\dev\Projects\DevNeural\` | This repo | DevNeural |
+| `C:\dev\Projects\devneural-projects\` | Project lifecycle repo | devneural-projects |
+| `C:\dev\data\skill-connections\` | Shared data dir — `weights.json` + logs. Not in any repo. | DevNeural/01 |
+| `C:\Users\mcollins\.claude\settings.json` | Global Claude hooks + MCP config | Claude-Setup (backup) |
+| `C:\Users\mcollins\.claude\hooks\devneural-skill-tracker.js` | Standalone PreToolUse hook | Claude-Setup (backup) |
+| `C:\Users\mcollins\.claude\hooks\gsd-check-update.js` | GSD update check hook | GSD plugin |
+| `C:\Users\mcollins\.claude\hooks\gsd-context-monitor.js` | PostToolUse context monitor | GSD plugin |
+| `C:\Users\mcollins\.claude\hooks\gsd-prompt-guard.js` | PreToolUse prompt guard | GSD plugin |
+| `C:\Users\mcollins\.claude\hooks\gsd-statusline.js` | Status line renderer | GSD plugin |
+
+> For the full migration checklist when moving to a new machine, see [Machine Migration Guide](#machine-migration-guide).
+
+---
+
 ## Current State
 
 **Repo:** `C:\dev\Projects\DevNeural` (master branch)
@@ -68,22 +145,20 @@ Shared runtime data lives **outside this repo** at `C:\dev\data\skill-connection
 
 ### Hook paths in `~/.claude/settings.json`
 
-These are the exact command strings that must be updated when the repo moves:
-
 | Hook type | Matcher | Command |
 |---|---|---|
 | `SessionStart` | `startup`, `resume`, `clear`, `compact` | `node "C:/dev/Projects/DevNeural/04-session-intelligence/dist/session-start.js"` |
 | `PostToolUse` | _(all tools)_ | `node C:/dev/Projects/DevNeural/01-data-layer/dist/hook-runner.js` |
-| `PreToolUse` | `Write\|Edit` | `node "C:/Users/mcollins/.claude/hooks/devneural-skill-tracker.js"` _(standalone — not in repo)_ |
-| `SessionStart` | _(all)_ | `node c:/dev/Projects/devneural-projects/scripts/fill-devneural.mjs` _(separate repo — see below)_ |
+| `PreToolUse` | `Write\|Edit` | `node "C:/Users/mcollins/.claude/hooks/devneural-skill-tracker.js"` _(standalone)_ |
+| `SessionStart` | _(all)_ | `node c:/dev/Projects/devneural-projects/scripts/fill-devneural.mjs` |
 
 ### Related repos and directories that must also move
 
 | Path | What it is |
 |---|---|
 | `C:\dev\Projects\DevNeural\` | **This repo** |
-| `C:\dev\Projects\devneural-projects\` | Separate repo — contains `scripts/fill-devneural.mjs` (auto-fills `devneural.jsonc` on session start) |
-| `C:\dev\data\skill-connections\` | Shared data directory — `weights.json` and raw event logs. Not in any repo. Create manually: `mkdir -p C:/dev/data/skill-connections/logs` |
+| `C:\dev\Projects\devneural-projects\` | Separate repo — contains `scripts/fill-devneural.mjs` |
+| `C:\dev\data\skill-connections\` | Shared data directory — create manually: `mkdir -p C:/dev/data/skill-connections/logs` |
 
 ### After moving — checklist
 
@@ -117,8 +192,6 @@ git clone https://github.com/Omnib0mb3r/DevNeural c:/dev/Projects/DevNeural
 ```bash
 mkdir -p "C:/dev/data/skill-connections/logs"
 ```
-
-This directory holds `weights.json` and raw event logs. It is **not** inside the repo — every project on the machine writes here.
 
 ### 3. Install and build all modules
 
@@ -170,13 +243,6 @@ Add the following to `~/.claude/settings.json` under the `hooks` key:
     "hooks": [{ "type": "command", "command": "node \"C:/Users/mcollins/.claude/hooks/devneural-skill-tracker.js\"" }]
   }
 ]
-```
-
-After registration, start a new Claude Code session. The session start banner will show:
-
-```
-DevNeural Context for <project-id>:
-  Skills (top connections): ...
 ```
 
 ### 5. Add a devneural.jsonc to each tracked project
@@ -261,10 +327,10 @@ Requires a valid `ANTHROPIC_API_KEY` environment variable.
 Check that port 3747 is free: `netstat -aon | findstr :3747`
 
 **Session start shows "API offline"**
-The `04-session-intelligence` hook fires before the API server is running. Start the API server first, then open a new Claude session.
+Start the API server first, then open a new Claude session.
 
 **Orb shows no nodes**
-Verify at least one `devneural.jsonc` file is present in a tracked project and that the API server is running. Check stderr in the API server terminal for validation warnings.
+Verify at least one `devneural.jsonc` file is present in a tracked project and that the API server is running.
 
 **Hook not firing**
 Confirm `~/.claude/settings.json` contains the correct `SessionStart` entries. Restart Claude Code — hook config is read at session startup, not hot-reloaded.
