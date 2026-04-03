@@ -6,34 +6,16 @@ A living neural network of everything you build — projects, tools, skills, and
 
 ## Ecosystem Map
 
-> Every repo, every hook, every external path. Start here if you're lost or setting up a new machine.
+> The infrastructure that wires everything together. Individual projects are not listed here — they live in the graph. Query with `voice` or run `sync_all` to see all registered projects.
 
-### Repos and their roles
+### Infrastructure repos
 
-| Repo | Role | Stage |
-|---|---|---|
-| [DevNeural](https://github.com/Omnib0mb3r/DevNeural) | **Graph brain** — API server, orb visualization, session context injection, tool-use logging | infrastructure |
-| [devneural-projects](https://github.com/Omnib0mb3r/devneural-projects) | **Project lifecycle** — monday.com MCP, stage sync, task boards, `fill-devneural.mjs` hook | infrastructure |
-| [dev-template](https://github.com/Omnib0mb3r/dev-template) | **Project starter** — `devneural.jsonc`, `OTLC-Brainstorm.MD`, `CLAUDE.md` for every new project | infrastructure |
-| [Claude-Setup](https://github.com/Omnib0mb3r/Claude-Setup) | **Config backup** — reference copy of `~/.claude/settings.json` and global `CLAUDE.md` | deployed |
-| [autolisp-skill](https://github.com/Omnib0mb3r/autolisp-skill) | AutoLISP Claude Code skill — rules and best practices | deployed |
-| [blkbom](https://github.com/Omnib0mb3r/blkbom) | AutoLISP Block BOM Generator for AutoCAD | deployed |
-| [conveyornum](https://github.com/Omnib0mb3r/conveyornum) | AHK v2 conveyor number keyboard wedge for AutoCAD | deployed |
-| [conveyor-designer](https://github.com/Omnib0mb3r/conveyor-designer) | Conveyor system design tool | alpha |
-| [Landmark40](https://github.com/Omnib0mb3r/Landmark40) | Landmark Lodge No. 40 official website | deployed |
-| [omnibomber-site](https://github.com/Omnib0mb3r/omnibomber-site) | OmniB0mb3r personal brand website | deployed |
-
-### Tag connections (graph edges)
-
-Tags in `devneural.jsonc` are what create edges in the graph. Projects that share tags are connected.
-
-| Tag cluster | Projects |
+| Repo | Role |
 |---|---|
-| `autolisp` · `autocad` | autolisp-skill, blkbom, conveyornum |
-| `conveyor` | conveyor-designer, conveyornum |
-| `claude` · `skill` | autolisp-skill, Claude-Setup |
-| `tool` | blkbom, conveyornum |
-| `website` | Landmark40, omnibomber-site |
+| [DevNeural](https://github.com/Omnib0mb3r/DevNeural) | **Graph brain** — API server, orb visualization, session context injection, tool-use logging |
+| [devneural-projects](https://github.com/Omnib0mb3r/devneural-projects) | **Project lifecycle** — monday.com MCP, stage sync, task boards, `fill-devneural.mjs` hook |
+| [dev-template](https://github.com/Omnib0mb3r/dev-template) | **Project starter** — `devneural.jsonc`, `OTLC-Brainstorm.MD`, `CLAUDE.md` for every new project |
+| [Claude-Setup](https://github.com/Omnib0mb3r/Claude-Setup) | **Config backup** — reference copy of `~/.claude/settings.json` and global `CLAUDE.md` |
 
 ### How a session flows
 
@@ -61,7 +43,7 @@ Claude opens in any project
             └─ Claude calls add_task MCP      [devneural-projects] → monday.com
 ```
 
-### External paths (all hard-coded references)
+### External paths
 
 Everything outside a git repo that must exist on the machine:
 
@@ -140,8 +122,8 @@ Shared runtime data lives **outside this repo** at `C:\dev\data\skill-connection
 
 | File | What to update |
 |---|---|
-| `C:\Users\mcollins\.claude\settings.json` | All hook `command` values pointing to DevNeural (see table below) |
-| `C:\Users\mcollins\.claude\hooks\devneural-skill-tracker.js` | Standalone PreToolUse hook — not in this repo, must be copied to new machine manually |
+| `C:\Users\mcollins\.claude\settings.json` | All hook `command` values pointing to DevNeural |
+| `C:\Users\mcollins\.claude\hooks\devneural-skill-tracker.js` | Standalone PreToolUse hook — not in this repo, copy manually |
 
 ### Hook paths in `~/.claude/settings.json`
 
