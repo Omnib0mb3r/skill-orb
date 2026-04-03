@@ -15,7 +15,7 @@ import {
   N_SEGMENTS,
 } from './graph/builder';
 import type { BuildResult, GraphData } from './graph/builder';
-import { getMaterialForNodeType, getEdgeOpacity } from './orb/visuals';
+import { getMaterialForNode, getMaterialForNodeType, getEdgeOpacity } from './orb/visuals';
 import { connect } from './ws/client';
 import type { SceneRef } from './ws/handlers';
 import type { GraphSnapshot, GraphNode, GraphEdge } from './types';
@@ -37,7 +37,7 @@ let currentSnapshot: GraphSnapshot | null = null;
 
 function toGraphData(snapshot: GraphSnapshot): GraphData {
   return {
-    nodes: snapshot.nodes.map(n => ({ id: n.id, label: n.label, type: n.type })),
+    nodes: snapshot.nodes.map(n => ({ id: n.id, label: n.label, type: n.type, tags: n.tags })),
     edges: snapshot.edges.map(e => ({
       sourceId: e.source,
       targetId: e.target,
@@ -107,7 +107,7 @@ function applySearchHighlight(b: AppState, matchIds: Set<string>): void {
     const mat = mesh.material as THREE.MeshStandardMaterial;
     if (matchIds.has(id)) {
       const node = b.nodes.get(id);
-      const cfg = node ? getMaterialForNodeType(node.type) : null;
+      const cfg = node ? getMaterialForNode(node.type, b.nodeDataMap.get(id)?.tags) : null;
       mat.color.setHex(cfg?.color ?? 0xffffff);
       mat.emissive.setHex(cfg?.emissive ?? cfg?.color ?? 0xffffff);
       mat.emissiveIntensity = 0.65;
@@ -122,7 +122,7 @@ function applySearchHighlight(b: AppState, matchIds: Set<string>): void {
     }
     mat.needsUpdate = true;
   }
-  recomputeEdgeHeat(b.edges, b.edgeMeshes);
+  recomputeEdgeHeat(b.edges, b.edgeMeshes, b.infrastructureNodeIds);
   const dimColors = new Float32Array((N_SEGMENTS + 1) * 3);
   for (let v = 0; v <= N_SEGMENTS; v++) {
     dimColors[v * 3] = 0.04; dimColors[v * 3 + 1] = 0.06; dimColors[v * 3 + 2] = 0.10;
@@ -146,7 +146,7 @@ function clearHighlights(b: AppState): void {
   for (const [id, mesh] of b.meshes) {
     const node = b.nodes.get(id);
     if (!node) continue;
-    const cfg = getMaterialForNodeType(node.type);
+    const cfg = getMaterialForNode(node.type, b.nodeDataMap.get(id)?.tags);
     const mat = mesh.material as THREE.MeshStandardMaterial;
     mat.color.setHex(cfg.color);
     mat.opacity = cfg.opacity;
@@ -156,7 +156,7 @@ function clearHighlights(b: AppState): void {
     mat.needsUpdate = true;
   }
   b.isSearchHighlightActive = false;
-  recomputeEdgeHeat(b.edges, b.edgeMeshes);
+  recomputeEdgeHeat(b.edges, b.edgeMeshes, b.infrastructureNodeIds);
   for (let i = 0; i < b.edgeMeshes.length; i++) {
     const edge = b.edges[i];
     if (!edge) continue;
@@ -189,7 +189,7 @@ function applyHighlight(b: AppState, clickedId: string): void {
       mat.transparent = false;
     } else if (connectedIds.has(id)) {
       const node = b.nodes.get(id);
-      const cfg = node ? getMaterialForNodeType(node.type) : null;
+      const cfg = node ? getMaterialForNode(node.type, b.nodeDataMap.get(id)?.tags) : null;
       mat.color.setHex(cfg?.color ?? 0xffffff);
       mat.emissive.setHex(cfg?.emissive ?? cfg?.color ?? 0xffffff);
       mat.emissiveIntensity = 0.6;
@@ -205,7 +205,7 @@ function applyHighlight(b: AppState, clickedId: string): void {
     mat.needsUpdate = true;
   }
 
-  recomputeEdgeHeat(b.edges, b.edgeMeshes);
+  recomputeEdgeHeat(b.edges, b.edgeMeshes, b.infrastructureNodeIds);
   const whiteColors = new Float32Array((N_SEGMENTS + 1) * 3);
   for (let v = 0; v <= N_SEGMENTS; v++) {
     whiteColors[v * 3] = 1; whiteColors[v * 3 + 1] = 1; whiteColors[v * 3 + 2] = 1;

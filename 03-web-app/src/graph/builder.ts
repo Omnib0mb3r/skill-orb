@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
-import { getMaterialForNodeType, getEdgeColor, getEdgeOpacity, getEdgeLinewidth } from '../orb/visuals';
+import { getMaterialForNode, getMaterialForNodeType, getEdgeColor, getEdgeOpacity, getEdgeLinewidth } from '../orb/visuals';
 import { generateEdgeCurve, CURVE_SEGMENTS } from './edge-curve';
 import { createSimulation } from '../orb/physics';
 import type { PhysicsNode, PhysicsEdge, Simulation } from '../orb/physics';
@@ -13,6 +13,7 @@ export interface GraphNode {
   label: string;
   /** Primary type field. If absent, id prefix is used as fallback. */
   type?: NodeType;
+  tags?: string[];
 }
 
 export interface GraphEdge {
@@ -30,6 +31,7 @@ export interface BuildResult extends SceneState {
   meshes: Map<string, THREE.Mesh>;
   edgeMeshes: Line2[];
   simulation: Simulation;
+  infrastructureNodeIds: Set<string>;
 }
 
 const NODE_RADII: Record<NodeType, number> = {
@@ -122,9 +124,11 @@ export function build(
       meshes: new Map(),
       edgeMeshes: [],
       simulation: sim,
+      infrastructureNodeIds: new Set(),
     };
   }
 
+  const infrastructureNodeIds = new Set<string>();
   const meshMap = new Map<string, THREE.Mesh>();
   const physicsNodes: PhysicsNode[] = [];
   const orbNodes = new Map<string, OrbNode>();
@@ -132,7 +136,10 @@ export function build(
   for (const node of graphData.nodes) {
     const nodeType = node.type ?? inferType(node.id);
     const radius = NODE_RADII[nodeType] ?? NODE_RADII.tool;
-    const materialConfig = getMaterialForNodeType(nodeType);
+    const materialConfig = getMaterialForNode(nodeType, node.tags);
+    if (node.tags?.some(t => t.toLowerCase() === 'infrastructure')) {
+      infrastructureNodeIds.add(node.id);
+    }
 
     const geometry = createNodeGeometry(nodeType, radius);
     const material = new THREE.MeshStandardMaterial(materialConfig);
@@ -173,7 +180,7 @@ export function build(
     orbEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: 0.25 });
   }
 
-  recomputeEdgeHeat(orbEdges, edgeMeshes);
+  recomputeEdgeHeat(orbEdges, edgeMeshes, infrastructureNodeIds);
 
   const simulation = createSimulation(physicsNodes, physicsEdges);
 
@@ -186,6 +193,7 @@ export function build(
     meshes: meshMap,
     edgeMeshes,
     simulation,
+    infrastructureNodeIds,
   };
 }
 
@@ -200,14 +208,24 @@ const HEAT_POWER = 2;
  * Heat flows from the hotter endpoint (more connections) to the cooler endpoint.
  * Also sets edge.weight to average heat for the opacity pulse.
  */
-export function recomputeEdgeHeat(edges: OrbEdge[], edgeMeshes: Line2[]): void {
+export function recomputeEdgeHeat(
+  edges: OrbEdge[],
+  edgeMeshes: Line2[],
+  infrastructureNodeIds?: Set<string>,
+): void {
+  const infra = infrastructureNodeIds ?? new Set<string>();
+
   const degree = new Map<string, number>();
   for (const e of edges) {
     degree.set(e.sourceId, (degree.get(e.sourceId) ?? 0) + 1);
     degree.set(e.targetId, (degree.get(e.targetId) ?? 0) + 1);
   }
+
+  // Max degree excludes infrastructure nodes so they don't compress the heat scale
   let maxDeg = 0;
-  for (const d of degree.values()) if (d > maxDeg) maxDeg = d;
+  for (const [id, d] of degree.entries()) {
+    if (!infra.has(id) && d > maxDeg) maxDeg = d;
+  }
 
   const c = new THREE.Color();
 
@@ -216,10 +234,32 @@ export function recomputeEdgeHeat(edges: OrbEdge[], edgeMeshes: Line2[]): void {
     const mesh = edgeMeshes[i];
     if (!mesh) continue;
 
+    const srcIsInfra = infra.has(edge.sourceId);
+    const tgtIsInfra = infra.has(edge.targetId);
+
     const srcDeg = degree.get(edge.sourceId) ?? 1;
     const tgtDeg = degree.get(edge.targetId) ?? 1;
-    const srcHeat = maxDeg <= 1 ? 0.25 : 0.25 + ((srcDeg - 1) / (maxDeg - 1)) * 0.75;
-    const tgtHeat = maxDeg <= 1 ? 0.25 : 0.25 + ((tgtDeg - 1) / (maxDeg - 1)) * 0.75;
+
+    // Compute base heat for non-infrastructure endpoints
+    const heatOf = (deg: number): number =>
+      maxDeg <= 1 ? 0.25 : 0.25 + ((deg - 1) / (maxDeg - 1)) * 0.75;
+
+    // Infrastructure endpoints mirror the real project endpoint's heat,
+    // so edges touching infrastructure take on the connected project's color.
+    let srcHeat: number;
+    let tgtHeat: number;
+    if (srcIsInfra && tgtIsInfra) {
+      srcHeat = tgtHeat = 0.28; // infra-to-infra: always cool
+    } else if (srcIsInfra) {
+      tgtHeat = heatOf(tgtDeg);
+      srcHeat = tgtHeat; // src mirrors tgt — solid color from the real project
+    } else if (tgtIsInfra) {
+      srcHeat = heatOf(srcDeg);
+      tgtHeat = srcHeat; // tgt mirrors src
+    } else {
+      srcHeat = heatOf(srcDeg);
+      tgtHeat = heatOf(tgtDeg);
+    }
 
     edge.weight = (srcHeat + tgtHeat) / 2;
 

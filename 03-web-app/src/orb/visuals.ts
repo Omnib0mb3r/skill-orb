@@ -16,6 +16,9 @@ const NODE_COLORS: Record<NodeType, number> = {
   tool: 0xff8833,
 };
 
+/** Silver-blue used for infrastructure nodes — distinct from all other node types. */
+export const INFRASTRUCTURE_COLOR = 0xd0d8e8;
+
 export function getMaterialForNodeType(type: NodeType): MaterialConfig {
   const color = NODE_COLORS[type] ?? NODE_COLORS.project;
   return {
@@ -25,6 +28,20 @@ export function getMaterialForNodeType(type: NodeType): MaterialConfig {
     emissive: color,
     emissiveIntensity: 0.15,
   };
+}
+
+/** Returns infrastructure material if the node carries the "infrastructure" tag, otherwise delegates to getMaterialForNodeType. */
+export function getMaterialForNode(type: NodeType, tags?: string[]): MaterialConfig {
+  if (tags?.some(t => t.toLowerCase() === 'infrastructure')) {
+    return {
+      color: INFRASTRUCTURE_COLOR,
+      opacity: 0.88,
+      transparent: true,
+      emissive: INFRASTRUCTURE_COLOR,
+      emissiveIntensity: 0.3,
+    };
+  }
+  return getMaterialForNodeType(type);
 }
 
 /** Lerp between two 0xRRGGBB hex colors. t in 0..1 */

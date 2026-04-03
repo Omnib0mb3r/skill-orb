@@ -44,6 +44,17 @@ export function extractSkillName(toolInput: Record<string, unknown>): string {
   return 'unknown-skill';
 }
 
+/** Returns true only for real GitHub/GitLab repo URLs (host/owner/repo — no deeper paths, no raw content, no APIs). */
+function isValidRepoUrl(normalized: string): boolean {
+  const parts = normalized.split('/');
+  return (
+    parts.length === 3 &&
+    (parts[0] === 'github.com' || parts[0] === 'gitlab.com') &&
+    parts[1].length > 0 &&
+    parts[2].length > 0
+  );
+}
+
 /** Scans tool_input for references to other projects. Returns project->project connections. Never throws. */
 export async function extractProjectRefs(
   payload: HookPayload,
@@ -72,7 +83,7 @@ export async function extractProjectRefs(
       if (filePath) {
         try {
           const ref = await resolveProjectIdentity(path.dirname(filePath));
-          tryAdd(ref.id);
+          if (ref.source !== 'cwd') tryAdd(ref.id);
         } catch { /* skip */ }
       }
     } else if (name === 'Bash') {
@@ -81,7 +92,7 @@ export async function extractProjectRefs(
         if (fs.existsSync(candidate)) {
           try {
             const ref = await resolveProjectIdentity(path.dirname(candidate));
-            tryAdd(ref.id);
+            if (ref.source !== 'cwd') tryAdd(ref.id);
           } catch { /* skip */ }
         }
       }
@@ -93,13 +104,14 @@ export async function extractProjectRefs(
       for (const text of texts) {
         if (!text) continue;
         for (const url of (text.match(URL_RE) ?? [])) {
-          tryAdd(normalizeGitUrl(url));
+          const normalized = normalizeGitUrl(url);
+          if (isValidRepoUrl(normalized)) tryAdd(normalized);
         }
         for (const candidate of (text.match(ABS_PATH_RE) ?? [])) {
           if (fs.existsSync(candidate)) {
             try {
               const ref = await resolveProjectIdentity(path.dirname(candidate));
-              tryAdd(ref.id);
+              if (ref.source !== 'cwd') tryAdd(ref.id);
             } catch { /* skip */ }
           }
         }
