@@ -203,10 +203,19 @@ export const N_SEGMENTS = CURVE_SEGMENTS;
 /** Power applied to the dissipation curve. t^HEAT_POWER keeps heat near the source longer. */
 const HEAT_POWER = 2;
 
+/** Cached base vertex colors per edge — used by the synapse-pulse animation. */
+let _edgeBaseColors: Float32Array[] = [];
+
+/** Returns the cached per-vertex base heat colors for all edges. */
+export function getEdgeBaseColors(): Float32Array[] {
+  return _edgeBaseColors;
+}
+
 /**
  * Assigns per-vertex colors and linewidth to each Line2 edge using heat-dissipation.
  * Heat flows from the hotter endpoint (more connections) to the cooler endpoint.
  * Also sets edge.weight to average heat for the opacity pulse.
+ * Caches per-vertex base colors for synapse pulse blending.
  */
 export function recomputeEdgeHeat(
   edges: OrbEdge[],
@@ -228,6 +237,7 @@ export function recomputeEdgeHeat(
   }
 
   const c = new THREE.Color();
+  _edgeBaseColors = new Array(edges.length);
 
   for (let i = 0; i < edges.length; i++) {
     const edge = edges[i];
@@ -280,6 +290,7 @@ export function recomputeEdgeHeat(
       colors[v * 3 + 2] = c.b;
     }
     geo.setColors(colors);
+    _edgeBaseColors[i] = new Float32Array(colors);
 
     mat.linewidth = getEdgeLinewidth(edge.weight);
   }

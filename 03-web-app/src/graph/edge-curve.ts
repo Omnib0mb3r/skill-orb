@@ -28,8 +28,13 @@ function catmullRom(p0: number, p1: number, p2: number, p3: number, t: number): 
 
 /**
  * Generate an organic Catmull-Rom spline between two 3-D points.
- * Three noise-displaced midpoints create the curve shape; driftTime
- * adds a slow sinusoidal oscillation on top for the living-synapse effect.
+ *
+ * Uses cumulative direction jitter (inspired by wandering-path dendrite
+ * techniques) — each control point perturbs the heading from the previous
+ * step, creating naturally wandering neural-dendrite shapes instead of
+ * smooth arcs.  A linear error correction distributes the endpoint miss
+ * evenly so the curve still connects source → target exactly.
+ * driftTime adds a slow sinusoidal oscillation for the living-synapse effect.
  *
  * @param sx,sy,sz  Source point
  * @param tx,ty,tz  Target point
@@ -43,6 +48,8 @@ export function generateEdgeCurve(
   seed: number,
   driftTime = 0,
 ): Float32Array {
+  const N_CTRL = 8;           // 8 control points → 7 Catmull-Rom segments
+  const JITTER = 0.12;        // direction-wander intensity per step
   const n = CURVE_SEGMENTS + 1;
   const positions = new Float32Array(n * 3);
 
@@ -59,55 +66,82 @@ export function generateEdgeCurve(
     return positions;
   }
 
-  // Unit direction vector
-  const ux = dx / edgeLen, uy = dy / edgeLen, uz = dz / edgeLen;
+  const stepLen = edgeLen / (N_CTRL - 1);
 
-  // Perpendicular basis vectors (perp1, perp2) for displacement
+  // ── Walk from source with cumulative direction jitter ──────────────
+  let cDirX = dx / edgeLen;
+  let cDirY = dy / edgeLen;
+  let cDirZ = dz / edgeLen;
+
+  const cx = new Float32Array(N_CTRL);
+  const cy = new Float32Array(N_CTRL);
+  const cz = new Float32Array(N_CTRL);
+  cx[0] = sx; cy[0] = sy; cz[0] = sz;
+
+  let currX = sx, currY = sy, currZ = sz;
+
+  for (let i = 1; i < N_CTRL; i++) {
+    // Perturb direction (cumulative — path wanders like a dendrite)
+    cDirX += (seededRand(seed, i * 3)     - 0.5) * JITTER;
+    cDirY += (seededRand(seed, i * 3 + 1) - 0.5) * JITTER;
+    cDirZ += (seededRand(seed, i * 3 + 2) - 0.5) * JITTER;
+
+    // Re-normalize
+    const len = Math.sqrt(cDirX * cDirX + cDirY * cDirY + cDirZ * cDirZ);
+    cDirX /= len; cDirY /= len; cDirZ /= len;
+
+    currX += cDirX * stepLen;
+    currY += cDirY * stepLen;
+    currZ += cDirZ * stepLen;
+
+    cx[i] = currX;
+    cy[i] = currY;
+    cz[i] = currZ;
+  }
+
+  // ── Linear error correction — ensure last point == target ──────────
+  const errX = tx - cx[N_CTRL - 1];
+  const errY = ty - cy[N_CTRL - 1];
+  const errZ = tz - cz[N_CTRL - 1];
+  for (let i = 1; i < N_CTRL; i++) {
+    const t = i / (N_CTRL - 1);
+    cx[i] += errX * t;
+    cy[i] += errY * t;
+    cz[i] += errZ * t;
+  }
+
+  // ── Drift animation on interior control points ─────────────────────
+  // Perpendicular basis for drift displacement
+  const ux = dx / edgeLen, uy = dy / edgeLen, uz = dz / edgeLen;
   let rx = 0, ry = 1, rz = 0;
   if (Math.abs(uy) > 0.9) { rx = 1; ry = 0; rz = 0; }
-  // perp1 = normalize(u × right)
   let p1x = uy * rz - uz * ry;
   let p1y = uz * rx - ux * rz;
   let p1z = ux * ry - uy * rx;
   const p1len = Math.sqrt(p1x * p1x + p1y * p1y + p1z * p1z);
   p1x /= p1len; p1y /= p1len; p1z /= p1len;
-  // perp2 = u × perp1 (already unit length)
-  const p2x = uy * p1z - uz * p1y;
-  const p2y = uz * p1x - ux * p1z;
-  const p2z = ux * p1y - uy * p1x;
 
-  // 5 Catmull-Rom control points: [src, mid1, mid2, mid3, tgt]
-  const cx = new Float32Array(5);
-  const cy = new Float32Array(5);
-  const cz = new Float32Array(5);
-  cx[0] = sx; cy[0] = sy; cz[0] = sz;
-  cx[4] = tx; cy[4] = ty; cz[4] = tz;
-
-  const ctrlT = [0.25, 0.5, 0.75];
-  for (let i = 0; i < 3; i++) {
-    const t = ctrlT[i];
-    const bx = sx + dx * t, by = sy + dy * t, bz = sz + dz * t;
-    const d1 = (seededRand(seed, i * 2) * 2 - 1) * edgeLen * 0.03;
-    const d2 = (seededRand(seed, i * 2 + 1) * 2 - 1) * edgeLen * 0.03;
+  for (let i = 1; i < N_CTRL - 1; i++) {
     const driftAmp = edgeLen * 0.05 * (0.4 + seededRand(seed, i + 10) * 0.6);
     const driftFreq = 0.25 + seededRand(seed, i + 20) * 0.15;
     const driftPhase = seededRand(seed, i + 30) * Math.PI * 2;
     const drift = driftAmp * Math.sin(driftTime * driftFreq * Math.PI * 2 + driftPhase);
 
-    cx[i + 1] = bx + p1x * (d1 + drift) + p2x * d2;
-    cy[i + 1] = by + p1y * (d1 + drift) + p2y * d2;
-    cz[i + 1] = bz + p1z * (d1 + drift) + p2z * d2;
+    cx[i] += p1x * drift;
+    cy[i] += p1y * drift;
+    cz[i] += p1z * drift;
   }
 
-  // Sample Catmull-Rom spline at CURVE_SEGMENTS+1 evenly-spaced points
+  // ── Sample Catmull-Rom spline through all N_CTRL points ────────────
+  const segs = N_CTRL - 1;
   for (let v = 0; v < n; v++) {
     const tGlobal = v / (n - 1);
-    const seg = Math.min(Math.floor(tGlobal * 4), 3);
-    const tLocal = tGlobal * 4 - seg;
+    const seg = Math.min(Math.floor(tGlobal * segs), segs - 1);
+    const tLocal = tGlobal * segs - seg;
     const i0 = Math.max(0, seg - 1);
     const i1 = seg;
-    const i2 = Math.min(4, seg + 1);
-    const i3 = Math.min(4, seg + 2);
+    const i2 = Math.min(N_CTRL - 1, seg + 1);
+    const i3 = Math.min(N_CTRL - 1, seg + 2);
 
     positions[v * 3]     = catmullRom(cx[i0], cx[i1], cx[i2], cx[i3], tLocal);
     positions[v * 3 + 1] = catmullRom(cy[i0], cy[i1], cy[i2], cy[i3], tLocal);

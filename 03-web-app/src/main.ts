@@ -12,6 +12,7 @@ import {
   recomputeEdgeHeat,
   updateEdgeDrift,
   createEdgeMesh,
+  getEdgeBaseColors,
   N_SEGMENTS,
 } from './graph/builder';
 import type { BuildResult, GraphData } from './graph/builder';
@@ -526,17 +527,67 @@ function main(): void {
       const driftTime = t * 0.3; // 0.3 Hz drift
       updateEdgeDrift(driftTime, currentBuild.edges, currentBuild.edgeMeshes, currentBuild.meshes);
 
-      // Living synaptic pulse — only when no node/search highlight active
+      // Firing synaptic pulses — traveling bright spots along edges
       if (!currentBuild.selectedNodeId && !currentBuild.isSearchHighlightActive) {
+        const baseColors = getEdgeBaseColors();
+        const nVerts = N_SEGMENTS + 1;
+
         for (let i = 0; i < currentBuild.edgeMeshes.length; i++) {
           const edge = currentBuild.edges[i];
           if (!edge) continue;
           const mat = currentBuild.edgeMeshes[i].material as LineMaterial;
-          const phase = i * 1.618; // golden-ratio spread so each edge fires at a different time
-          const speed = 0.4 + (i % 7) * 0.08; // 0.4–0.88 Hz — slow organic rhythm
-          const pulse = 0.5 + 0.5 * Math.sin(t * speed + phase);
-          const base = getEdgeOpacity(edge.weight);
-          mat.opacity = base * (0.55 + pulse * 0.45); // breathe between 55%–100% of base opacity
+          const geo = currentBuild.edgeMeshes[i].geometry as LineGeometry;
+          const base = baseColors[i];
+          if (!base) continue;
+
+          // Staggered fire timing — each edge fires on its own rhythm
+          const fireInterval = 2.5 + (i % 7) * 0.7;  // 2.5–6.7 s between fires
+          const firePhase = i * 2.345;                 // stagger offset
+          const cycleTime = (t + firePhase) % fireInterval;
+          const fireDuration = 0.8;                    // pulse travels for 0.8 s
+
+          const colors = new Float32Array(nVerts * 3);
+
+          if (cycleTime < fireDuration) {
+            // ── FIRING — bright pulse travels source → target ──
+            const pulseT = cycleTime / fireDuration;   // 0→1 position along edge
+            const pulseWidth = 0.10;                   // width of the bright spot
+            const trailLen = 0.18;                     // fading trail behind the pulse
+
+            for (let v = 0; v < nVerts; v++) {
+              const vt = v / (nVerts - 1);
+              const ahead = vt - pulseT;               // positive = ahead of pulse
+              const behind = pulseT - vt;              // positive = behind pulse
+
+              // Sharp bright head + fading trail behind
+              let intensity = 0;
+              if (Math.abs(ahead) < pulseWidth) {
+                intensity = 1.0 - Math.abs(ahead) / pulseWidth;
+              } else if (behind > 0 && behind < trailLen) {
+                intensity = (1.0 - behind / trailLen) * 0.5; // dimmer trail
+              }
+              intensity *= intensity; // quadratic falloff for sharper look
+
+              // Blend base heat color toward bright white/cyan pulse
+              colors[v * 3]     = base[v * 3]     + (1.0 - base[v * 3])     * intensity;
+              colors[v * 3 + 1] = base[v * 3 + 1] + (1.0 - base[v * 3 + 1]) * intensity;
+              colors[v * 3 + 2] = base[v * 3 + 2] + (0.95 - base[v * 3 + 2]) * intensity * 0.7;
+            }
+
+            geo.setColors(colors);
+            mat.opacity = getEdgeOpacity(edge.weight) * (0.8 + 0.2 * (1.0 - cycleTime / fireDuration));
+          } else {
+            // ── QUIET — subtle breathing, restore base heat colors ──
+            const breathPhase = i * 1.618;
+            const breathSpeed = 0.4 + (i % 7) * 0.08;
+            const breath = 0.5 + 0.5 * Math.sin(t * breathSpeed + breathPhase);
+
+            for (let v = 0; v < nVerts * 3; v++) {
+              colors[v] = base[v];
+            }
+            geo.setColors(colors);
+            mat.opacity = getEdgeOpacity(edge.weight) * (0.55 + breath * 0.45);
+          }
           mat.needsUpdate = true;
         }
       }

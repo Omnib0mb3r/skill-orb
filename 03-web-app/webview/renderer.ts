@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
 export const ORB_RADIUS = 60;
 
@@ -60,9 +64,22 @@ export function createScene(canvas: HTMLCanvasElement): {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
 
+  // ── Bloom post-processing — gives the firing-synapse glow ──────────
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(canvas.clientWidth, canvas.clientHeight),
+    1.0,   // strength — bright glow without washing out
+    0.5,   // radius   — medium spread
+    0.25,  // threshold — most bright surfaces bloom
+  );
+  composer.addPass(bloomPass);
+  composer.addPass(new OutputPass());
+
   new ResizeObserver(() => {
     const { clientWidth: w, clientHeight: h } = canvas;
     renderer.setSize(w, h);
+    composer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     resizeListeners.forEach(cb => cb(w, h));
@@ -75,7 +92,7 @@ export function createScene(canvas: HTMLCanvasElement): {
       const delta = clock.getDelta();
       controls.update();
       onTick(delta);
-      renderer.render(scene, camera);
+      composer.render();
     }
     frame();
   }
