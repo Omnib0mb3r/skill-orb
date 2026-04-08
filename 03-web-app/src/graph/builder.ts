@@ -20,6 +20,8 @@ export interface GraphEdge {
   sourceId: string;
   targetId: string;
   weight: number;
+  /** Raw usage count — preferred over weight (which upstream caps at 10). */
+  rawCount?: number;
 }
 
 export interface GraphData {
@@ -177,7 +179,9 @@ export function build(
     const line = createEdgeMesh(scene, resolution, getEdgeOpacity(0.25));
     edgeMeshes.push(line);
     physicsEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: edge.weight });
-    orbEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: 0.25 });
+    // Prefer raw_count (uncapped actual usage) over weight (clamped at 10 upstream).
+    const usage = edge.rawCount ?? edge.weight;
+    orbEdges.push({ sourceId: edge.sourceId, targetId: edge.targetId, weight: 0.25, usage });
   }
 
   recomputeEdgeHeat(orbEdges, edgeMeshes, infrastructureNodeIds);
@@ -212,9 +216,20 @@ export function getEdgeBaseColors(): Float32Array[] {
 }
 
 /**
- * Assigns per-vertex colors and linewidth to each Line2 edge using heat-dissipation.
- * Heat flows from the hotter endpoint (more connections) to the cooler endpoint.
- * Also sets edge.weight to average heat for the opacity pulse.
+ * Assigns per-vertex colors and linewidth to each Line2 edge.
+ *
+ * Each edge's heat is driven by its OWN usage count, normalized against the
+ * most-used non-infrastructure edge in the graph. Hotter edge = more-used edge,
+ * at a glance. Heat floors at 0.25 so the coolest edges stay visible against
+ * the black background.
+ *
+ * The per-edge gradient dissipates from source (edgeHeat) → destination (floor),
+ * giving every edge a consistent visual "direction of flow" regardless of which
+ * endpoint happens to be more connected. Infra-to-infra edges stay flat & cool.
+ *
+ * Also sets edge.weight = per-edge heat, which drives opacity, linewidth, and
+ * pulse fire rate in the animation loop.
+ *
  * Caches per-vertex base colors for synapse pulse blending.
  */
 export function recomputeEdgeHeat(
@@ -224,17 +239,27 @@ export function recomputeEdgeHeat(
 ): void {
   const infra = infrastructureNodeIds ?? new Set<string>();
 
-  const degree = new Map<string, number>();
+  // Max edge usage excludes any edge touching infrastructure, so utility
+  // nodes with huge incident traffic don't compress the scale for real
+  // project-to-project edges.
+  let maxEdgeUsage = 0;
   for (const e of edges) {
-    degree.set(e.sourceId, (degree.get(e.sourceId) ?? 0) + 1);
-    degree.set(e.targetId, (degree.get(e.targetId) ?? 0) + 1);
+    if (infra.has(e.sourceId) || infra.has(e.targetId)) continue;
+    const u = e.usage ?? 0;
+    if (u > maxEdgeUsage) maxEdgeUsage = u;
   }
 
-  // Max degree excludes infrastructure nodes so they don't compress the heat scale
-  let maxDeg = 0;
-  for (const [id, d] of degree.entries()) {
-    if (!infra.has(id) && d > maxDeg) maxDeg = d;
-  }
+  // Logarithmic normalization — usage counts follow a power law (one or two
+  // heavily-used edges dwarf a long tail). Linear normalization would collapse
+  // the tail to the floor. log(1+u)/log(1+max) spreads the distribution across
+  // the full palette: the #1 stays red, but #2 is clearly orange, #3 yellow,
+  // etc., all distinguishable.
+  const logMax = Math.log1p(maxEdgeUsage);
+  const heatOf = (use: number): number => {
+    if (logMax <= 0) return 0.25;
+    const n = Math.min(1, Math.log1p(Math.max(0, use)) / logMax);
+    return 0.25 + n * 0.75;
+  };
 
   const c = new THREE.Color();
   _edgeBaseColors = new Array(edges.length);
@@ -246,43 +271,27 @@ export function recomputeEdgeHeat(
 
     const srcIsInfra = infra.has(edge.sourceId);
     const tgtIsInfra = infra.has(edge.targetId);
+    const isInfraPair = srcIsInfra && tgtIsInfra;
 
-    const srcDeg = degree.get(edge.sourceId) ?? 1;
-    const tgtDeg = degree.get(edge.targetId) ?? 1;
+    // One value per edge — this edge's own heat, driven by its own usage.
+    const edgeHeat = isInfraPair ? 0.28 : heatOf(edge.usage ?? 0);
 
-    // Compute base heat for non-infrastructure endpoints
-    const heatOf = (deg: number): number =>
-      maxDeg <= 1 ? 0.25 : 0.25 + ((deg - 1) / (maxDeg - 1)) * 0.75;
+    // Source end is hot, destination end is the cold floor.
+    // Pulse + gradient both flow source → target, so direction of use is
+    // always legible — never "hotter endpoint wins."
+    const hotHeat  = edgeHeat;
+    const coldHeat = isInfraPair ? 0.28 : 0.25;
 
-    // Infrastructure endpoints mirror the real project endpoint's heat,
-    // so edges touching infrastructure take on the connected project's color.
-    let srcHeat: number;
-    let tgtHeat: number;
-    if (srcIsInfra && tgtIsInfra) {
-      srcHeat = tgtHeat = 0.28; // infra-to-infra: always cool
-    } else if (srcIsInfra) {
-      tgtHeat = heatOf(tgtDeg);
-      srcHeat = tgtHeat; // src mirrors tgt — solid color from the real project
-    } else if (tgtIsInfra) {
-      srcHeat = heatOf(srcDeg);
-      tgtHeat = srcHeat; // tgt mirrors src
-    } else {
-      srcHeat = heatOf(srcDeg);
-      tgtHeat = heatOf(tgtDeg);
-    }
-
-    edge.weight = (srcHeat + tgtHeat) / 2;
+    edge.weight = edgeHeat;
 
     const geo = mesh.geometry as LineGeometry;
     const mat = mesh.material as LineMaterial;
 
     const colors = new Float32Array((N_SEGMENTS + 1) * 3);
-    const hotFirst = srcDeg >= tgtDeg;
-    const hotHeat  = hotFirst ? srcHeat : tgtHeat;
-    const coldHeat = hotFirst ? tgtHeat : srcHeat;
-
     for (let v = 0; v <= N_SEGMENTS; v++) {
-      const t = hotFirst ? v / N_SEGMENTS : (N_SEGMENTS - v) / N_SEGMENTS;
+      const t = v / N_SEGMENTS; // 0 at source, 1 at target
+      // HEAT_POWER keeps the hot color lingering near the source, fading sharply
+      // toward the target tip.
       const heat = hotHeat + (coldHeat - hotHeat) * Math.pow(t, HEAT_POWER);
       c.set(getEdgeColor(heat));
       colors[v * 3]     = c.r;

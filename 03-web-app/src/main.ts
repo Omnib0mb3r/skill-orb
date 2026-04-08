@@ -43,6 +43,7 @@ function toGraphData(snapshot: GraphSnapshot): GraphData {
       sourceId: e.source,
       targetId: e.target,
       weight: e.weight,
+      rawCount: e.raw_count,
     })),
   };
 }
@@ -494,7 +495,7 @@ function main(): void {
       if (!srcMesh || !tgtMesh) return;
       const line = createEdgeMesh(scene, edgeResolution, getEdgeOpacity(0.25));
       currentBuild.edgeMeshes.push(line);
-      currentBuild.edges.push({ sourceId: edge.source, targetId: edge.target, weight: 0 });
+      currentBuild.edges.push({ sourceId: edge.source, targetId: edge.target, weight: 0, usage: 0 });
       recomputeEdgeHeat(currentBuild.edges, currentBuild.edgeMeshes);
     },
 
@@ -540,11 +541,38 @@ function main(): void {
           const base = baseColors[i];
           if (!base) continue;
 
-          // Staggered fire timing — each edge fires on its own rhythm
-          const fireInterval = 2.5 + (i % 7) * 0.7;  // 2.5–6.7 s between fires
-          const firePhase = i * 2.345;                 // stagger offset
+          // Fire rate AND travel speed are relativistic — driven by this edge's
+          // heat (per-edge usage, normalized against the graph's max).
+          // edge.weight is in [0.25, 1.0] from recomputeEdgeHeat().
+          const normalizedHeat = (edge.weight - 0.25) / 0.75; // → [0, 1]
+
+          // Fire rate: hotter edges fire more often.
+          const MIN_FIRE_INTERVAL = 0.7;  // cap — hottest edge fires ~1.4 pulses/sec
+          const MAX_FIRE_INTERVAL = 4.0;  // slowest — coldest edges fire ~once per 4 s
+          const fireInterval =
+            MAX_FIRE_INTERVAL - normalizedHeat * (MAX_FIRE_INTERVAL - MIN_FIRE_INTERVAL);
+
+          // Travel speed: hotter edges push pulses through FASTER in world units
+          // per second. We compute fireDuration from actual edge length so that
+          // short hot edges don't cancel out the speed increase (physics pulls
+          // hot edges shorter via REST_LENGTH / sqrt(weight+1)).
+          const srcMesh = currentBuild.meshes.get(edge.sourceId);
+          const tgtMesh = currentBuild.meshes.get(edge.targetId);
+          const dx = (srcMesh?.position.x ?? 0) - (tgtMesh?.position.x ?? 0);
+          const dy = (srcMesh?.position.y ?? 0) - (tgtMesh?.position.y ?? 0);
+          const dz = (srcMesh?.position.z ?? 0) - (tgtMesh?.position.z ?? 0);
+          const edgeLength = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+          const MIN_PULSE_SPEED = 5;   // cold — world units per second
+          const MAX_PULSE_SPEED = 18;  // hot — world units per second
+          const pulseSpeed =
+            MIN_PULSE_SPEED + normalizedHeat * (MAX_PULSE_SPEED - MIN_PULSE_SPEED);
+          // Clamp so a blur-fast hot pulse still stays visible for 0.18s and a
+          // long cold pulse doesn't stretch beyond 1.5s.
+          const fireDuration = Math.max(0.18, Math.min(1.5, edgeLength / pulseSpeed));
+
+          const firePhase = i * 2.345;                 // stagger so edges don't sync
           const cycleTime = (t + firePhase) % fireInterval;
-          const fireDuration = 0.8;                    // pulse travels for 0.8 s
 
           const colors = new Float32Array(nVerts * 3);
 

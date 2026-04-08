@@ -44,7 +44,7 @@ function makeState(nodeIds: string[]): InteractionState {
 }
 
 function makeEdge(src: string, dst: string, weight: number): OrbEdge {
-  return { sourceId: src, targetId: dst, weight };
+  return { sourceId: src, targetId: dst, weight, usage: weight };
 }
 
 describe('onHover', () => {

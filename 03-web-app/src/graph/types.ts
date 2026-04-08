@@ -24,6 +24,8 @@ export interface OrbEdge {
   targetId: string;
   /** Normalized color weight in range 0.0–1.0 (relative to max edge weight in graph). */
   weight: number;
+  /** Raw upstream usage weight — how much this edge is actually used. Drives heat. */
+  usage: number;
 }
 
 /**
