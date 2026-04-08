@@ -92,11 +92,28 @@ export async function createServer(config: ServerConfig): Promise<{
 
   // Watch localReposRoot for devneural.jsonc changes and rebuild registry on any change
   let registryWatcher: ReturnType<typeof chokidar.watch> | null = null;
+  let mondaySyncTimer: NodeJS.Timeout | null = null;
   if (config.localReposRoot) {
     const handleRegistryChange = async () => {
       registry = await buildProjectRegistry(config.localReposRoot);
       graph = buildGraph(latestWeights, registry);
       broadcast({ type: 'graph:snapshot', payload: getFullGraph(graph, new Date().toISOString()) });
+
+      // Debounced monday.com sync — coalesces multiple file events into one sync run.
+      // Fires register_project (.Dev card + per-project board + seeded Kanban cards)
+      // for new devneural.jsonc files, and move_project for stage changes.
+      if (mondaySyncTimer) clearTimeout(mondaySyncTimer);
+      mondaySyncTimer = setTimeout(() => {
+        mondaySyncTimer = null;
+        callMondaySync()
+          .then(result => fastify.log.info({ result }, 'monday sync complete'))
+          .catch(err =>
+            fastify.log.error(
+              { err: err instanceof Error ? err.message : String(err) },
+              'monday sync failed',
+            ),
+          );
+      }, 2000);
     };
     registryWatcher = chokidar.watch(
       `${config.localReposRoot.replace(/\\/g, '/')}/**/devneural.jsonc`,
@@ -122,6 +139,7 @@ export async function createServer(config: ServerConfig): Promise<{
   const stop = async () => {
     if (stopped) return;
     stopped = true;
+    if (mondaySyncTimer) clearTimeout(mondaySyncTimer);
     await Promise.all([stopWatchers(), registryWatcher?.close()]);
     try {
       await fastify.close();
