@@ -1,0 +1,520 @@
+/**
+ * Two-pass ingest. Per docs/spec/DEVNEURAL.md section 3.
+ *
+ * Pass 1 (filter): given DEVNEURAL.md (cached) + index summary + new
+ * content + candidate metadata, output a JSON list of which candidate
+ * pages are actually affected and whether a new pending page is
+ * warranted.
+ *
+ * Pass 2 (write): given affected pages' bodies + new content, output
+ * a structured set of page updates and zero or one new pending page.
+ *
+ * Daemon applies the diffs to disk, updates SQLite + vector store,
+ * appends to log, and commits the wiki git repo.
+ */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { embedOne } from '../embedder/index.js';
+import type { Store, WikiPageMetadata } from '../store/index.js';
+import {
+  wikiPagesDir,
+  wikiPendingDir,
+  wikiArchiveDir,
+} from '../paths.js';
+import {
+  parsePage,
+  readPage,
+  writePage,
+  type PageFrontmatter,
+  type PageSections,
+  type ParsedPage,
+} from './schema.js';
+import { selectCandidates, type CandidatePage } from './candidates.js';
+import { callIngestPass, isConfigured } from '../llm/anthropic.js';
+import { appendLog, commitWiki } from './scaffolding.js';
+
+export interface IngestInput {
+  source: string; // identifier (session id, "corpus:<kind>", "gap:<id>")
+  projectId: string;
+  projectName: string;
+  newContent: string;
+  evidenceHints: string[]; // free-form lines that go into ## Evidence
+}
+
+export interface Pass1Output {
+  affected_pages: string[];
+  new_page_warranted: boolean;
+  new_page_reason?: string;
+}
+
+export interface Pass2PageUpdate {
+  id: string;
+  evidence_add?: string[];
+  log_add?: string;
+  cross_refs_add?: string[];
+  cross_refs_remove?: string[];
+  pattern_rewrite?: string | null;
+  summary_rewrite?: string | null;
+  flag_for_review?: boolean;
+}
+
+export interface Pass2NewPage {
+  id: string;
+  title: string;
+  trigger: string;
+  insight: string;
+  summary: string;
+  pattern_body: string;
+  evidence: string[];
+  cross_refs?: string[];
+}
+
+export interface Pass2Output {
+  page_updates: Pass2PageUpdate[];
+  new_pending_page: Pass2NewPage | null;
+}
+
+export interface IngestResult {
+  pages_updated: string[];
+  pages_created: string[];
+  pages_flagged: string[];
+  affected_candidates: number;
+  candidate_pool_size: number;
+  cost: { input_tokens: number; output_tokens: number; cache_read: number };
+  skipped_reason?: string;
+}
+
+export async function runIngest(
+  store: Store,
+  input: IngestInput,
+  log: (msg: string) => void = () => undefined,
+): Promise<IngestResult> {
+  const result: IngestResult = {
+    pages_updated: [],
+    pages_created: [],
+    pages_flagged: [],
+    affected_candidates: 0,
+    candidate_pool_size: 0,
+    cost: { input_tokens: 0, output_tokens: 0, cache_read: 0 },
+  };
+
+  if (!isConfigured()) {
+    result.skipped_reason = 'ANTHROPIC_API_KEY not set';
+    return result;
+  }
+
+  if (input.newContent.trim().length < 40) {
+    result.skipped_reason = 'new content too short';
+    return result;
+  }
+
+  const candidates = await selectCandidates(store, input.newContent);
+  result.candidate_pool_size = candidates.length;
+
+  const pass1Preamble = buildPass1Preamble(store, candidates, input);
+  const pass1User = buildPass1User(input, candidates);
+  const pass1 = await callIngestPass(pass1Preamble, pass1User, 800);
+  result.cost.input_tokens += pass1.inputTokens;
+  result.cost.output_tokens += pass1.outputTokens;
+  result.cost.cache_read += pass1.cacheReadTokens;
+
+  let pass1Output: Pass1Output;
+  try {
+    pass1Output = parseJsonBlock<Pass1Output>(pass1.text);
+  } catch (err) {
+    result.skipped_reason = `pass1 parse failed: ${(err as Error).message}`;
+    log(`[ingest] pass1 parse failure: ${pass1.text.slice(0, 200)}`);
+    return result;
+  }
+
+  result.affected_candidates = pass1Output.affected_pages.length;
+
+  if (
+    pass1Output.affected_pages.length === 0 &&
+    !pass1Output.new_page_warranted
+  ) {
+    result.skipped_reason = 'pass1 found nothing to do';
+    return result;
+  }
+
+  const affectedPages = pass1Output.affected_pages
+    .map((id) => loadPageById(id))
+    .filter((p): p is { page: ParsedPage; file: string } => p !== null);
+
+  const pass2User = buildPass2User(
+    input,
+    affectedPages,
+    pass1Output.new_page_warranted,
+  );
+  const pass2 = await callIngestPass(pass1Preamble, pass2User, 2500);
+  result.cost.input_tokens += pass2.inputTokens;
+  result.cost.output_tokens += pass2.outputTokens;
+  result.cost.cache_read += pass2.cacheReadTokens;
+
+  let pass2Output: Pass2Output;
+  try {
+    pass2Output = parseJsonBlock<Pass2Output>(pass2.text);
+  } catch (err) {
+    result.skipped_reason = `pass2 parse failed: ${(err as Error).message}`;
+    log(`[ingest] pass2 parse failure: ${pass2.text.slice(0, 200)}`);
+    return result;
+  }
+
+  for (const update of pass2Output.page_updates ?? []) {
+    const target = affectedPages.find((p) => p.page.frontmatter.id === update.id);
+    if (!target) continue;
+
+    if (target.page.frontmatter.human_edited) {
+      const onlyAdditive =
+        !update.pattern_rewrite &&
+        !update.summary_rewrite &&
+        (update.cross_refs_remove ?? []).length === 0;
+      if (!onlyAdditive) {
+        // Per DEVNEURAL.md 7.4: cannot rewrite human-edited pages.
+        // Flag instead.
+        target.page.frontmatter.flag_for_review = true;
+        await rewritePage(store, target.page, target.file);
+        result.pages_flagged.push(update.id);
+        continue;
+      }
+    }
+
+    const updated = applyPageUpdate(target.page, update, input);
+    await rewritePage(store, updated, target.file);
+    result.pages_updated.push(update.id);
+  }
+
+  if (pass2Output.new_pending_page) {
+    try {
+      const file = await writeNewPendingPage(
+        store,
+        pass2Output.new_pending_page,
+        input,
+      );
+      if (file) result.pages_created.push(pass2Output.new_pending_page.id);
+    } catch (err) {
+      log(`[ingest] new page rejected: ${(err as Error).message}`);
+    }
+  }
+
+  appendLog(
+    `ingest source=${input.source} project=${input.projectName} updated=${result.pages_updated.length} created=${result.pages_created.length} flagged=${result.pages_flagged.length}`,
+  );
+  commitWiki(`ingest ${input.source}`);
+
+  return result;
+}
+
+function buildPass1Preamble(
+  store: Store,
+  candidates: CandidatePage[],
+  input: IngestInput,
+): string {
+  const lines: string[] = [];
+  lines.push('Wiki state preamble (cached).');
+  lines.push('');
+  lines.push(`Total canonical pages: ${countByStatus(store, 'canonical')}`);
+  lines.push(`Total pending pages: ${countByStatus(store, 'pending')}`);
+  lines.push('');
+  lines.push('Candidate pages (id, status, weight, trigger):');
+  for (const c of candidates) {
+    const row = c.row;
+    if (!row) continue;
+    lines.push(
+      `- ${row.id} [${row.status} w=${row.weight.toFixed(2)}] ${row.trigger.slice(0, 80)}`,
+    );
+  }
+  lines.push('');
+  lines.push(`Source: ${input.source} (project ${input.projectName})`);
+  return lines.join('\n');
+}
+
+function countByStatus(store: Store, status: string): number {
+  let n = 0;
+  for (const { metadata } of store.wikiPages.all()) {
+    if ((metadata as WikiPageMetadata).status === status) n++;
+  }
+  return n;
+}
+
+function buildPass1User(input: IngestInput, candidates: CandidatePage[]): string {
+  const candidateBlock = candidates
+    .map((c) => {
+      const row = c.row;
+      const title = row?.title ?? c.id;
+      const summary = c.metadata?.title ?? title;
+      const reasons = c.reasons.slice(0, 3).join('; ');
+      return `### ${c.id}\ntitle: ${title}\nsummary: ${summary}\nreasons: ${reasons}\n`;
+    })
+    .join('\n');
+
+  return `INGEST PASS 1 (filter)
+
+Decide which candidate pages are actually affected by the new content,
+and whether a new pending page is warranted.
+
+Output strictly this JSON shape:
+\`\`\`json
+{
+  "affected_pages": ["page-id-1", "page-id-2"],
+  "new_page_warranted": true,
+  "new_page_reason": "one short sentence"
+}
+\`\`\`
+
+Cap affected_pages at 5. Filter aggressively. A page is affected only
+if the new content meaningfully *changes* it.
+
+----- new content (project: ${input.projectName}, source: ${input.source}) -----
+${input.newContent.slice(0, 4000)}
+----- end new content -----
+
+----- candidate pages -----
+${candidateBlock || '(none)'}
+----- end candidates -----
+
+Respond with the JSON only, inside one triple-backtick block.`;
+}
+
+function buildPass2User(
+  input: IngestInput,
+  affected: { page: ParsedPage; file: string }[],
+  newPageWarranted: boolean,
+): string {
+  const lines: string[] = [];
+  lines.push('INGEST PASS 2 (write)');
+  lines.push('');
+  lines.push(
+    'Produce diffs for the affected pages and (optionally) one new pending page.',
+  );
+  lines.push('Respond as JSON inside a triple-backtick block:');
+  lines.push('```json');
+  lines.push(`{
+  "page_updates": [
+    {
+      "id": "page-id",
+      "evidence_add": ["session abc...: <one line>"],
+      "log_add": "${new Date().toISOString().slice(0, 10)} ingest: <one line>",
+      "cross_refs_add": [],
+      "cross_refs_remove": [],
+      "pattern_rewrite": null,
+      "summary_rewrite": null,
+      "flag_for_review": false
+    }
+  ],
+  "new_pending_page": ${newPageWarranted ? '{ "id": "...", "title": "[trigger] → [insight]", "trigger": "...", "insight": "...", "summary": "...", "pattern_body": "...", "evidence": ["..."], "cross_refs": [] }' : 'null'}
+}`);
+  lines.push('```');
+  lines.push('');
+  lines.push(
+    'Hard rules: keep summary <= 80 tokens. Keep pattern_body <= 800 tokens.',
+  );
+  lines.push(
+    'Do not rewrite pattern or summary on human-edited pages (set flag_for_review).',
+  );
+  lines.push('');
+  lines.push('----- affected page bodies -----');
+  for (const a of affected) {
+    lines.push(`### ${a.page.frontmatter.id}`);
+    lines.push(`title: ${a.page.frontmatter.title}`);
+    lines.push(`trigger: ${a.page.frontmatter.trigger}`);
+    lines.push(`insight: ${a.page.frontmatter.insight}`);
+    lines.push(`summary: ${a.page.frontmatter.summary}`);
+    lines.push(`human_edited: ${a.page.frontmatter.human_edited}`);
+    lines.push(`Pattern:`);
+    lines.push(a.page.sections.pattern.slice(0, 2000));
+    lines.push('');
+  }
+  lines.push('----- new content -----');
+  lines.push(input.newContent.slice(0, 6000));
+  lines.push('----- end -----');
+  return lines.join('\n');
+}
+
+function applyPageUpdate(
+  page: ParsedPage,
+  update: Pass2PageUpdate,
+  input: IngestInput,
+): { frontmatter: PageFrontmatter; sections: PageSections } {
+  const fm: PageFrontmatter = { ...page.frontmatter };
+  const sections: PageSections = {
+    pattern: page.sections.pattern,
+    crossRefs: [...page.sections.crossRefs],
+    crossRefsRaw: [...page.sections.crossRefsRaw],
+    evidence: [...page.sections.evidence],
+    openQuestions: [...page.sections.openQuestions],
+    log: [...page.sections.log],
+  };
+
+  if (update.evidence_add) {
+    for (const e of update.evidence_add) {
+      if (e && !sections.evidence.includes(e)) sections.evidence.push(e);
+    }
+    while (sections.evidence.length > 20) sections.evidence.shift();
+  }
+
+  if (update.log_add) sections.log.push(update.log_add);
+
+  if (update.cross_refs_add) {
+    for (const id of update.cross_refs_add) {
+      if (sections.crossRefs.includes(id)) continue;
+      sections.crossRefs.push(id);
+      sections.crossRefsRaw.push({
+        label: id.replace(/-/g, ' '),
+        href: `./${id}.md`,
+      });
+    }
+  }
+  if (update.cross_refs_remove) {
+    for (const id of update.cross_refs_remove) {
+      sections.crossRefs = sections.crossRefs.filter((c) => c !== id);
+      sections.crossRefsRaw = sections.crossRefsRaw.filter((c) => {
+        return c.href.split('/').pop()?.replace('.md', '') !== id;
+      });
+    }
+  }
+
+  if (update.pattern_rewrite && !fm.human_edited) {
+    sections.pattern = update.pattern_rewrite;
+  }
+  if (update.summary_rewrite && !fm.human_edited) {
+    fm.summary = update.summary_rewrite;
+  }
+  if (update.flag_for_review) fm.flag_for_review = true;
+
+  fm.last_touched = new Date().toISOString().slice(0, 10);
+  if (!fm.projects.includes(input.projectId)) fm.projects.push(input.projectId);
+
+  return { frontmatter: fm, sections };
+}
+
+async function rewritePage(
+  store: Store,
+  page: { frontmatter: PageFrontmatter; sections: PageSections },
+  file: string,
+): Promise<void> {
+  const dir = path.dirname(file).replace(/\\/g, '/');
+  writePage(dir, page);
+  await indexPage(store, page);
+}
+
+async function writeNewPendingPage(
+  store: Store,
+  newPage: Pass2NewPage,
+  input: IngestInput,
+): Promise<string | null> {
+  if (!newPage.id) return null;
+  if (!newPage.title.includes('→')) {
+    throw new Error(`new page missing → in title: ${newPage.title}`);
+  }
+  if (!newPage.evidence || newPage.evidence.length === 0) {
+    throw new Error(`new page has no evidence: ${newPage.id}`);
+  }
+
+  const fm: PageFrontmatter = {
+    id: newPage.id,
+    title: newPage.title,
+    trigger: newPage.trigger,
+    insight: newPage.insight,
+    summary: newPage.summary,
+    status: 'pending',
+    weight: 0.3,
+    hits: 0,
+    corrections: 0,
+    created: new Date().toISOString().slice(0, 10),
+    last_touched: new Date().toISOString().slice(0, 10),
+    projects: [input.projectId],
+    human_edited: false,
+  };
+
+  const sections: PageSections = {
+    pattern: newPage.pattern_body,
+    crossRefs: newPage.cross_refs ?? [],
+    crossRefsRaw: (newPage.cross_refs ?? []).map((id) => ({
+      label: id.replace(/-/g, ' '),
+      href: `./${id}.md`,
+    })),
+    evidence: newPage.evidence,
+    openQuestions: [],
+    log: [
+      `${new Date().toISOString().slice(0, 10)} ingest: page created from ${input.source}`,
+    ],
+  };
+
+  const file = writePage(wikiPendingDir(), { frontmatter: fm, sections });
+  await indexPage(store, { frontmatter: fm, sections });
+  return file;
+}
+
+async function indexPage(
+  store: Store,
+  page: { frontmatter: PageFrontmatter; sections: PageSections },
+): Promise<void> {
+  const fm = page.frontmatter;
+  const tsMs = Date.now();
+  const created = new Date(fm.created).getTime() || tsMs;
+  store.db.upsertWikiPage(
+    {
+      id: fm.id,
+      title: fm.title,
+      trigger: fm.trigger,
+      insight: fm.insight,
+      status: fm.status,
+      weight: fm.weight,
+      hits: fm.hits,
+      corrections: fm.corrections,
+      created_ms: created,
+      last_touched_ms: tsMs,
+      projects_json: JSON.stringify(fm.projects),
+      human_edited: fm.human_edited ? 1 : 0,
+    },
+    page.sections.pattern,
+  );
+
+  store.db.setCrossRefs(fm.id, page.sections.crossRefs);
+
+  const embedText = `${fm.title}\n\n${fm.summary}\n\n${page.sections.pattern.slice(0, 2000)}`;
+  const vec = await embedOne(embedText);
+  await store.wikiPages.add({
+    id: fm.id,
+    vector: vec,
+    metadata: {
+      status: fm.status,
+      weight: fm.weight,
+      trigger: fm.trigger,
+      insight: fm.insight,
+      title: fm.title,
+    },
+  });
+}
+
+interface LoadedPage {
+  page: ParsedPage;
+  file: string;
+}
+
+function loadPageById(id: string): LoadedPage | null {
+  const candidates = [
+    path.posix.join(wikiPagesDir(), `${id}.md`),
+    path.posix.join(wikiPendingDir(), `${id}.md`),
+    path.posix.join(wikiArchiveDir(), `${id}.md`),
+  ];
+  for (const file of candidates) {
+    if (fs.existsSync(file)) {
+      try {
+        return { page: readPage(file), file };
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function parseJsonBlock<T>(text: string): T {
+  const fence = text.match(/```json\s*\n([\s\S]+?)\n```/i);
+  const raw = fence?.[1] ?? text;
+  return JSON.parse(raw) as T;
+}
+
+void parsePage; // re-export-friendly noop

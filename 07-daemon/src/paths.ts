@@ -32,6 +32,20 @@ export const daemonLogFile = (): string =>
 export const daemonSocketFile = (): string =>
   path.posix.join(DATA_ROOT, 'daemon.sock');
 
+export const wikiRoot = (): string => path.posix.join(DATA_ROOT, 'wiki');
+export const wikiPagesDir = (): string => path.posix.join(wikiRoot(), 'pages');
+export const wikiPendingDir = (): string =>
+  path.posix.join(wikiRoot(), 'pending');
+export const wikiArchiveDir = (): string =>
+  path.posix.join(wikiRoot(), 'archive');
+export const wikiSchemaFile = (): string =>
+  path.posix.join(wikiRoot(), 'DEVNEURAL.md');
+export const wikiIndexFile = (): string =>
+  path.posix.join(wikiRoot(), 'index.md');
+export const wikiLogFile = (): string => path.posix.join(wikiRoot(), 'log.md');
+export const wikiWhatsNewFile = (): string =>
+  path.posix.join(wikiRoot(), 'whats-new.md');
+
 export function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true });
 }

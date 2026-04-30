@@ -18,6 +18,10 @@ import { startFsWatcher } from './capture/fs-watcher.js';
 import { startGitWatcher } from './capture/git-watcher.js';
 import { Store } from './store/index.js';
 import { embedOne, warmUp, getEmbedDim, getModelId } from './embedder/index.js';
+import { ensureWiki } from './wiki/scaffolding.js';
+import { runSeed, hasSeeded } from './corpus/seed.js';
+import { runIngest } from './wiki/ingest.js';
+import { isConfigured, modelIds } from './llm/anthropic.js';
 
 const PORT = Number(process.env.DEVNEURAL_PORT ?? 3747);
 
@@ -50,6 +54,30 @@ async function main(): Promise<void> {
     `store open: raw_chunks=${store.rawChunks.size()} wiki_pages=${store.wikiPages.size()} embedder=${getModelId()} dim=${getEmbedDim()}`,
   );
 
+  const scaffold = ensureWiki();
+  logger(
+    `wiki scaffold: created=${scaffold.created.length} updated=${scaffold.updated.length} present=${scaffold.alreadyPresent.length}`,
+  );
+
+  const llmModels = modelIds();
+  if (isConfigured()) {
+    logger(
+      `LLM configured: ingest=${llmModels.ingest} lint=${llmModels.lint} reconcile=${llmModels.reconcile}`,
+    );
+  } else {
+    logger(
+      'LLM not configured: ANTHROPIC_API_KEY missing. Capture continues; ingest/lint/reconcile disabled until set.',
+    );
+  }
+
+  // Trigger initial corpus ingest in background if never run.
+  if (!hasSeeded() && isConfigured()) {
+    logger('initial corpus ingest scheduled (background)');
+    void runSeed(store, { log: logger }).catch((err) => {
+      logger(`corpus seed failed: ${(err as Error).message}`);
+    });
+  }
+
   // Pre-warm the embedder so the first transcript chunk is not blocked by model load.
   warmUp()
     .then(() => logger('embedder warmed'))
@@ -60,9 +88,10 @@ async function main(): Promise<void> {
     ok: true,
     pid: process.pid,
     uptime_s: Math.round(process.uptime()),
-    phase: 'P2-store-and-embed',
+    phase: 'P3-ingest',
     raw_chunks: store.rawChunks.size(),
     wiki_pages: store.wikiPages.size(),
+    llm_configured: isConfigured(),
   }));
 
   app.get('/projects', async () => {
@@ -105,8 +134,36 @@ async function main(): Promise<void> {
     return { ok: true, collection, count: results.length, results };
   });
 
-  // Placeholder for future ingest trigger
-  app.post('/sync', async () => ({ ok: true, note: 'P2: ingest comes in P3' }));
+  app.post('/sync', async () => ({ ok: true, note: 'sync hook for devneural-projects' }));
+
+  app.post('/reseed', async () => {
+    const r = await runSeed(store, { log: logger });
+    return { ok: true, ...r };
+  });
+
+  app.post('/ingest', async (req) => {
+    const body = req.body as {
+      source?: string;
+      project_id?: string;
+      project_name?: string;
+      content?: string;
+    };
+    if (!body.content || typeof body.content !== 'string') {
+      return { ok: false, error: 'content required' };
+    }
+    const r = await runIngest(
+      store,
+      {
+        source: body.source ?? 'manual',
+        projectId: body.project_id ?? 'global',
+        projectName: body.project_name ?? 'global',
+        newContent: body.content,
+        evidenceHints: [],
+      },
+      logger,
+    );
+    return { ok: true, ...r };
+  });
 
   try {
     await app.listen({ port: PORT, host: '127.0.0.1' });
