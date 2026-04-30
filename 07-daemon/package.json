@@ -1,0 +1,30 @@
+{
+  "name": "devneural-daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DevNeural v2 daemon: capture, ingest, query, lint over a semantic concept wiki",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx --watch src/daemon.ts",
+    "start": "node dist/daemon.js",
+    "hook": "node dist/capture/hooks/hook-runner.js",
+    "install-hooks": "node dist/capture/hooks/install-hooks.js",
+    "test": "vitest run",
+    "build:check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.0",
+    "fastify": "^5.0.0",
+    "@fastify/websocket": "^11.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
