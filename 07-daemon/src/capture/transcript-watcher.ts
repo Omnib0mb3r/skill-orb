@@ -17,6 +17,7 @@ import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { createHash } from 'node:crypto';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { resolveProjectIdentity } from '../identity/project-id.js';
 import { recordIdentity } from '../identity/registry.js';
@@ -28,6 +29,8 @@ import {
 } from '../paths.js';
 import type { Observation } from '../types.js';
 import { appendObservation } from './observations.js';
+import type { Store } from '../store/index.js';
+import { embedOne } from '../embedder/index.js';
 
 const HOME = os.homedir();
 const DEFAULT_ROOT = path.join(HOME, '.claude', 'projects').replace(/\\/g, '/');
@@ -141,7 +144,16 @@ interface ProcessResult {
   bytes: number;
 }
 
-async function processFile(file: string): Promise<ProcessResult> {
+function chunkId(file: string, uuid: string | undefined, offset: number): string {
+  const base = `${file}|${uuid ?? ''}|${offset}`;
+  return createHash('sha1').update(base).digest('hex').slice(0, 16);
+}
+
+async function processFile(
+  file: string,
+  store?: Store,
+  log?: (msg: string) => void,
+): Promise<ProcessResult> {
   const tail = await readTail(file);
   if (!tail) return { chunks: 0, bytes: 0 };
 
@@ -219,6 +231,41 @@ async function processFile(file: string): Promise<ProcessResult> {
     } catch {
       /* ignore */
     }
+
+    // P2: embed and store
+    if (store) {
+      const id = chunkId(file, parsed.uuid, tail.startOffset + consumed);
+      const tsMs = Date.parse(record.timestamp);
+      try {
+        const vec = await embedOne(scrubbed.slice(0, 4000));
+        await store.rawChunks.add({
+          id,
+          vector: vec,
+          metadata: {
+            project_id: identity.id,
+            session_id: session,
+            timestamp_ms: Number.isFinite(tsMs) ? tsMs : Date.now(),
+            kind: record.kind,
+            role,
+            byte_length: scrubbed.length,
+            text_preview: scrubbed.slice(0, 200),
+          },
+        });
+        store.db.upsertRawChunk({
+          id,
+          project_id: identity.id,
+          session_id: session,
+          timestamp_ms: Number.isFinite(tsMs) ? tsMs : Date.now(),
+          kind: record.kind,
+          role,
+          byte_length: scrubbed.length,
+        });
+      } catch (err) {
+        log?.(
+          `[transcript-watcher] embed/store failed: ${(err as Error)?.message ?? err}`,
+        );
+      }
+    }
     chunkCount++;
   }
 
@@ -241,6 +288,7 @@ export interface TranscriptWatcher {
 export interface WatcherOptions {
   rootDir?: string;
   log?: (msg: string) => void;
+  store?: Store;
 }
 
 export function startTranscriptWatcher(
@@ -260,13 +308,15 @@ export function startTranscriptWatcher(
   });
 
   const onChange = (file: string): void => {
-    void processFile(file.replace(/\\/g, '/')).then((result) => {
-      if (result.chunks > 0) {
-        log(
-          `[transcript-watcher] ${path.basename(file)} +${result.chunks} chunks (${result.bytes}B)`,
-        );
-      }
-    });
+    void processFile(file.replace(/\\/g, '/'), options.store, log).then(
+      (result) => {
+        if (result.chunks > 0) {
+          log(
+            `[transcript-watcher] ${path.basename(file)} +${result.chunks} chunks (${result.bytes}B)`,
+          );
+        }
+      },
+    );
   };
 
   watcher.on('add', onChange);
