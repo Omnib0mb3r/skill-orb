@@ -30,8 +30,15 @@ import {
   type ParsedPage,
 } from './schema.js';
 import { selectCandidates, type CandidatePage } from './candidates.js';
-import { callIngestPass, isConfigured } from '../llm/anthropic.js';
+import {
+  pickProvider,
+  callValidated,
+  validatePass1,
+  validatePass2,
+} from '../llm/index.js';
 import { appendLog, commitWiki } from './scaffolding.js';
+import * as fs2 from 'node:fs';
+import { wikiSchemaFile } from '../paths.js';
 
 export interface IngestInput {
   source: string; // identifier (session id, "corpus:<kind>", "gap:<id>")
@@ -98,8 +105,13 @@ export async function runIngest(
     cost: { input_tokens: 0, output_tokens: 0, cache_read: 0 },
   };
 
-  if (!isConfigured()) {
-    result.skipped_reason = 'ANTHROPIC_API_KEY not set';
+  const provider = pickProvider();
+  if (!provider) {
+    result.skipped_reason = 'LLM provider disabled (DEVNEURAL_LLM_PROVIDER=none)';
+    return result;
+  }
+  if (!provider.isConfigured()) {
+    result.skipped_reason = `LLM provider "${provider.name}" not configured: ${provider.configHint()}`;
     return result;
   }
 
@@ -111,21 +123,36 @@ export async function runIngest(
   const candidates = await selectCandidates(store, input.newContent);
   result.candidate_pool_size = candidates.length;
 
+  const schemaText = fs2.existsSync(wikiSchemaFile())
+    ? fs2.readFileSync(wikiSchemaFile(), 'utf-8')
+    : '';
   const pass1Preamble = buildPass1Preamble(store, candidates, input);
   const pass1User = buildPass1User(input, candidates);
-  const pass1 = await callIngestPass(pass1Preamble, pass1User, 800);
-  result.cost.input_tokens += pass1.inputTokens;
-  result.cost.output_tokens += pass1.outputTokens;
-  result.cost.cache_read += pass1.cacheReadTokens;
 
-  let pass1Output: Pass1Output;
-  try {
-    pass1Output = parseJsonBlock<Pass1Output>(pass1.text);
-  } catch (err) {
-    result.skipped_reason = `pass1 parse failed: ${(err as Error).message}`;
-    log(`[ingest] pass1 parse failure: ${pass1.text.slice(0, 200)}`);
+  const pass1Validated = await callValidated(
+    provider,
+    {
+      role: 'ingest',
+      systemBlocks: [
+        { text: schemaText, cache: true },
+        { text: pass1Preamble, cache: true },
+      ],
+      user: pass1User,
+      maxTokens: 800,
+    },
+    validatePass1,
+    log,
+  );
+  result.cost.input_tokens += pass1Validated.totalInputTokens;
+  result.cost.output_tokens += pass1Validated.totalOutputTokens;
+  result.cost.cache_read += pass1Validated.totalCacheRead;
+
+  if (!pass1Validated.value) {
+    result.skipped_reason = `pass1 failed after ${pass1Validated.attempts} attempts: ${pass1Validated.errors.join('; ')}`;
+    log(`[ingest] pass1 failed: ${result.skipped_reason}`);
     return result;
   }
+  const pass1Output: Pass1Output = pass1Validated.value;
 
   result.affected_candidates = pass1Output.affected_pages.length;
 
@@ -146,19 +173,30 @@ export async function runIngest(
     affectedPages,
     pass1Output.new_page_warranted,
   );
-  const pass2 = await callIngestPass(pass1Preamble, pass2User, 2500);
-  result.cost.input_tokens += pass2.inputTokens;
-  result.cost.output_tokens += pass2.outputTokens;
-  result.cost.cache_read += pass2.cacheReadTokens;
+  const pass2Validated = await callValidated(
+    provider,
+    {
+      role: 'ingest',
+      systemBlocks: [
+        { text: schemaText, cache: true },
+        { text: pass1Preamble, cache: true },
+      ],
+      user: pass2User,
+      maxTokens: 2500,
+    },
+    validatePass2,
+    log,
+  );
+  result.cost.input_tokens += pass2Validated.totalInputTokens;
+  result.cost.output_tokens += pass2Validated.totalOutputTokens;
+  result.cost.cache_read += pass2Validated.totalCacheRead;
 
-  let pass2Output: Pass2Output;
-  try {
-    pass2Output = parseJsonBlock<Pass2Output>(pass2.text);
-  } catch (err) {
-    result.skipped_reason = `pass2 parse failed: ${(err as Error).message}`;
-    log(`[ingest] pass2 parse failure: ${pass2.text.slice(0, 200)}`);
+  if (!pass2Validated.value) {
+    result.skipped_reason = `pass2 failed after ${pass2Validated.attempts} attempts: ${pass2Validated.errors.join('; ')}`;
+    log(`[ingest] pass2 failed: ${result.skipped_reason}`);
     return result;
   }
+  const pass2Output: Pass2Output = pass2Validated.value;
 
   for (const update of pass2Output.page_updates ?? []) {
     const target = affectedPages.find((p) => p.page.frontmatter.id === update.id);

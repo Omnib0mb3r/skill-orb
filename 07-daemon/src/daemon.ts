@@ -21,7 +21,7 @@ import { embedOne, warmUp, getEmbedDim, getModelId } from './embedder/index.js';
 import { ensureWiki } from './wiki/scaffolding.js';
 import { runSeed, hasSeeded } from './corpus/seed.js';
 import { runIngest } from './wiki/ingest.js';
-import { isConfigured, modelIds } from './llm/anthropic.js';
+import { pickProvider, providerStatus } from './llm/index.js';
 
 const PORT = Number(process.env.DEVNEURAL_PORT ?? 3747);
 
@@ -59,19 +59,28 @@ async function main(): Promise<void> {
     `wiki scaffold: created=${scaffold.created.length} updated=${scaffold.updated.length} present=${scaffold.alreadyPresent.length}`,
   );
 
-  const llmModels = modelIds();
-  if (isConfigured()) {
+  const llmStatus = providerStatus();
+  if (llmStatus) {
     logger(
-      `LLM configured: ingest=${llmModels.ingest} lint=${llmModels.lint} reconcile=${llmModels.reconcile}`,
+      `LLM provider=${llmStatus.name} configured=${llmStatus.configured} models: ingest=${llmStatus.models.ingest} lint=${llmStatus.models.lint}`,
     );
+    if (!llmStatus.configured) {
+      logger(`LLM hint: ${llmStatus.hint}`);
+    }
   } else {
     logger(
-      'LLM not configured: ANTHROPIC_API_KEY missing. Capture continues; ingest/lint/reconcile disabled until set.',
+      'LLM disabled (DEVNEURAL_LLM_PROVIDER=none). Capture continues; ingest/lint/reconcile skipped.',
     );
   }
 
+  // Pre-warm the chosen provider so the first ingest is not blocked.
+  const provider = pickProvider();
+  if (provider && provider.isConfigured()) {
+    void provider.warmUp?.().catch(() => undefined);
+  }
+
   // Trigger initial corpus ingest in background if never run.
-  if (!hasSeeded() && isConfigured()) {
+  if (!hasSeeded() && provider && provider.isConfigured()) {
     logger('initial corpus ingest scheduled (background)');
     void runSeed(store, { log: logger }).catch((err) => {
       logger(`corpus seed failed: ${(err as Error).message}`);
@@ -88,10 +97,10 @@ async function main(): Promise<void> {
     ok: true,
     pid: process.pid,
     uptime_s: Math.round(process.uptime()),
-    phase: 'P3-ingest',
+    phase: 'P3.5-local-llm',
     raw_chunks: store.rawChunks.size(),
     wiki_pages: store.wikiPages.size(),
-    llm_configured: isConfigured(),
+    llm: providerStatus(),
   }));
 
   app.get('/projects', async () => {

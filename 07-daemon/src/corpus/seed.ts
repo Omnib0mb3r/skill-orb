@@ -17,7 +17,7 @@ import {
   scanSessions,
   type ScanOptions,
 } from './scan.js';
-import { isConfigured } from '../llm/anthropic.js';
+import { pickProvider } from '../llm/index.js';
 import { DATA_ROOT } from '../paths.js';
 
 const STATE_FILE = path.posix.join(DATA_ROOT, 'corpus-seed.state.json');
@@ -82,9 +82,15 @@ export async function runSeed(
     cost_output_tokens: 0,
   };
 
-  if (!isConfigured()) {
-    result.skipped_reason = 'ANTHROPIC_API_KEY not set';
-    log('[corpus-seed] skipped: ANTHROPIC_API_KEY not set');
+  const provider = pickProvider();
+  if (!provider) {
+    result.skipped_reason = 'LLM provider disabled';
+    log('[corpus-seed] skipped: provider disabled');
+    return result;
+  }
+  if (!provider.isConfigured()) {
+    result.skipped_reason = `LLM provider "${provider.name}" not configured: ${provider.configHint()}`;
+    log(`[corpus-seed] skipped: ${result.skipped_reason}`);
     return result;
   }
 
@@ -102,6 +108,8 @@ export async function runSeed(
     { name: 'sessions', gen: scanSessions(options) },
   ];
 
+  let consecutiveFailures = 0;
+  const ABORT_AFTER_CONSECUTIVE_FAILURES = 3;
   for (const { name, gen } of generators) {
     log(`[corpus-seed] scanning ${name}`);
     for await (const input of gen) {
@@ -120,11 +128,28 @@ export async function runSeed(
         result.pages_flagged += r.pages_flagged.length;
         result.cost_input_tokens += r.cost.input_tokens;
         result.cost_output_tokens += r.cost.output_tokens;
+        const failure =
+          r.skipped_reason && r.skipped_reason.includes('call failed');
+        if (failure) {
+          consecutiveFailures++;
+        } else {
+          consecutiveFailures = 0;
+        }
+        if (consecutiveFailures >= ABORT_AFTER_CONSECUTIVE_FAILURES) {
+          result.skipped_reason = `LLM provider unreachable after ${consecutiveFailures} consecutive failures (${r.skipped_reason}). Seed paused; will retry next launch.`;
+          log(`[corpus-seed] ${result.skipped_reason}`);
+          break;
+        }
         log(
           `[corpus-seed] ${input.source} created=${r.pages_created.length} updated=${r.pages_updated.length} skip=${r.skipped_reason ?? ''}`,
         );
       } catch (err) {
         log(`[corpus-seed] ${input.source} ERROR ${(err as Error).message}`);
+        consecutiveFailures++;
+        if (consecutiveFailures >= ABORT_AFTER_CONSECUTIVE_FAILURES) {
+          result.skipped_reason = `error wall: ${(err as Error).message}`;
+          break;
+        }
       }
       if (delay > 0) await new Promise((r) => setTimeout(r, delay));
     }
