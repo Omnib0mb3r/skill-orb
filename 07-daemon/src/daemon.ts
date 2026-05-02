@@ -24,6 +24,8 @@ import { runIngest } from './wiki/ingest.js';
 import { pickProvider, providerStatus } from './llm/index.js';
 import { curate, updateSummary, updateGlossary, updateCurrentTask } from './curation/index.js';
 import { decayInactivePages } from './reinforcement/index.js';
+import { runLint } from './wiki/lint.js';
+import { generateWhatsNew } from './wiki/whats-new.js';
 
 const PORT = Number(process.env.DEVNEURAL_PORT ?? 3747);
 
@@ -99,7 +101,7 @@ async function main(): Promise<void> {
     ok: true,
     pid: process.pid,
     uptime_s: Math.round(process.uptime()),
-    phase: 'P5-reinforcement',
+    phase: 'P6-lint',
     raw_chunks: store.rawChunks.size(),
     wiki_pages: store.wikiPages.size(),
     llm: providerStatus(),
@@ -218,6 +220,18 @@ async function main(): Promise<void> {
 
   app.post('/decay', async () => {
     const r = await decayInactivePages(store, logger);
+    return { ok: true, ...r };
+  });
+
+  app.post('/lint', async (req) => {
+    const body = (req.body ?? {}) as { apply?: boolean };
+    const r = await runLint({ apply: body.apply });
+    return { ok: true, ...r };
+  });
+
+  app.post('/whats-new', async (req) => {
+    const body = (req.body ?? {}) as { days?: number };
+    const r = generateWhatsNew(body.days ?? 7);
     return { ok: true, ...r };
   });
 
