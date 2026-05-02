@@ -51,11 +51,31 @@ function buildCommand(phase: string): string {
   return `node "${HOOK_RUNNER_DIST}" ${phase}`;
 }
 
-function isDevNeuralEntry(entry: HookCommandEntry): boolean {
+const V1_PATHS = [
+  '01-data-layer/dist/hook-runner.js',
+  '01-data-layer\\dist\\hook-runner.js',
+  '04-session-intelligence/dist/session-start.js',
+  '04-session-intelligence\\dist\\session-start.js',
+];
+
+function isV1Entry(entry: HookCommandEntry): boolean {
   if (!entry || entry.type !== 'command') return false;
   if (typeof entry.command !== 'string') return false;
-  return entry.command.includes('07-daemon/dist/capture/hooks/hook-runner') ||
-    entry.command.includes('hook-runner.js');
+  for (const p of V1_PATHS) if (entry.command.includes(p)) return true;
+  return false;
+}
+
+function isV2Entry(entry: HookCommandEntry): boolean {
+  if (!entry || entry.type !== 'command') return false;
+  if (typeof entry.command !== 'string') return false;
+  return (
+    entry.command.includes('07-daemon/dist/capture/hooks/hook-runner.js') ||
+    entry.command.includes('07-daemon\\dist\\capture\\hooks\\hook-runner.js')
+  );
+}
+
+function isDevNeuralEntry(entry: HookCommandEntry): boolean {
+  return isV1Entry(entry) || isV2Entry(entry);
 }
 
 function loadSettings(): SettingsFile {

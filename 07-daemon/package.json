@@ -10,6 +10,8 @@
     "start": "node dist/daemon.js",
     "hook": "node dist/capture/hooks/hook-runner.js",
     "install-hooks": "node dist/capture/hooks/install-hooks.js",
+    "setup": "npm run build && node dist/cli/setup.js",
+    "status": "node dist/cli/status.js",
     "test": "vitest run",
     "build:check": "tsc --noEmit"
   },
