@@ -23,6 +23,7 @@ import { runSeed, hasSeeded } from './corpus/seed.js';
 import { runIngest } from './wiki/ingest.js';
 import { pickProvider, providerStatus } from './llm/index.js';
 import { curate, updateSummary, updateGlossary, updateCurrentTask } from './curation/index.js';
+import { decayInactivePages } from './reinforcement/index.js';
 
 const PORT = Number(process.env.DEVNEURAL_PORT ?? 3747);
 
@@ -98,7 +99,7 @@ async function main(): Promise<void> {
     ok: true,
     pid: process.pid,
     uptime_s: Math.round(process.uptime()),
-    phase: 'P3.6-curation',
+    phase: 'P5-reinforcement',
     raw_chunks: store.rawChunks.size(),
     wiki_pages: store.wikiPages.size(),
     llm: providerStatus(),
@@ -212,6 +213,11 @@ async function main(): Promise<void> {
       },
       logger,
     );
+    return { ok: true, ...r };
+  });
+
+  app.post('/decay', async () => {
+    const r = await decayInactivePages(store, logger);
     return { ok: true, ...r };
   });
 

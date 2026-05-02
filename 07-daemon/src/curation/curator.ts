@@ -35,6 +35,9 @@ import {
   type LlmProvider,
 } from '../llm/index.js';
 import type { Validator } from '../llm/validator.js';
+import { recordInjection } from '../reinforcement/index.js';
+import * as path from 'node:path';
+import { wikiPagesDir, wikiPendingDir } from '../paths.js';
 
 const COSINE_FLOOR_WIKI = Number(
   process.env.DEVNEURAL_COSINE_FLOOR_WIKI ?? 0.55,
@@ -219,6 +222,17 @@ export async function curate(
   }
 
   injection = capByBudget(injection, TOKEN_BUDGET);
+
+  // Record the injection for reinforcement: we want to know after the
+  // assistant replies whether the page actually got used.
+  if (bestWiki) {
+    const pagePath = path.posix.join(
+      bestWiki.metadata.status === 'canonical' ? wikiPagesDir() : wikiPendingDir(),
+      `${bestWiki.id}.md`,
+    );
+    const summary = `${bestWiki.metadata.title}\n\n${bestWiki.metadata.trigger} → ${bestWiki.metadata.insight}`;
+    recordInjection(input.sessionId, bestWiki.id, pagePath, summary);
+  }
 
   return {
     injection,

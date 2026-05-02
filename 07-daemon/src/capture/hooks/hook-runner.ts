@@ -30,6 +30,48 @@ import { ensureDaemonRunning } from '../../lifecycle/spawn.js';
 import { readPid, isAlive } from '../../lifecycle/pid.js';
 import type { HookPayload, HookPhase, Observation } from '../../types.js';
 
+const CURATE_TIMEOUT_MS = Number(
+  process.env.DEVNEURAL_CURATE_TIMEOUT_MS ?? 1500,
+);
+const DAEMON_PORT = Number(process.env.DEVNEURAL_PORT ?? 3747);
+
+async function curateAndPrint(
+  prompt: string,
+  sessionId: string,
+  projectId: string,
+): Promise<void> {
+  if (!prompt || prompt.trim().length < 4) return;
+  const url = `http://127.0.0.1:${DAEMON_PORT}/curate`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), CURATE_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt,
+        session_id: sessionId,
+        project_id: projectId,
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return;
+    const body = (await res.json()) as {
+      ok?: boolean;
+      injection?: string;
+      components?: { skipped_reason?: string };
+    };
+    if (body.ok && body.injection && body.injection.trim().length > 0) {
+      // Claude Code reads hook stdout and treats it as additional context.
+      process.stdout.write(body.injection + '\n');
+    }
+  } catch {
+    /* daemon down or timeout; injection silently skipped */
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 const MAX_FIELD_BYTES = 5000;
 
 function trim(value: string): string {
@@ -192,6 +234,13 @@ async function main(): Promise<void> {
     purgeOldArchivesOncePerDay(identity.id);
   } catch {
     /* ignore */
+  }
+
+  // P4: on UserPromptSubmit, fetch curated injection from daemon and print
+  // to stdout so Claude Code includes it as additional context. Bounded
+  // timeout; daemon-down silently skips.
+  if (phase === 'user_prompt' && obs.prompt) {
+    await curateAndPrint(obs.prompt, obs.session, identity.id);
   }
 
   const decision = bumpSignalCounter(identity.id);

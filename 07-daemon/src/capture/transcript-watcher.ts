@@ -31,6 +31,10 @@ import type { Observation } from '../types.js';
 import { appendObservation } from './observations.js';
 import type { Store } from '../store/index.js';
 import { embedOne } from '../embedder/index.js';
+import {
+  evaluateAssistantReply,
+  evaluateCorrection,
+} from '../reinforcement/index.js';
 
 const HOME = os.homedir();
 const DEFAULT_ROOT = path.join(HOME, '.claude', 'projects').replace(/\\/g, '/');
@@ -230,6 +234,15 @@ async function processFile(
       appendObservation(identity.id, obs);
     } catch {
       /* ignore */
+    }
+
+    // P5: reinforcement signals based on role and pending injection
+    if (store) {
+      if (role === 'assistant' || record.role === 'assistant') {
+        void evaluateAssistantReply(store, session, scrubbed).catch(() => undefined);
+      } else if (role === 'user' || record.role === 'user') {
+        evaluateCorrection(store, session, scrubbed);
+      }
     }
 
     // P2: embed and store
