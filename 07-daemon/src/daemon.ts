@@ -22,6 +22,7 @@ import { ensureWiki } from './wiki/scaffolding.js';
 import { runSeed, hasSeeded } from './corpus/seed.js';
 import { runIngest } from './wiki/ingest.js';
 import { pickProvider, providerStatus } from './llm/index.js';
+import { curate, updateSummary, updateGlossary, updateCurrentTask } from './curation/index.js';
 
 const PORT = Number(process.env.DEVNEURAL_PORT ?? 3747);
 
@@ -97,7 +98,7 @@ async function main(): Promise<void> {
     ok: true,
     pid: process.pid,
     uptime_s: Math.round(process.uptime()),
-    phase: 'P3.5-local-llm',
+    phase: 'P3.6-curation',
     raw_chunks: store.rawChunks.size(),
     wiki_pages: store.wikiPages.size(),
     llm: providerStatus(),
@@ -147,6 +148,85 @@ async function main(): Promise<void> {
 
   app.post('/reseed', async () => {
     const r = await runSeed(store, { log: logger });
+    return { ok: true, ...r };
+  });
+
+  app.post('/curate', async (req) => {
+    const body = req.body as {
+      prompt?: string;
+      session_id?: string;
+      project_id?: string;
+    };
+    if (!body.prompt || typeof body.prompt !== 'string') {
+      return { ok: false, error: 'prompt required' };
+    }
+    const out = await curate(
+      store,
+      {
+        prompt: body.prompt,
+        sessionId: body.session_id ?? 'unknown',
+        projectId: body.project_id ?? 'global',
+      },
+      logger,
+    );
+    return { ok: true, ...out };
+  });
+
+  app.post('/summarize', async (req) => {
+    const body = req.body as {
+      session_id?: string;
+      project_id?: string;
+      project_name?: string;
+      chunks?: { role: string; text: string; timestamp_ms: number }[];
+    };
+    if (!body.session_id || !body.chunks) {
+      return { ok: false, error: 'session_id and chunks required' };
+    }
+    const r = await updateSummary(
+      {
+        sessionId: body.session_id,
+        projectId: body.project_id ?? 'global',
+        projectName: body.project_name ?? 'global',
+        newTurns: body.chunks.length,
+        recentChunks: body.chunks,
+      },
+      logger,
+    );
+    return { ok: true, ...r };
+  });
+
+  app.post('/glossary', async (req) => {
+    const body = req.body as {
+      project_id?: string;
+      project_name?: string;
+      recent_text?: string;
+    };
+    if (!body.project_id || !body.recent_text) {
+      return { ok: false, error: 'project_id and recent_text required' };
+    }
+    const r = await updateGlossary(
+      {
+        projectId: body.project_id,
+        projectName: body.project_name ?? body.project_id,
+        recentText: body.recent_text,
+      },
+      logger,
+    );
+    return { ok: true, ...r };
+  });
+
+  app.post('/task', async (req) => {
+    const body = req.body as {
+      session_id?: string;
+      chunks?: { role: string; text: string }[];
+    };
+    if (!body.session_id || !body.chunks) {
+      return { ok: false, error: 'session_id and chunks required' };
+    }
+    const r = await updateCurrentTask(
+      { sessionId: body.session_id, recentChunks: body.chunks },
+      logger,
+    );
     return { ok: true, ...r };
   });
 

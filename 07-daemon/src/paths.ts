@@ -46,6 +46,20 @@ export const wikiLogFile = (): string => path.posix.join(wikiRoot(), 'log.md');
 export const wikiWhatsNewFile = (): string =>
   path.posix.join(wikiRoot(), 'whats-new.md');
 
+export const wikiGlossaryDir = (): string =>
+  path.posix.join(wikiRoot(), 'glossary');
+export const wikiGlossaryFile = (projectId: string): string =>
+  path.posix.join(wikiGlossaryDir(), `${projectId}.md`);
+
+export const sessionStateDir = (): string =>
+  path.posix.join(DATA_ROOT, 'session-state');
+export const sessionSummaryFile = (sessionId: string): string =>
+  path.posix.join(sessionStateDir(), `${sessionId}.summary.md`);
+export const sessionTaskFile = (sessionId: string): string =>
+  path.posix.join(sessionStateDir(), `${sessionId}.task.md`);
+export const sessionMetaFile = (sessionId: string): string =>
+  path.posix.join(sessionStateDir(), `${sessionId}.meta.json`);
+
 export function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true });
 }
