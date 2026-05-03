@@ -1,42 +1,59 @@
 # Session handover
 
 > Pick up where the last session left off. Designed to be the first file a new Claude (or you) reads when starting fresh.
-> Last updated: 2026-05-02 (after Phase 2 burndown complete).
+> Last updated: 2026-05-03 (after Phase 3.3 session bridge complete).
 
 ---
 
 ## Where we are
 
-DevNeural v2 is a local-first second brain: capture, semantic RAG, learning wiki, real-time recommendation, reinforcement, and (coming) a central dashboard. Phase 1 (the daemon) is built and pushed. Phase 2 (v1 burndown) is done. Documentation is comprehensive and reframed around the second-brain identity. Next concrete work is Phase 3 (the dashboard build).
+DevNeural v2 is a local-first second brain: capture, semantic RAG, learning wiki, real-time recommendation, reinforcement, and (in progress) a central dashboard. Phases 1, 2, 3.1, 3.2, and 3.3 are done. The end-to-end loop "daemon → session bridge → Claude terminal" is now closed. Next concrete work is Phase 3.4 (dashboard frontend).
 
 ## TL;DR
 
-- **Identity is "second brain."** Not a metaphor. The system has all six second-brain properties (persistent memory, semantic recall, watches without being asked, surfaces in real time, compounds with use, lives on local hardware). See `docs/spec/devneural-v2.md` section 0.
+- **Identity is "second brain."** Not a metaphor. Six properties: persistent memory, semantic recall, watches without being asked, surfaces in real time, compounds with use, lives on local hardware. See `docs/spec/devneural-v2.md` section 0.
 - **Two layers: semantics + logic.** Semantics = embeddings, vector search, fuzzy recall. Logic = `[trigger] → [insight]` schema, validation, promotion rules, hard editorial rules. Both required. See section 7.
-- **Read first:** `README.md` (top-level overview), then `docs/spec/devneural-v2.md` for the system architecture, then `docs/spec/DEVNEURAL.md` for the wiki schema, then this file.
-- **Phase status:** Phases 1 and 2 done. Phase 3 next. Phases 4 and 5 specs written and queued.
+- **Read first:** `README.md` (top-level), then `docs/spec/devneural-v2.md` for architecture, then `docs/spec/DEVNEURAL.md` for the wiki schema, then this file.
+- **Phase status:** 1, 2, 3.1, 3.2, 3.3 done. Phase 3.4 (dashboard frontend) is next.
 - **Branch:** `master`. All work is on master, no feature branches.
-- **Local-first:** ollama with `qwen3:8b` is the LLM. No API keys required. Anthropic SDK is installed but only used if `DEVNEURAL_LLM_PROVIDER=anthropic`.
-- **No em dashes anywhere** (per global CLAUDE.md). Use periods, commas, colons, semicolons, parens, hyphens. This applies to chat output, code comments, commit messages, docs.
+- **Local-first:** ollama with `qwen3:8b` is the LLM. No API keys required. Anthropic SDK installed, used only if `DEVNEURAL_LLM_PROVIDER=anthropic`.
+- **Daemon binds `0.0.0.0:3747` by default** so Tailscale routes in. `DEVNEURAL_BIND=127.0.0.1` reverts to local only.
+- **No em dashes anywhere.** Per global CLAUDE.md. Use periods, commas, colons, semicolons, parens, hyphens. Applies to chat output, code comments, commit messages, docs.
 - **No AI co-author tags** in commits. Ever.
 
 ---
 
 ## Phase order and status
 
-| # | Scope | Status | Spec |
+| # | Scope | Status | Spec / location |
 |---|---|---|---|
-| 1 | Build the daemon (capture, ingest, query, reinforce, lint, setup) | done, pushed | `docs/spec/devneural-v2.md` |
-| 2 | Burn down v1 (archive 01/02/04, kill monday, rewrite top-level docs) | done | inline in v2 spec section 13 |
-| 3 | Central control dashboard (Next.js + PWA + Tailscale + visual design language) | spec done, build queued | `docs/spec/phase-3-dashboard.md` |
-| 4 | Orb rebind to wiki data model + visual features | spec done, deferred | `docs/spec/phase-4-orb.md` |
-| 5 | Settings audit, finalizes personalized parts of install docs | spec done, deferred | `docs/spec/phase-5-settings-audit.md` |
+| 1 | Daemon foundation (capture, ingest, query, reinforce, lint, setup) | done, pushed | `docs/spec/devneural-v2.md`, `07-daemon/` |
+| 2 | v1 burndown (archive 01/02/04, kill monday, rewrite top-level docs) | done, pushed | `archive/v1/` |
+| **3.1** | **Daemon API extensions** (auth, system metrics, services, sessions, search/all, reminders, notifications, projects/new, dashboard/health, dashboard/daily-brief) | **done, pushed** | `07-daemon/src/dashboard/` |
+| **3.2** | **Reference corpus pipeline** (PDF, image, markdown, DOCX upload + extract + chunk + embed) | **done, pushed** | `07-daemon/src/reference/` |
+| **3.3** | **Session bridge VS Code extension** | **done, pushed** | `09-bridge/` |
+| 3.4 | Dashboard frontend (Next.js + Tailwind + shadcn, PIN auth, all panels real) | next | `docs/spec/phase-3-dashboard.md` |
+| 3.5 | Audio + video processing (whisper.cpp + ffmpeg) | deferred | spec |
+| 3.6 | Stream Deck + session detail polish | deferred | spec |
+| 3.7 | Notifications + reminders + web push | partially done (reminders + notifications storage; push deferred) | spec |
+| 3.8 | System panel + metrics charts | endpoints done, UI in 3.4 | spec |
+| 3.9 | New project flow (UI for /projects/new) | endpoint done, UI in 3.4 | spec |
+| 3.10 | Daily brief + whats-new rendering UI | endpoint done, UI in 3.4 | spec |
+| 3.11 | PWA polish + mobile | deferred to after 3.4 | spec |
+| 3.12 | Polish pass | deferred | spec |
+| 4 | Orb rebind to wiki data model | spec done, deferred | `docs/spec/phase-4-orb.md` |
+| 5 | Settings audit, finalizes personalized install docs | spec done, deferred | `docs/spec/phase-5-settings-audit.md` |
 
 ---
 
-## What's done (recent commits)
+## Recent commits
 
 ```
+4707385  feat(09-bridge): P3.3 session bridge VS Code extension
+253090e  feat(07-daemon): P3.2 reference corpus pipeline
+6b6c1eb  feat(07-daemon): P3.1 dashboard API extensions
+59013a6  chore(burndown): phase 2 complete - archive v1, kill monday, rewrite top docs
+030e12c  docs: session handover for next pickup
 c41c54a  docs(install,spec): install/recovery docs + phase 3/4/5 specs
 6eafb80  feat(07-daemon): P7-lite graph endpoints + P8 setup polish
 aee5078  feat(07-daemon): P6 lint + whats-new digest
@@ -49,83 +66,181 @@ c1ddf41  feat(07-daemon): P1 capture layer
 345fafb  docs(spec): lock v2 architecture and wiki schema
 ```
 
-The `07-daemon/` module is complete end to end: capture → store/embed → ingest → query/curate → reinforce → lint. Plus an install/setup CLI and full install docs.
-
-47/47 unit tests pass.
+53/53 unit tests pass.
 
 ---
 
-## What was done in Phase 2 (burndown)
+## What was done in Phase 3 (sub-phases 3.1, 3.2, 3.3)
 
-Completed in this session:
+### Phase 3.1: Daemon API extensions (commit `6b6c1eb`)
 
-- Moved `01-data-layer/`, `02-api-server/`, `04-session-intelligence/` to `archive/v1/` (git mv, history preserved).
-- Moved v1 planning docs (`requirements.md`, `project-manifest.md`, `devneural.md`, `deep_project_interview.md`, `deep_project_session.json`) to `archive/v1/`.
-- Killed the `/sync` endpoint: now returns `410 Gone` with a deprecation message. Monday integration is dead. Project status board is moving into Phase 3 dashboard.
-- Rewrote `start.bat` at repo root to launch the daemon (with `status`, `setup`, `stop` subcommands). v1 server references gone.
-- Rewrote top-level `README.md` with the second-brain identity as the lead, capabilities table, two-layers architecture explanation, and updated file map.
-- Added `Pics/` to `.gitignore` (personal screenshots, not for repo).
-- Renumbered v2 spec to add new section 0 (Identity) and section 7 (The two layers), pushing prior 7-17 to 8-18.
-- Added section 10 (Visual design language) to phase-3-dashboard, renumbering 10-16 to 11-17.
+New module `07-daemon/src/dashboard/`:
+- `auth.ts` — PIN authentication. Bcrypt-hashed PIN at `dashboard/auth.json`. Signed session cookie (HMAC-SHA256, per-install secret). Lockout after 5 wrong PINs in 60s for 5 minutes. First-run = no PIN means open access.
+- `system-metrics.ts` — CPU (sampled %, load avg), memory, disks (PowerShell on Windows), process info, ollama reachability, data root size with 60s cache.
+- `services.ts` — config-driven status manifest at `dashboard/config.jsonc`. Defaults: daemon, ollama, wiki git, tailscale, internet. Per-check kind (http, file, cmd). Returns rollup ok/warn/fail.
+- `sessions.ts` — lists Claude sessions on host by reading `~/.claude/projects/<slug>/<sid>.jsonl`. Per-session detail with rolling summary, current task, last N transcript chunks (tail-read, never full file). Queues prompts to `session-bridge/<sid>.in`.
+- `daily-brief.ts` — surfaces `wiki/whats-new.md` plus structured summary.
+- `search-all.ts` — unified search over wiki_pages + raw_chunks + reference_chunks. Merge by score with source tag.
+- `reminders.ts` — append-only jsonl event log replayed into current state. Create/update/complete/uncomplete/archive/delete.
+- `notifications.ts` — append-only jsonl with event-bus emission. Severity (info/warn/alert), source tag, dismiss op. Web push delivery deferred.
+- `projects-new.ts` — clones `github.com/Omnib0mb3r/dev-template`, fills `devneural.jsonc`, opens VS Code on host.
+- `routes.ts` — registers every endpoint on Fastify with auth pre-handler.
 
-47/47 tests still passing after burndown. Daemon compiles clean. Hooks unchanged (already point at v2 paths).
+Daemon now binds `0.0.0.0:3747` by default. New deps: `bcryptjs`, `@fastify/cookie`, `@fastify/multipart`, `@types/bcryptjs`.
 
-## What's next: Phase 3 (dashboard build)
+### Phase 3.2: Reference corpus pipeline (commit `253090e`)
 
-The full spec is in `docs/spec/phase-3-dashboard.md`. Scope is broken into 12 sub-phases (3.1 through 3.12). MVP is 3.1-3.4. Detailed visual design language lives in section 10.
+New module `07-daemon/src/reference/`:
+- `chunk.ts` — paragraph-aware chunking, sentence-fallback for oversize paragraphs. Target 800 chars, 100-char overlap, min 200 (smaller merge into neighbors).
+- `pdf.ts` — `pdf-parse` for text extraction. Warns when output looks scanned.
+- `image.ts` — `tesseract.js` OCR (English default).
+- `store.ts` — `ReferenceStore` class. Owns `reference_chunks` Chroma collection, `reference_meta` SQLite table, `reference_fts` FTS5 virtual table. Detects kind from extension.
+- `process.ts` — `ingestUpload` pipeline. Saves original, extracts text, chunks, embeds, persists `chunks.jsonl`, builds FTS index.
 
-Recommended approach:
+Endpoints:
+- `POST /upload` (multipart): file + optional `project_id` + optional `tags`. Single-pass parts iterator (field order doesn't matter). 100MB default cap (`DEVNEURAL_UPLOAD_MAX_BYTES`).
+- `GET /reference` — list docs with optional `project_id` filter.
+- `GET /reference/:doc_id` — per-doc detail.
 
-1. Confirm user is ready to start build (or wants to pause).
-2. Begin with 3.1 (daemon API extensions): add the new HTTP routes for dashboard data without writing UI yet.
-3. Then 3.2 (reference corpus pipeline): PDF + image upload → OCR → chunk → embed → store. Audio/video can defer to 3.5.
-4. Then 3.3 (session bridge VS Code extension at `09-bridge/`).
-5. Then 3.4 (dashboard scaffold at `08-dashboard/` with Next.js + Tailwind + shadcn, PIN auth, all pages stubbed against real data).
+`/search/all` extended to include `reference_chunk` source.
 
-Each sub-phase ships independently and is verifiable.
+Storage:
+```
+c:/dev/data/skill-connections/reference/
+  docs/<doc-id>/{original.<ext>, text.md, chunks.jsonl}
+  images/<doc-id>/...
+```
+
+Audio/video deferred to Phase 3.5. New deps: `pdf-parse`, `tesseract.js`, `mammoth`, `@types/pdf-parse`.
+
+### Phase 3.3: Session bridge VS Code extension (commit `4707385`)
+
+New module `09-bridge/` (VS Code extension, local install only).
+
+- `09-bridge/src/extension.ts` — activates on VS Code startup, polls `session-bridge/*.in` every 750ms with persisted byte-offset reader. Parses BridgeMessage JSON lines: `{queued_at, text}` sends to terminal, `{queued_at, action: "focus"}` brings window forward. Picks target terminal by case-insensitive substring match against pattern (default `claude`). Multi-window VS Code: each window only acts on messages whose session_id maps via `session-state/<id>.meta.json` to a cwd starting with this window's workspace folder.
+
+Configuration (`devneural.bridge.*`):
+- `enabled` (default true)
+- `dataRoot` (must match daemon's `DEVNEURAL_DATA_ROOT`)
+- `terminalNamePattern` (default `claude`)
+
+Commands: `Bridge Status`, `Toggle Bridge`, `Pick Claude Terminal for This Window`.
+
+Install:
+```powershell
+cd C:/dev/Projects/DevNeural/09-bridge
+npm install
+npm run build
+npm run package
+code --install-extension devneural-bridge.vsix
+```
+
+End-to-end loop now closes:
+```
+Dashboard / curl POSTs prompt to /sessions/<id>/prompt
+  → daemon writes JSON line to session-bridge/<id>.in
+  → bridge reads new offset, picks terminal, sendText(text, addNewLine=true)
+  → Claude in the terminal sees the prompt as if typed.
+```
 
 ---
 
-## Critical user preferences (from past conversations)
+## What's next: Phase 3.4 (dashboard frontend)
 
-These are durable preferences. Honor them every session.
+The full spec is in `docs/spec/phase-3-dashboard.md`. Visual design language is in section 10.
 
-- **Be direct, not verbose.** The user has called me out multiple times for sprawling answers when a yes/no would do.
+Recommended approach for 3.4:
+
+1. Scaffold `08-dashboard/` as a Next.js 15 App Router project with Tailwind + shadcn/ui.
+2. Wire PIN auth flow (set PIN on first launch, unlock prompt on subsequent).
+3. Layout shell: top bar with brand + search + cmd+K + notification bell + status pill, left rail (Stream Deck of sessions), main area (tabs), right rail (live activity stream, collapsible).
+4. Each panel hits a real endpoint (Home → `/dashboard/daily-brief`, Wiki → `/search/all`, Sessions → `/sessions`, Projects → `/projects` and `POST /projects/new`, System → `/dashboard/system-metrics` + `/services`, Reminders → `/reminders`).
+5. PWA manifest + service worker scaffold (push delivery in 3.7).
+6. Mobile-responsive single-column layout.
+7. Visual polish per section 10 design language.
+
+This is a chunky build. Several hours of work. The endpoints are all real and tested via curl, so the front end is mostly UI work against a known API surface.
+
+Sub-phases to consider for 3.4 itself:
+- 3.4.1 Scaffold + auth + layout shell
+- 3.4.2 Home (daily brief) + Sessions panels
+- 3.4.3 Wiki search + reference upload UI
+- 3.4.4 Projects + System panels
+- 3.4.5 Reminders + notifications + cmd+K
+- 3.4.6 Mobile responsive polish + PWA manifest
+
+---
+
+## Critical user preferences (durable, honor every session)
+
+- **Be direct, not verbose.** Called out multiple times for sprawling answers when yes/no would do.
 - **Don't barrel into action.** Questions deserve answers, not action. The user explicitly said: "A question is NOT authorization to act. Sometimes the user wants to talk something out first."
-- **No em dashes. Anywhere. Ever.** Period.
-- **Bluntness over politeness.** The user wants to be told when an idea is bad or out of scope.
-- **Root cause first.** Don't suggest workarounds unless they're truly the only option.
+- **No em dashes. Anywhere. Ever.**
+- **Bluntness over politeness.**
+- **Root cause first.** Don't suggest workarounds unless truly the only option.
 - **Full file paths.** `C:/dev/Projects/...` not `foo/bar.ts`.
-- **No em dashes (repeating because it's that important).**
 - **Local-first.** No API costs. Local LLM (ollama). Local embedder. Local vector store. No cloud services.
-- **Sellability matters.** The user mentioned wanting to sell this. Decisions should consider product polish, not just personal hack.
-- **Privacy matters.** All data local on `OTLCDEV` (the user's main machine).
-- **Tailscale is the network perimeter** for any remote access.
+- **Sellability matters.** Decisions consider product polish.
+- **Privacy matters.** All data local on `OTLCDEV`.
+- **Tailscale is the network perimeter** for remote access.
 
 ---
 
 ## Important architectural choices
 
-- **Replaced ChromaDB with in-process vector store.** Chroma's JS client requires a Python server, too heavy. We use a 200-line `VectorStore` class. Swap point if we ever outgrow it: `07-daemon/src/store/vector-store.ts`.
-- **Local LLM via ollama.** Default model `qwen3:8b`, fallback `qwen2.5:7b-instruct`. Set via `DEVNEURAL_OLLAMA_MODEL` env.
-- **MiniLM embedder.** `Xenova/all-MiniLM-L6-v2` via `@xenova/transformers`, 384-dim. Models cached at `c:/dev/data/skill-connections/models/`.
-- **SQLite + FTS5** via `better-sqlite3` for metadata and keyword search.
-- **Wiki is git-versioned markdown on disk.** Every ingest auto-commits. Every page is hand-readable.
-- **Hooks lazy-spawn the daemon.** Don't need to start it manually after install.
+- **In-process vector store, not Chroma server.** `07-daemon/src/store/vector-store.ts`. Linear cosine scan + persistent file format. Single-developer volumes are fine.
+- **Local LLM via ollama.** Default `qwen3:8b`, fallback `qwen2.5:7b-instruct`. Set via `DEVNEURAL_OLLAMA_MODEL`.
+- **MiniLM embedder via @xenova/transformers.** 384-dim, ONNX. Cached at `c:/dev/data/skill-connections/models/`.
+- **SQLite + FTS5** via `better-sqlite3`. WAL mode.
+- **Wiki is git-versioned markdown on disk.** Every ingest auto-commits. Hand-readable.
+- **Hooks lazy-spawn the daemon.** No need to start manually after install.
 - **Five-layer self-loop guards** prevent the daemon from observing its own LLM-driven sessions.
+- **Daemon binds 0.0.0.0 by default** for Tailscale. Override with `DEVNEURAL_BIND=127.0.0.1` if you want strict localhost.
+- **Reference corpus is a third Chroma collection (`reference_chunks`)** alongside `raw_chunks` and `wiki_pages`. Insights still only come from your own work; uploaded docs are searchable but never become wiki pages.
+
+---
+
+## What's actually testable end-to-end today (no UI)
+
+```powershell
+# Status
+cd C:/dev/Projects/DevNeural/07-daemon
+npm run status
+
+# Start the daemon manually (or let hooks lazy-spawn it)
+npm run start
+
+# Hit the API
+curl http://127.0.0.1:3747/health
+curl http://127.0.0.1:3747/dashboard/health
+curl http://127.0.0.1:3747/sessions
+curl http://127.0.0.1:3747/services
+curl -X POST -H "Content-Type: application/json" -d '{"q":"my query"}' http://127.0.0.1:3747/search/all
+curl -X POST -H "Content-Type: application/json" -d '{"title":"test reminder"}' http://127.0.0.1:3747/reminders
+
+# Upload a reference doc
+curl -F "project_id=warehouse-sim" -F "tags=manual,conveyor" -F "file=@C:/path/to/manual.pdf" http://127.0.0.1:3747/upload
+
+# Send a prompt to a running Claude session (after installing the bridge)
+curl -X POST -H "Content-Type: application/json" -d '{"text":"summarize where we are"}' http://127.0.0.1:3747/sessions/<session-id>/prompt
+
+# Read the wiki directly (markdown on disk)
+ls C:/dev/data/skill-connections/wiki/pending/
+ls C:/dev/data/skill-connections/wiki/pages/
+```
 
 ---
 
 ## Open questions / pending decisions
 
-These are real choices the user has not yet made:
-
-1. **Phase 3 dashboard: when to start?** Phase 2 burndown is done. User has not explicitly authorized starting Phase 3 build.
-2. **Project status board (Kanban):** added to Phase 3 dashboard scope as the replacement for monday. Stage source of truth stays `devneural.jsonc`. Confirm scope before building.
-3. **Self-update mechanism** for the daemon. Currently: `git pull && npm install && npm run build`. Could automate. Deferred to Phase 3 polish.
-4. **Telemetry from friends' installs** if user ever distributes this. Earlier conversation: user disregarded the "send to a friend" angle and reframed as "documentation must be reconstructable." Telemetry is therefore not in scope.
-5. **Reference-corpus image processing:** tesseract default vs vision-model upgrade. Phase 3 spec defaults to tesseract; vision is opt-in.
-6. **Daily brief generator:** local Qwen vs hybrid (Haiku for the brief only). User committed to local-only; default Qwen.
+1. **Phase 3.4 dashboard frontend: when to start?** Phases 3.1, 3.2, 3.3 done. User has not yet authorized the Next.js scaffold.
+2. **Project status board (Kanban)** scope inside 3.4. Stage source of truth stays `devneural.jsonc`. Confirm before building.
+3. **Self-update mechanism for the daemon.** Currently `git pull && npm install && npm run build`. Could automate. Deferred.
+4. **Reference-corpus image processing:** tesseract default. Vision model upgrade is opt-in via env, lands later.
+5. **Daily brief generator:** local Qwen vs hybrid (Haiku for the brief only). User committed to local-only.
+6. **Scanned PDF OCR fallback:** currently extracts only existing text and warns. Rasterize-then-OCR fallback (pdf2pic + tesseract) is a future polish item.
+7. **PWA push notifications:** deferred to 3.7. Need VAPID keys generated + service worker.
+8. **Multi-window session targeting:** the bridge falls back to "all windows try" when `session-state/<id>.meta.json` doesn't exist yet. Acceptable for solo use.
 
 ---
 
@@ -138,59 +253,64 @@ These are real choices the user has not yet made:
 | Install the system | `INSTALL.md` then `docs/install/04-step-by-step.md` |
 | Recover from a bad state | `docs/install/06-recovery-and-reconstruction.md` |
 | Fix a specific symptom | `docs/install/07-troubleshooting.md` |
-| Design phase 3 (dashboard) | `docs/spec/phase-3-dashboard.md` |
-| Design phase 4 (orb) | `docs/spec/phase-4-orb.md` |
-| Run phase 5 (settings audit) | `docs/spec/phase-5-settings-audit.md` |
+| Design phase 3 dashboard | `docs/spec/phase-3-dashboard.md` |
+| Design phase 4 orb | `docs/spec/phase-4-orb.md` |
+| Run phase 5 settings audit | `docs/spec/phase-5-settings-audit.md` |
 | Read the daemon code | `07-daemon/src/` |
-| Run the daemon | `cd 07-daemon && npm run setup` then `npm run start` (or just let it lazy-start) |
+| Read the bridge code | `09-bridge/src/extension.ts` |
+| Run the daemon | `cd 07-daemon && npm run setup` then `npm run start` (or let it lazy-start) |
 | Check daemon health | `cd 07-daemon && npm run status` |
+| Install the bridge | `cd 09-bridge && npm install && npm run build && npm run package && code --install-extension devneural-bridge.vsix` |
 
 ---
 
 ## How the user works (style notes)
 
 - Types fast, doesn't always proofread. Treat typos as obvious; don't ask for clarification on simple ones.
-- When pushing back, often uses "you know what?" or "actually" or "wait." Match the energy.
+- "Move on" / "next" = proceed to next phase or step without ceremony.
+- "Lets keep talking" / "table that" = no action yet, conversation mode.
+- "Don't build yet" = capture in a doc, do not implement.
+- Approval cues: "yeah," "ok," "go," "do it," "perfect," "continue," "cook." These authorize action.
 - Frustration cues: "im asking a simple fucking question," "dont be lazy," "just do it." When you see these, you've been verbose or evasive. Trim and act.
-- Approval cues: "yeah," "ok," "go," "do it," "perfect." These authorize action.
-- "Move on" / "next" = proceed to the next phase or step without ceremony.
-- "Lets keep talking" = no action yet, conversation mode.
-- "Dont build yet" / "table that" = capture in a doc, do not implement.
-- The user often pastes content from other sessions or sources. Treat pasted content as input, not as the user's authoring.
+- The user often pastes content from other sessions. Treat pasted content as input, not as the user's authoring.
 
 ---
 
 ## Known gotchas
 
-- **Windows `kill $!` in bash does NOT kill node.exe.** It kills the bash subshell. Use `taskkill /F /PID <pid>` instead. I orphaned daemons twice doing this.
-- **CLAUDE_CODE_ENTRYPOINT** can be `claude-vscode` (we added this to the allowed list). Don't remove it.
-- **Hook output to stdout becomes additional context** in Claude. Anything you write to stdout from `hook-runner.ts` ends up in the prompt. Be careful.
-- **Daemon log can grow forever.** No rotation in v1. Manually truncate if it gets huge. Phase 3 should add rotation.
+- **Windows `kill $!` in bash does NOT kill node.exe.** Kills the bash subshell. Use `taskkill /F /PID <pid>`. I orphaned daemons twice doing this.
+- **`CLAUDE_CODE_ENTRYPOINT`** can be `claude-vscode` (added to allowed list in self-loop guards). Don't remove.
+- **Hook stdout becomes additional context** in Claude. Anything written to stdout from `hook-runner.ts` lands in the prompt. Be careful.
+- **Daemon log can grow forever** in v1. No rotation yet. Manual truncate if huge.
 - **Wiki git auto-commit** runs on every ingest. If something breaks the wiki repo (manual edit, merge conflict), every subsequent ingest fails the commit step but the page write still succeeds. Check `daemon.log` for git errors.
-- **Initial corpus seed** runs in background on first daemon launch IF ollama is configured AND not already seeded. State at `c:/dev/data/skill-connections/corpus-seed.state.json`. Force re-run with `POST /reseed`.
+- **Initial corpus seed** runs in background on first daemon launch IF ollama is configured AND not already seeded. State at `corpus-seed.state.json`. Force re-run with `POST /reseed`.
+- **Multipart upload field order:** the `/upload` endpoint uses a single-pass parts iterator. Field order in the multipart body does not matter (early bug fixed in P3.2).
+- **Bridge target terminal:** uses substring match on terminal name (default `claude`). If your Claude terminal has a different name, run `DevNeural: Pick Claude Terminal for This Window` in the command palette.
+- **Bridge multi-window routing:** falls back to "all windows attempt" if `session-state/<id>.meta.json` does not exist. The session summarizer creates these files; new sessions may take a few minutes before the meta exists.
+- **Daemon now binds 0.0.0.0:3747** to allow Tailscale routing. If you want strict localhost: `DEVNEURAL_BIND=127.0.0.1`.
 
 ---
 
 ## What's NOT done that some might expect
 
-- **Dashboard:** spec only, no code (Phase 3).
-- **Orb rebind:** spec only, old v1 orb code unchanged (Phase 4).
-- **05-voice-interface:** untouched, will reshape in a later phase.
-- **06-notebooklm-integration:** untouched, will reshape in a later phase.
-- **Reference corpus (PDFs/images/audio/video):** spec'd in Phase 3, no code.
-- **Session bridge (09-bridge):** spec'd in Phase 3, no code.
-- **PWA/mobile:** spec'd in Phase 3, no code.
-- **Web push notifications:** spec'd in Phase 3, no code.
-- **Tailscale wiring:** prereq documented, daemon does not bind `0.0.0.0` yet (Phase 3 changes that).
-- **Autostart on Windows boot:** documented as manual Task Scheduler entry; Phase 3 will provide a polished option.
+- **Dashboard frontend:** Phase 3.4. Endpoints exist, no UI yet.
+- **Audio + video processing:** Phase 3.5. PDF / image / markdown / DOCX work today.
+- **Web push notifications:** Phase 3.7. Storage works, push delivery doesn't.
+- **Orb rebind:** Phase 4. Old v1 orb code unchanged in `03-web-app/`.
+- **05-voice-interface:** untouched, will reshape later.
+- **06-notebooklm-integration:** untouched, will reshape later.
+- **Autostart on Windows boot:** documented as manual Task Scheduler entry. A polished install path is part of Phase 8.
+- **Personalized settings audit:** Phase 5. Install docs hold structure; personalized contents deferred.
+- **Project status board (Kanban):** spec'd as part of Phase 3.4 dashboard. Replaces dead monday integration. UI not built.
+- **Scanned PDF OCR fallback:** PDFs that are image-only get warned, not auto-OCR'd. A future polish task.
 
 ---
 
 ## How to start the next session productively
 
 1. Read this file.
-2. Read the most recent commit message (`git log -1`) to see what just happened.
-3. If the user hasn't given direction yet, ask "Phase 2 burndown next, correct?" and wait.
+2. Read the most recent commit message: `git log -1`.
+3. If the user hasn't given direction yet, ask "Phase 3.4 dashboard frontend next, correct?" and wait.
 4. If the user gives a direction, follow it. Don't re-litigate the spec.
 
 ---
