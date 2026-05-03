@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DevNeural Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            base: '#000000',
+            surface1: '#0A0A0B',
+            surface2: '#16161A',
+            surface3: '#1F1F25',
+            border1: '#26262B',
+            border2: '#1A1A1F',
+            txt1: '#F4F4F5',
+            txt2: '#A1A1AA',
+            txt3: '#52525B',
+            txt4: '#3F3F46',
+            brand: '#8B5CF6',
+            brandSoft: '#A78BFA',
+            ok: '#10B981',
+            warn: '#F59E0B',
+            err: '#EF4444',
+            live: '#22D3EE',
+            ai: '#818CF8',
+            promoted: '#FBBF24',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            display: ['"Inter Tight"', 'Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+          },
+          boxShadow: {
+            'glow-brand': '0 0 60px -10px rgba(139,92,246,0.55)',
+            'glow-live': '0 0 24px -4px rgba(34,211,238,0.55)',
+            'glow-ok': '0 0 16px -4px rgba(16,185,129,0.55)',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    html, body { background: #000; color: #F4F4F5; font-feature-settings: "ss01","cv11","tnum"; font-variant-numeric: tabular-nums; }
+    body { font-family: Inter, system-ui, sans-serif; }
+    /* radial brand glow behind the wordmark */
+    .brand-glow::before {
+      content: ""; position: absolute; inset: -40% -60% auto auto;
+      width: 380px; height: 380px;
+      background: radial-gradient(closest-side, rgba(139,92,246,0.25), transparent 70%);
+      pointer-events: none; filter: blur(20px);
+    }
+    /* breathing pulse for live session dots */
+    @keyframes breathe { 0%,100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 1; transform: scale(1.15); } }
+    .pulse-live { animation: breathe 1.6s ease-in-out infinite; }
+    /* subtle scanline shimmer for status pill */
+    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+    .shimmer-pill {
+      background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.05) 50%, transparent 70%);
+      background-size: 200% 100%;
+      animation: shimmer 3.4s linear infinite;
+    }
+    .hairline { box-shadow: inset 0 0 0 1px #26262B; }
+    .hairline-soft { box-shadow: inset 0 0 0 1px #1A1A1F; }
+    .lift { transition: background-color 120ms ease, box-shadow 120ms ease; }
+    .lift:hover { background-color: #0F0F12; }
+    *::-webkit-scrollbar { width: 8px; height: 8px; }
+    *::-webkit-scrollbar-track { background: transparent; }
+    *::-webkit-scrollbar-thumb { background: #26262B; border-radius: 9999px; }
+    *::-webkit-scrollbar-thumb:hover { background: #3F3F46; }
+    .grid-bg {
+      background-image:
+        radial-gradient(circle at 100% 0%, rgba(139,92,246,0.06), transparent 40%),
+        radial-gradient(circle at 0% 100%, rgba(34,211,238,0.04), transparent 40%);
+    }
+    .tab-active::after {
+      content: ""; position: absolute; left: 0; right: 0; bottom: -1px;
+      height: 2px; background: #8B5CF6; border-radius: 9999px;
+    }
+    .ring-ai { box-shadow: inset 0 0 0 1px rgba(129,140,248,0.4), 0 0 12px -4px rgba(129,140,248,0.45); }
+    .ring-ok { box-shadow: inset 0 0 0 1px rgba(16,185,129,0.4), 0 0 10px -4px rgba(16,185,129,0.45); }
+    .ring-promoted { box-shadow: inset 0 0 0 1px rgba(251,191,36,0.5), 0 0 12px -4px rgba(251,191,36,0.5); }
+    .ring-warn { box-shadow: inset 0 0 0 1px rgba(245,158,11,0.4); }
+    .ring-live { box-shadow: inset 0 0 0 1px rgba(34,211,238,0.45), 0 0 12px -4px rgba(34,211,238,0.5); }
+    @keyframes slidein { from { transform: translateX(8px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .feed-item { animation: slidein 200ms ease-out both; }
+    /* orb live ingest cursor */
+    @keyframes ingest { 0%,100% { r: 2.4; opacity: 1; } 50% { r: 4; opacity: 0.55; } }
+    .orb-ingest { animation: ingest 2.2s ease-in-out infinite; transform-origin: center; }
+  </style>
+</head>
+<body class="min-h-screen bg-base text-txt1 antialiased grid-bg">
+
+<div class="h-screen flex flex-col">
+
+  <!-- ================== TOP BAR ================== -->
+  <header class="relative h-14 border-b border-border1 bg-base/80 backdrop-blur supports-[backdrop-filter]:bg-base/60 shrink-0 z-30">
+    <div class="h-full max-w-[1680px] mx-auto px-5 flex items-center gap-4 relative">
+      <div class="flex items-center gap-2.5 relative brand-glow">
+        <div class="relative w-7 h-7 rounded-md bg-gradient-to-br from-brand to-ai flex items-center justify-center shadow-glow-brand">
+          <svg viewBox="0 0 24 24" class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M5 19l3-3M16 8l3-3"/>
+          </svg>
+        </div>
+        <div class="font-display font-semibold tracking-tight text-[15px] text-txt1">DevNeural</div>
+        <div class="text-txt3 text-[11px] uppercase tracking-[0.14em] font-medium ml-1 mt-0.5">Hub</div>
+      </div>
+
+      <div class="flex-1 max-w-2xl mx-4">
+        <div class="group flex items-center gap-2.5 h-9 px-3 rounded-md bg-surface1 hairline focus-within:ring-1 focus-within:ring-brand/60 transition">
+          <i data-lucide="search" class="w-4 h-4 text-txt3"></i>
+          <input
+            placeholder="Search wiki, sessions, projects, reference docs..."
+            class="bg-transparent flex-1 text-sm placeholder:text-txt3 outline-none text-txt1"
+          />
+          <kbd class="hidden md:inline-flex items-center gap-1 px-1.5 h-5 rounded border border-border1 bg-surface2 text-[10px] font-mono text-txt2">
+            ⌘ K
+          </kbd>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button class="lift relative w-9 h-9 rounded-md hairline grid place-items-center text-txt2 hover:text-txt1">
+          <i data-lucide="bell" class="w-4 h-4"></i>
+          <span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-err"></span>
+        </button>
+        <button class="lift w-9 h-9 rounded-md hairline grid place-items-center text-txt2 hover:text-txt1">
+          <i data-lucide="settings" class="w-4 h-4"></i>
+        </button>
+        <div class="relative ml-1 h-9 pl-2.5 pr-3 rounded-full bg-surface1 hairline flex items-center gap-2 overflow-hidden">
+          <div class="shimmer-pill absolute inset-0"></div>
+          <span class="relative w-2 h-2 rounded-full bg-ok shadow-glow-ok"></span>
+          <span class="relative text-xs font-medium text-txt1">All systems online</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================== MAIN AREA (3 cols) ================== -->
+  <div class="flex-1 min-h-0 overflow-hidden">
+    <div class="max-w-[1680px] mx-auto h-full px-5">
+      <div class="grid grid-cols-[300px_minmax(0,1fr)_340px] gap-5 py-5 h-full">
+
+        <!-- ===== LEFT RAIL: STREAM DECK ===== -->
+        <aside class="space-y-4 overflow-y-auto pr-1">
+          <div class="flex items-center justify-between px-1">
+            <div class="text-[11px] uppercase tracking-[0.14em] font-semibold text-txt3">Stream Deck</div>
+            <div class="text-[11px] font-mono text-txt3">4 active</div>
+          </div>
+
+          <!-- session card: active (bigger than v1) -->
+          <div class="lift p-3.5 rounded-md bg-surface1 hairline cursor-pointer group">
+            <div class="flex items-center gap-2.5 mb-2.5">
+              <span class="relative flex w-2.5 h-2.5">
+                <span class="absolute inline-flex w-full h-full rounded-full bg-live opacity-60 pulse-live"></span>
+                <span class="relative inline-flex rounded-full w-2.5 h-2.5 bg-live"></span>
+              </span>
+              <div class="text-[15px] font-semibold text-txt1 truncate">devneural-master</div>
+              <i data-lucide="terminal-square" class="ml-auto w-4 h-4 text-txt3 group-hover:text-txt2"></i>
+            </div>
+            <div class="text-[11px] font-mono text-txt3 truncate mb-2">DevNeural / 07-daemon</div>
+            <div class="text-[13px] text-txt2 leading-snug line-clamp-2">Wiring up dashboard mockup against the real /sessions endpoint.</div>
+            <div class="mt-2.5 flex items-center justify-between text-[11px] font-mono">
+              <span class="text-txt3">14 turns</span>
+              <span class="text-live">2s ago</span>
+            </div>
+          </div>
+
+          <!-- session card: active -->
+          <div class="lift p-3.5 rounded-md bg-surface1 hairline cursor-pointer group">
+            <div class="flex items-center gap-2.5 mb-2.5">
+              <span class="relative flex w-2.5 h-2.5">
+                <span class="absolute inline-flex w-full h-full rounded-full bg-live opacity-60 pulse-live"></span>
+                <span class="relative inline-flex rounded-full w-2.5 h-2.5 bg-live"></span>
+              </span>
+              <div class="text-[15px] font-semibold text-txt1 truncate">autolisp-skill</div>
+              <i data-lucide="terminal-square" class="ml-auto w-4 h-4 text-txt3 group-hover:text-txt2"></i>
+            </div>
+            <div class="text-[11px] font-mono text-txt3 truncate mb-2">autolisp-skill / src</div>
+            <div class="text-[13px] text-txt2 leading-snug line-clamp-2">Refactoring the entity-snap predicates into a single dispatcher.</div>
+            <div class="mt-2.5 flex items-center justify-between text-[11px] font-mono">
+              <span class="text-txt3">42 turns</span>
+              <span class="text-txt2">38s ago</span>
+            </div>
+          </div>
+
+          <!-- session card: warn -->
+          <div class="lift p-3.5 rounded-md bg-surface1 hairline cursor-pointer group ring-warn">
+            <div class="flex items-center gap-2.5 mb-2.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-warn"></span>
+              <div class="text-[15px] font-semibold text-txt1 truncate">otlc-guardian</div>
+              <i data-lucide="alert-triangle" class="ml-auto w-4 h-4 text-warn"></i>
+            </div>
+            <div class="text-[11px] font-mono text-txt3 truncate mb-2">otlc-guardian / .claude</div>
+            <div class="text-[13px] text-txt2 leading-snug line-clamp-2">Waiting on user input for 4m 12s. Last prompt was a permission request.</div>
+            <div class="mt-2.5 flex items-center justify-between text-[11px] font-mono">
+              <span class="text-txt3">8 turns</span>
+              <span class="text-warn">stalled</span>
+            </div>
+          </div>
+
+          <!-- session card: idle -->
+          <div class="lift p-3.5 rounded-md bg-surface1 hairline cursor-pointer group opacity-80">
+            <div class="flex items-center gap-2.5 mb-2.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-txt4"></span>
+              <div class="text-[15px] font-semibold text-txt2 truncate">warehouse-sim</div>
+              <i data-lucide="moon" class="ml-auto w-4 h-4 text-txt3"></i>
+            </div>
+            <div class="text-[11px] font-mono text-txt4 truncate mb-2">warehouse-sim / docs</div>
+            <div class="text-[13px] text-txt3 leading-snug line-clamp-2">Idle. Last task: updated bay-spacing decision page.</div>
+            <div class="mt-2.5 flex items-center justify-between text-[11px] font-mono">
+              <span class="text-txt4">21 turns</span>
+              <span class="text-txt3">17m idle</span>
+            </div>
+          </div>
+
+          <button class="w-full lift p-3 rounded-md bg-surface1 hairline border-dashed text-txt2 hover:text-txt1 flex items-center justify-center gap-2 text-sm font-medium">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            New project
+          </button>
+
+          <div class="pt-2 px-1 text-[11px] uppercase tracking-[0.14em] font-semibold text-txt3">Pinned</div>
+          <div class="lift p-2.5 rounded-md bg-surface1 hairline cursor-pointer flex items-center gap-2.5">
+            <i data-lucide="bookmark" class="w-3.5 h-3.5 text-brandSoft"></i>
+            <span class="text-xs text-txt2">wiki: bay-spacing decision</span>
+          </div>
+          <div class="lift p-2.5 rounded-md bg-surface1 hairline cursor-pointer flex items-center gap-2.5">
+            <i data-lucide="bookmark" class="w-3.5 h-3.5 text-brandSoft"></i>
+            <span class="text-xs text-txt2">ref: conveyor-manual.pdf</span>
+          </div>
+        </aside>
+
+        <!-- ===== MAIN COLUMN ===== -->
+        <main class="space-y-6 min-w-0 overflow-y-auto pr-1">
+          <!-- tabs -->
+          <div class="border-b border-border1 sticky top-0 bg-base/80 backdrop-blur z-10">
+            <nav class="flex gap-6 -mb-px">
+              <button class="relative tab-active py-3 text-sm font-medium text-txt1 flex items-center gap-2">
+                <i data-lucide="home" class="w-4 h-4"></i> Home
+              </button>
+              <button class="relative py-3 text-sm font-medium text-txt2 hover:text-txt1 flex items-center gap-2">
+                <i data-lucide="book-open" class="w-4 h-4"></i> Wiki
+              </button>
+              <button class="relative py-3 text-sm font-medium text-txt2 hover:text-txt1 flex items-center gap-2">
+                <i data-lucide="terminal" class="w-4 h-4"></i> Sessions
+                <span class="ml-1 px-1.5 py-0.5 text-[10px] font-mono rounded bg-surface2 text-txt2">4</span>
+              </button>
+              <button class="relative py-3 text-sm font-medium text-txt2 hover:text-txt1 flex items-center gap-2">
+                <i data-lucide="folder-git-2" class="w-4 h-4"></i> Projects
+              </button>
+              <button class="relative py-3 text-sm font-medium text-txt2 hover:text-txt1 flex items-center gap-2">
+                <i data-lucide="cpu" class="w-4 h-4"></i> System
+              </button>
+              <button class="relative py-3 text-sm font-medium text-txt2 hover:text-txt1 flex items-center gap-2">
+                <i data-lucide="bell-ring" class="w-4 h-4"></i> Reminders
+                <span class="ml-1 px-1.5 py-0.5 text-[10px] font-mono rounded bg-surface2 text-txt2">3</span>
+              </button>
+              <button class="relative py-3 text-sm font-medium text-txt2 hover:text-txt1 flex items-center gap-2">
+                <i data-lucide="orbit" class="w-4 h-4"></i> Orb
+              </button>
+            </nav>
+          </div>
+
+          <!-- ===== DAILY BRIEF ===== -->
+          <section class="relative overflow-hidden rounded-md bg-surface1 hairline p-6">
+            <div class="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-brand/10 blur-3xl pointer-events-none"></div>
+            <div class="flex items-start justify-between gap-6 relative">
+              <div class="min-w-0">
+                <div class="text-[11px] uppercase tracking-[0.14em] font-semibold text-txt3 mb-2 flex items-center gap-2">
+                  Daily brief
+                  <span class="text-txt4">·</span>
+                  <span class="font-mono text-txt3 normal-case tracking-normal">Sat, May 2 · 09:14</span>
+                </div>
+                <h1 class="font-display text-3xl font-semibold tracking-tight leading-tight">
+                  Good morning, Michael.
+                </h1>
+                <p class="mt-3 text-[15px] leading-relaxed text-txt2 max-w-3xl">
+                  Your second brain learned <span class="text-txt1 font-medium">3 new patterns</span> overnight,
+                  promoted <span class="text-promoted font-medium">1 page</span> to canonical, and ran
+                  <span class="text-txt1 font-medium">2 sessions</span> across
+                  <span class="text-txt1 font-medium">DevNeural</span> and
+                  <span class="text-txt1 font-medium">autolisp-skill</span>. No alerts.
+                  Wiki health is <span class="text-ok font-medium">green</span>. Lint hasn't run in
+                  <span class="text-warn font-medium">5 days</span>.
+                </p>
+              </div>
+              <button class="shrink-0 h-9 px-3.5 rounded-md bg-brand/10 hairline ring-1 ring-brand/30 text-brandSoft text-xs font-semibold hover:bg-brand/15 flex items-center gap-2">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                Run lint now
+              </button>
+            </div>
+
+            <div class="mt-6 grid grid-cols-4 gap-3 relative">
+              <div class="p-3.5 rounded-md bg-surface2/60 hairline-soft">
+                <div class="text-[10px] uppercase tracking-[0.14em] text-txt3 font-semibold">Pages added</div>
+                <div class="mt-1 flex items-baseline gap-1.5">
+                  <span class="font-display text-2xl font-semibold text-txt1">3</span>
+                  <span class="text-[11px] font-mono text-ok">+2 vs avg</span>
+                </div>
+              </div>
+              <div class="p-3.5 rounded-md bg-surface2/60 hairline-soft">
+                <div class="text-[10px] uppercase tracking-[0.14em] text-txt3 font-semibold">Promoted</div>
+                <div class="mt-1 flex items-baseline gap-1.5">
+                  <span class="font-display text-2xl font-semibold text-promoted">1</span>
+                  <span class="text-[11px] font-mono text-txt3">canonical</span>
+                </div>
+              </div>
+              <div class="p-3.5 rounded-md bg-surface2/60 hairline-soft">
+                <div class="text-[10px] uppercase tracking-[0.14em] text-txt3 font-semibold">Sessions</div>
+                <div class="mt-1 flex items-baseline gap-1.5">
+                  <span class="font-display text-2xl font-semibold text-txt1">2</span>
+                  <span class="text-[11px] font-mono text-txt3">14 + 42 turns</span>
+                </div>
+              </div>
+              <div class="p-3.5 rounded-md bg-surface2/60 hairline-soft">
+                <div class="text-[10px] uppercase tracking-[0.14em] text-txt3 font-semibold">Alerts</div>
+                <div class="mt-1 flex items-baseline gap-1.5">
+                  <span class="font-display text-2xl font-semibold text-txt1">0</span>
+                  <span class="text-[11px] font-mono text-ok">all clear</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== ROW: ORB + PROJECTS ===== -->
+          <section class="grid grid-cols-2 gap-5">
+            <!-- ORB -->
+            <div class="rounded-md bg-surface1 hairline flex flex-col">
+              <div class="px-5 py-3.5 border-b border-border1 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="orbit" class="w-4 h-4 text-brandSoft"></i>
+                  <h2 class="font-display text-sm font-semibold tracking-tight">Orb</h2>
+                </div>
+                <div class="text-[11px] font-mono text-txt3">312 nodes · 847 edges</div>
+              </div>
+              <div class="flex-1 p-3 grid place-items-center min-h-[280px] relative">
+                <div class="absolute inset-6 rounded-full bg-brand/5 blur-2xl pointer-events-none"></div>
+                <svg viewBox="0 0 300 280" class="w-full h-full relative" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="150" cy="140" r="120" fill="none" stroke="#1F1F25" stroke-width="1"/>
+                  <circle cx="150" cy="140" r="86" fill="none" stroke="#1F1F25" stroke-width="1"/>
+                  <circle cx="150" cy="140" r="50" fill="none" stroke="#1F1F25" stroke-width="1"/>
+                  <g stroke="#8B5CF6" stroke-opacity="0.3" stroke-width="0.6" fill="none">
+                    <line x1="78" y1="64" x2="150" y2="140"/>
+                    <line x1="222" y1="74" x2="150" y2="140"/>
+                    <line x1="58" y1="170" x2="150" y2="140"/>
+                    <line x1="242" y1="190" x2="150" y2="140"/>
+                    <line x1="98" y1="232" x2="150" y2="140"/>
+                    <line x1="202" y1="232" x2="150" y2="140"/>
+                    <line x1="78" y1="64" x2="222" y2="74"/>
+                    <line x1="58" y1="170" x2="98" y2="232"/>
+                    <line x1="242" y1="190" x2="202" y2="232"/>
+                    <line x1="222" y1="74" x2="242" y2="190"/>
+                    <line x1="78" y1="64" x2="58" y2="170"/>
+                    <line x1="118" y1="108" x2="182" y2="108"/>
+                    <line x1="118" y1="108" x2="150" y2="140"/>
+                    <line x1="182" y1="108" x2="150" y2="140"/>
+                    <line x1="118" y1="172" x2="182" y2="172"/>
+                    <line x1="118" y1="172" x2="150" y2="140"/>
+                    <line x1="182" y1="172" x2="150" y2="140"/>
+                  </g>
+                  <g fill="#A1A1AA">
+                    <circle cx="78" cy="64" r="2"/>
+                    <circle cx="58" cy="170" r="2"/>
+                    <circle cx="242" cy="190" r="2"/>
+                    <circle cx="98" cy="232" r="2"/>
+                    <circle cx="202" cy="232" r="2"/>
+                    <circle cx="118" cy="108" r="1.6"/>
+                    <circle cx="182" cy="108" r="1.6"/>
+                    <circle cx="118" cy="172" r="1.6"/>
+                  </g>
+                  <g fill="#8B5CF6">
+                    <circle cx="150" cy="140" r="3.2"/>
+                    <circle cx="118" cy="108" r="2.4"/>
+                    <circle cx="182" cy="172" r="2.4"/>
+                  </g>
+                  <!-- promoted node ring (gold, the "celebrate" color from spec) -->
+                  <circle cx="182" cy="172" r="7" fill="none" stroke="#FBBF24" stroke-width="0.6" stroke-opacity="0.7"/>
+                  <!-- live ingest cursor -->
+                  <circle cx="222" cy="74" r="2.4" fill="#22D3EE" class="orb-ingest"/>
+                </svg>
+              </div>
+              <div class="px-5 py-2.5 border-t border-border1 flex items-center justify-between text-[11px] font-mono text-txt3">
+                <span class="flex items-center gap-3">
+                  <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-brand"></span>3 canonical</span>
+                  <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-promoted"></span>1 promoted</span>
+                  <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-live"></span>live</span>
+                </span>
+                <button class="text-txt3 hover:text-txt1">expand →</button>
+              </div>
+            </div>
+
+            <!-- PROJECTS -->
+            <div class="rounded-md bg-surface1 hairline">
+              <div class="px-5 py-3.5 border-b border-border1 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="folder-git-2" class="w-4 h-4 text-brandSoft"></i>
+                  <h2 class="font-display text-sm font-semibold tracking-tight">Projects</h2>
+                </div>
+                <button class="text-[11px] font-mono text-txt3 hover:text-txt1 flex items-center gap-1">
+                  <i data-lucide="plus" class="w-3 h-3"></i> new
+                </button>
+              </div>
+              <div class="divide-y divide-border1">
+                <div class="px-5 py-3.5 flex items-center gap-3 lift cursor-pointer">
+                  <div class="w-8 h-8 rounded bg-surface2 hairline-soft grid place-items-center text-[11px] font-mono font-semibold text-brandSoft">DN</div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-medium text-txt1 truncate">DevNeural</span>
+                      <span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-brand/10 text-brandSoft ring-1 ring-brand/20">alpha</span>
+                    </div>
+                    <div class="text-[11px] font-mono text-txt3 mt-0.5 truncate">P3.4 dashboard frontend · 2 active sessions</div>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <div class="text-[11px] font-mono text-live">live</div>
+                    <div class="text-[10px] font-mono text-txt3">2s ago</div>
+                  </div>
+                </div>
+                <div class="px-5 py-3.5 flex items-center gap-3 lift cursor-pointer">
+                  <div class="w-8 h-8 rounded bg-surface2 hairline-soft grid place-items-center text-[11px] font-mono font-semibold text-ai">AL</div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-medium text-txt1 truncate">autolisp-skill</span>
+                      <span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-ai/10 text-ai ring-1 ring-ai/20">beta</span>
+                    </div>
+                    <div class="text-[11px] font-mono text-txt3 mt-0.5 truncate">refactor: snap-predicate dispatcher</div>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <div class="text-[11px] font-mono text-live">live</div>
+                    <div class="text-[10px] font-mono text-txt3">38s ago</div>
+                  </div>
+                </div>
+                <div class="px-5 py-3.5 flex items-center gap-3 lift cursor-pointer">
+                  <div class="w-8 h-8 rounded bg-surface2 hairline-soft grid place-items-center text-[11px] font-mono font-semibold text-warn">OG</div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-medium text-txt1 truncate">otlc-guardian</span>
+                      <span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-warn/10 text-warn ring-1 ring-warn/20">alpha</span>
+                    </div>
+                    <div class="text-[11px] font-mono text-warn mt-0.5 truncate">stalled · awaiting permission prompt</div>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <div class="text-[11px] font-mono text-warn">stall</div>
+                    <div class="text-[10px] font-mono text-txt3">4m 12s</div>
+                  </div>
+                </div>
+                <div class="px-5 py-3.5 flex items-center gap-3 lift cursor-pointer">
+                  <div class="w-8 h-8 rounded bg-surface2 hairline-soft grid place-items-center text-[11px] font-mono font-semibold text-ok">WS</div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-medium text-txt1 truncate">warehouse-sim</span>
+                      <span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-ok/10 text-ok ring-1 ring-ok/20">deployed</span>
+                    </div>
+                    <div class="text-[11px] font-mono text-txt3 mt-0.5 truncate">idle · 142 wiki pages · 7 reference docs</div>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <div class="text-[11px] font-mono text-txt2">idle</div>
+                    <div class="text-[10px] font-mono text-txt3">17m</div>
+                  </div>
+                </div>
+                <div class="px-5 py-3.5 flex items-center gap-3 lift cursor-pointer opacity-70">
+                  <div class="w-8 h-8 rounded bg-surface2 hairline-soft grid place-items-center text-[11px] font-mono font-semibold text-txt3">NL</div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-medium text-txt2 truncate">New-Letter-and-TikToks</span>
+                      <span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-surface2 text-txt3 ring-1 ring-border1">archived</span>
+                    </div>
+                    <div class="text-[11px] font-mono text-txt3 mt-0.5 truncate">no activity in 21 days</div>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <div class="text-[11px] font-mono text-txt3">cold</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== WHATS NEW ===== -->
+          <section class="rounded-md bg-surface1 hairline">
+            <div class="px-5 py-3.5 border-b border-border1 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i data-lucide="sparkle" class="w-4 h-4 text-ai"></i>
+                <h2 class="font-display text-sm font-semibold tracking-tight">What's new</h2>
+              </div>
+              <a class="text-[11px] font-mono text-txt3 hover:text-txt1 cursor-pointer">view all →</a>
+            </div>
+            <ul class="divide-y divide-border1">
+              <li class="px-5 py-3.5 flex items-start gap-3 lift cursor-pointer">
+                <div class="mt-1 w-1.5 h-1.5 rounded-full bg-promoted shrink-0 ring-promoted"></div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm text-txt1 truncate"><span class="text-promoted font-medium">Promoted:</span> bay-spacing-for-pallet-flow</div>
+                  <div class="text-[11px] font-mono text-txt3 mt-0.5">3 corroborating chunks · 2 sessions cite it</div>
+                </div>
+                <span class="text-[11px] font-mono text-txt3 shrink-0">02:14</span>
+              </li>
+              <li class="px-5 py-3.5 flex items-start gap-3 lift cursor-pointer">
+                <div class="mt-1 w-1.5 h-1.5 rounded-full bg-ai shrink-0 ring-ai"></div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm text-txt1 truncate"><span class="text-ai font-medium">New page:</span> claude-hook-ordering-gotcha</div>
+                  <div class="text-[11px] font-mono text-txt3 mt-0.5">trigger from devneural-master session · pending review</div>
+                </div>
+                <span class="text-[11px] font-mono text-txt3 shrink-0">23:48</span>
+              </li>
+              <li class="px-5 py-3.5 flex items-start gap-3 lift cursor-pointer">
+                <div class="mt-1 w-1.5 h-1.5 rounded-full bg-ai shrink-0 ring-ai"></div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm text-txt1 truncate"><span class="text-ai font-medium">New page:</span> tesseract-fallback-when-pdf-text-is-sparse</div>
+                  <div class="text-[11px] font-mono text-txt3 mt-0.5">derived during P3.2 reference pipeline work</div>
+                </div>
+                <span class="text-[11px] font-mono text-txt3 shrink-0">21:02</span>
+              </li>
+              <li class="px-5 py-3.5 flex items-start gap-3 lift cursor-pointer">
+                <div class="mt-1 w-1.5 h-1.5 rounded-full bg-ok shrink-0 ring-ok"></div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm text-txt1 truncate"><span class="text-ok font-medium">Reinforced:</span> hook-runner-stdout-is-context</div>
+                  <div class="text-[11px] font-mono text-txt3 mt-0.5">cited again in 2 sessions · score 0.91 → 0.96</div>
+                </div>
+                <span class="text-[11px] font-mono text-txt3 shrink-0">18:11</span>
+              </li>
+            </ul>
+          </section>
+
+        </main>
+
+        <!-- ===== RIGHT RAIL: REMINDERS (TOP) + LIVE ACTIVITY ===== -->
+        <aside class="space-y-4 overflow-y-auto pr-1">
+          <!-- REMINDERS — moved to top -->
+          <div class="rounded-md bg-surface1 hairline">
+            <div class="px-4 py-3 border-b border-border1 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i data-lucide="bell-ring" class="w-4 h-4 text-warn"></i>
+                <h3 class="font-display text-sm font-semibold tracking-tight">Reminders</h3>
+              </div>
+              <span class="text-[11px] font-mono text-txt3">3 open</span>
+            </div>
+            <ul class="divide-y divide-border1 text-sm">
+              <li class="px-4 py-2.5 flex items-center gap-2.5 lift cursor-pointer">
+                <input type="checkbox" class="w-3.5 h-3.5 accent-brand bg-surface1">
+                <span class="flex-1 truncate text-txt2">Run lint on warehouse-sim wiki</span>
+                <span class="text-[10px] font-mono text-warn">today</span>
+              </li>
+              <li class="px-4 py-2.5 flex items-center gap-2.5 lift cursor-pointer">
+                <input type="checkbox" class="w-3.5 h-3.5 accent-brand bg-surface1">
+                <span class="flex-1 truncate text-txt2">Review pending pages from 09-bridge</span>
+                <span class="text-[10px] font-mono text-txt3">tomorrow</span>
+              </li>
+              <li class="px-4 py-2.5 flex items-center gap-2.5 lift cursor-pointer">
+                <input type="checkbox" class="w-3.5 h-3.5 accent-brand bg-surface1">
+                <span class="flex-1 truncate text-txt2">Generate VAPID keys for push (P3.7)</span>
+                <span class="text-[10px] font-mono text-txt3">no due</span>
+              </li>
+            </ul>
+            <div class="px-4 py-2 border-t border-border1">
+              <button class="text-[11px] font-mono text-txt3 hover:text-txt1 flex items-center gap-1">
+                <i data-lucide="plus" class="w-3 h-3"></i> add reminder
+              </button>
+            </div>
+          </div>
+
+          <!-- LIVE ACTIVITY -->
+          <div class="flex items-center justify-between px-1">
+            <div class="text-[11px] uppercase tracking-[0.14em] font-semibold text-txt3 flex items-center gap-2">
+              <span class="relative flex w-2 h-2">
+                <span class="absolute inline-flex w-full h-full rounded-full bg-live opacity-60 pulse-live"></span>
+                <span class="relative inline-flex rounded-full w-2 h-2 bg-live"></span>
+              </span>
+              Live activity
+            </div>
+            <button class="text-[11px] font-mono text-txt3 hover:text-txt1 flex items-center gap-1">
+              <i data-lucide="filter" class="w-3 h-3"></i> all
+            </button>
+          </div>
+
+          <div class="rounded-md bg-surface1 hairline overflow-hidden">
+            <ul class="divide-y divide-border1">
+              <li class="feed-item p-3.5 flex items-start gap-3 lift">
+                <div class="mt-0.5 w-7 h-7 rounded grid place-items-center bg-ai/10 ring-ai shrink-0">
+                  <i data-lucide="brain-circuit" class="w-3.5 h-3.5 text-ai"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs text-txt1">Page injected: <span class="font-mono text-ai">claude-hook-ordering-gotcha</span></div>
+                  <div class="text-[10px] font-mono text-txt3 mt-1">trigger=devneural-master · 4 chunks embedded</div>
+                </div>
+                <span class="text-[10px] font-mono text-txt3 shrink-0">09:14:02</span>
+              </li>
+              <li class="feed-item p-3.5 flex items-start gap-3 lift">
+                <div class="mt-0.5 w-7 h-7 rounded grid place-items-center bg-live/10 ring-live shrink-0">
+                  <i data-lucide="search" class="w-3.5 h-3.5 text-live"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs text-txt1">Hit on <span class="font-mono text-live">bay-spacing-for-pallet-flow</span></div>
+                  <div class="text-[10px] font-mono text-txt3 mt-1">session=warehouse-sim · score 0.94</div>
+                </div>
+                <span class="text-[10px] font-mono text-txt3 shrink-0">09:13:51</span>
+              </li>
+              <li class="feed-item p-3.5 flex items-start gap-3 lift">
+                <div class="mt-0.5 w-7 h-7 rounded grid place-items-center bg-promoted/10 ring-promoted shrink-0">
+                  <i data-lucide="award" class="w-3.5 h-3.5 text-promoted"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs text-txt1"><span class="text-promoted font-medium">Promoted</span> to canonical</div>
+                  <div class="text-[10px] font-mono text-txt3 mt-1">bay-spacing-for-pallet-flow · 3 corroborations</div>
+                </div>
+                <span class="text-[10px] font-mono text-txt3 shrink-0">09:13:08</span>
+              </li>
+              <li class="feed-item p-3.5 flex items-start gap-3 lift">
+                <div class="mt-0.5 w-7 h-7 rounded grid place-items-center bg-ok/10 ring-ok shrink-0">
+                  <i data-lucide="check" class="w-3.5 h-3.5 text-ok"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs text-txt1">Reinforce: <span class="font-mono text-ok">hook-runner-stdout-is-context</span></div>
+                  <div class="text-[10px] font-mono text-txt3 mt-1">score 0.91 → 0.96 · cited 2 sessions</div>
+                </div>
+                <span class="text-[10px] font-mono text-txt3 shrink-0">09:12:44</span>
+              </li>
+              <li class="feed-item p-3.5 flex items-start gap-3 lift">
+                <div class="mt-0.5 w-7 h-7 rounded grid place-items-center bg-ai/10 ring-ai shrink-0">
+                  <i data-lucide="upload-cloud" class="w-3.5 h-3.5 text-ai"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs text-txt1">Reference upload: <span class="font-mono text-ai">conveyor-manual.pdf</span></div>
+                  <div class="text-[10px] font-mono text-txt3 mt-1">42 pages · 184 chunks · project=warehouse-sim</div>
+                </div>
+                <span class="text-[10px] font-mono text-txt3 shrink-0">09:11:02</span>
+              </li>
+              <li class="feed-item p-3.5 flex items-start gap-3 lift">
+                <div class="mt-0.5 w-7 h-7 rounded grid place-items-center bg-warn/10 ring-warn shrink-0">
+                  <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-warn"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs text-txt1">Session stalled: <span class="font-mono text-warn">otlc-guardian</span></div>
+                  <div class="text-[10px] font-mono text-txt3 mt-1">awaiting permission prompt for 4m</div>
+                </div>
+                <span class="text-[10px] font-mono text-txt3 shrink-0">09:09:55</span>
+              </li>
+              <li class="feed-item p-3.5 flex items-start gap-3 lift">
+                <div class="mt-0.5 w-7 h-7 rounded grid place-items-center bg-ai/10 ring-ai shrink-0">
+                  <i data-lucide="git-commit-horizontal" class="w-3.5 h-3.5 text-ai"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs text-txt1">Wiki auto-commit · <span class="font-mono text-txt2">+3 pages</span></div>
+                  <div class="text-[10px] font-mono text-txt3 mt-1">777bcc2 · clean tree</div>
+                </div>
+                <span class="text-[10px] font-mono text-txt3 shrink-0">09:08:40</span>
+              </li>
+              <li class="feed-item p-3.5 flex items-start gap-3 lift">
+                <div class="mt-0.5 w-7 h-7 rounded grid place-items-center bg-live/10 ring-live shrink-0">
+                  <i data-lucide="terminal" class="w-3.5 h-3.5 text-live"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs text-txt1">Prompt sent to <span class="font-mono text-live">devneural-master</span></div>
+                  <div class="text-[10px] font-mono text-txt3 mt-1">via session bridge · 09-bridge.in</div>
+                </div>
+                <span class="text-[10px] font-mono text-txt3 shrink-0">09:08:11</span>
+              </li>
+              <li class="feed-item p-3.5 flex items-start gap-3 lift">
+                <div class="mt-0.5 w-7 h-7 rounded grid place-items-center bg-ok/10 ring-ok shrink-0">
+                  <i data-lucide="shield-check" class="w-3.5 h-3.5 text-ok"></i>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs text-txt1">Self-loop guard fired</div>
+                  <div class="text-[10px] font-mono text-txt3 mt-1">prevented LLM session re-ingest</div>
+                </div>
+                <span class="text-[10px] font-mono text-txt3 shrink-0">09:07:33</span>
+              </li>
+            </ul>
+          </div>
+        </aside>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ================== VITALS RIBBON (BOTTOM, FIXED) ================== -->
+  <footer class="h-10 border-t border-border1 bg-surface1/90 backdrop-blur shrink-0 z-30">
+    <div class="h-full max-w-[1680px] mx-auto px-5 flex items-center gap-5 text-[12px] font-mono text-txt3">
+      <div class="flex items-center gap-1.5">
+        <i data-lucide="cpu" class="w-3.5 h-3.5 text-live"></i>
+        <span class="text-txt3">CPU</span>
+        <span class="text-txt1">38<span class="text-txt3">%</span></span>
+      </div>
+      <span class="text-txt4">·</span>
+      <div class="flex items-center gap-1.5">
+        <span class="text-txt3">RAM</span>
+        <span class="text-txt1">21.4<span class="text-txt3">/64GB</span></span>
+      </div>
+      <span class="text-txt4">·</span>
+      <div class="flex items-center gap-1.5">
+        <span class="text-txt3">GPU</span>
+        <span class="text-txt1">9.2<span class="text-txt3">/24GB</span></span>
+        <span class="text-txt4">qwen3:8b</span>
+      </div>
+      <span class="text-txt4">·</span>
+      <div class="flex items-center gap-1.5">
+        <span class="text-txt3">DISK</span>
+        <span class="text-txt1">412<span class="text-txt3">/1.8TB</span></span>
+      </div>
+      <span class="text-txt4">·</span>
+      <div class="flex items-center gap-1.5">
+        <span class="text-txt3">NET</span>
+        <span class="text-txt1">↓1.2<span class="text-txt3">M</span></span>
+        <span class="text-txt1">↑84<span class="text-txt3">K</span></span>
+      </div>
+
+      <div class="ml-auto flex items-center gap-3">
+        <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-ok"></span><span class="text-txt2">daemon</span></span>
+        <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-ok"></span><span class="text-txt2">ollama</span></span>
+        <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-ok"></span><span class="text-txt2">chroma</span></span>
+        <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-ok"></span><span class="text-txt2">tailscale</span></span>
+        <span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-ok"></span><span class="text-txt2">wiki-git</span></span>
+        <span class="text-txt4">·</span>
+        <span class="text-txt4">v0.3.3 · uptime 4d 11h</span>
+      </div>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+  if (window.lucide) lucide.createIcons();
+</script>
+</body>
+</html>
