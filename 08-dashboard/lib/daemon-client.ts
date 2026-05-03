@@ -88,13 +88,20 @@ export interface DashboardHealth {
 }
 export const dashboardHealth = () => request<DashboardHealth>("/dashboard/health");
 
-export interface DailyBrief {
-  brief: string;
-  whats_new: string[];
-  generated_at?: string;
+export interface DailyBriefSummary {
+  generated_at: string;
+  projects_total: number;
+  active_sessions: number;
+  unread_notifications: number;
+  whats_new_present: boolean;
+  whats_new_age_hours: number | null;
+}
+export interface DailyBriefResponse {
+  summary: DailyBriefSummary;
+  whats_new_markdown: string;
 }
 export const dailyBrief = () =>
-  request<DailyBrief>("/dashboard/daily-brief");
+  request<DailyBriefResponse>("/dashboard/daily-brief");
 
 export interface SystemMetrics {
   cpu: { usage_percent: number; cores: number; load_avg?: number[] };
