@@ -1,0 +1,232 @@
+@import "tailwindcss";
+
+/* ────── design tokens
+ * Authored 2026-05-03 from references/{linear.app, raycast.com, openstatus.dev, vercel.com}.md.
+ * Locked dark theme. Light theme would override the same custom property names under [data-theme="light"].
+ */
+:root {
+  /* color: surfaces — cool-tilted near-black, never pure #000 */
+  --c-bg:           oklch(11.5% 0.005 250);
+  --c-bg-elev:      oklch(14% 0.006 250);
+  --c-bg-elev-2:    oklch(17% 0.008 250);
+  --c-bg-overlay:   oklch(8% 0.004 250 / 0.72);
+
+  /* color: foreground — off-white, slight cool tilt; never pure #FFF */
+  --c-fg:           oklch(96% 0.005 250);
+  --c-fg-2:         oklch(85% 0.012 250);
+  --c-fg-muted:     oklch(70% 0.014 258);
+  --c-fg-disabled:  oklch(46% 0.011 263);
+
+  /* color: borders — hairline white-alpha pattern (linear.app) */
+  --c-border-faint:  oklch(96% 0.005 250 / 0.05);
+  --c-border:        oklch(96% 0.005 250 / 0.08);
+  --c-border-strong: oklch(96% 0.005 250 / 0.14);
+
+  /* color: accent — electric violet from spec */
+  --c-accent:       oklch(64% 0.20 295);
+  --c-accent-soft:  oklch(73% 0.16 295);
+  --c-accent-bg:    oklch(64% 0.20 295 / 0.15);
+  --c-accent-fg:    oklch(11.5% 0.005 250);
+  --c-accent-2:     oklch(58% 0.18 270);
+
+  /* color: status — saturation profile lifted from raycast.com */
+  --c-ok:        oklch(70% 0.18 155);
+  --c-warn:      oklch(78% 0.16 80);
+  --c-err:       oklch(63% 0.22 25);
+  --c-live:      oklch(78% 0.13 200);
+  --c-ai:        oklch(72% 0.13 270);
+  --c-promoted:  oklch(82% 0.15 80);
+  --c-ok-soft:        oklch(70% 0.18 155 / 0.40);
+  --c-warn-soft:      oklch(78% 0.16 80  / 0.40);
+  --c-err-soft:       oklch(63% 0.22 25  / 0.40);
+  --c-live-soft:      oklch(78% 0.13 200 / 0.45);
+  --c-ai-soft:        oklch(72% 0.13 270 / 0.40);
+  --c-promoted-soft:  oklch(82% 0.15 80 / 0.50);
+
+  /* type: families */
+  --font-sans:    "Inter", "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Inter Tight", "Inter", system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* type: scale — two-band (tight body + display jumps) */
+  --fs-9:   9px;
+  --fs-11:  11px;
+  --fs-12:  12px;
+  --fs-13:  13px;
+  --fs-14:  14px;
+  --fs-16:  16px;
+  --fs-18:  18px;
+  --fs-22:  22px;
+  --fs-28:  28px;
+  --fs-40:  40px;
+  --fs-56:  56px;
+
+  /* type: weight */
+  --fw-regular:     400;
+  --fw-medium:      500;
+  --fw-emphasized:  560;
+  --fw-bold:        640;
+  --fw-display:     680;
+
+  /* type: line-height */
+  --lh-tight:  1.0;
+  --lh-snug:   1.1;
+  --lh-base:   1.4;
+  --lh-comfy:  1.5;
+  --lh-loose:  1.6;
+
+  /* type: letter-spacing — scales with size */
+  --ls-tight:  -0.04em;
+  --ls-snug:   -0.022em;
+  --ls-soft:   -0.011em;
+  --ls-normal: 0;
+  --ls-loose:  0.04em;
+
+  /* space: 4px base */
+  --sp-0:   0;
+  --sp-1:   2px;
+  --sp-2:   4px;
+  --sp-3:   6px;
+  --sp-4:   8px;
+  --sp-5:   12px;
+  --sp-6:   16px;
+  --sp-7:   20px;
+  --sp-8:   24px;
+  --sp-9:   32px;
+  --sp-10:  40px;
+  --sp-11:  48px;
+  --sp-12:  64px;
+  --sp-13:  80px;
+  --sp-14:  96px;
+  --sp-15:  128px;
+
+  /* radius */
+  --r-input:  4px;
+  --r-card:   6px;
+  --r-panel:  8px;
+  --r-pill:   9999px;
+
+  /* motion: easing — custom cubic-beziers (anti-slop rule 16) */
+  --ease-snap:       cubic-bezier(0.2, 0.8, 0.2, 1.0);
+  --ease-soft:       cubic-bezier(0.4, 0.0, 0.2, 1.0);
+  --ease-out-quart:  cubic-bezier(0.165, 0.84, 0.44, 1);
+
+  /* motion: duration */
+  --dur-instant:  0ms;
+  --dur-fast:     120ms;
+  --dur-base:     200ms;
+  --dur-slow:     320ms;
+  --dur-pace:     600ms;
+
+  /* shadow / glow */
+  --shadow-glow-brand:    0 0 60px -10px oklch(64% 0.20 295 / 0.55);
+  --shadow-glow-live:     0 0 24px -4px  oklch(78% 0.13 200 / 0.55);
+  --shadow-glow-ok:       0 0 16px -4px  oklch(70% 0.18 155 / 0.55);
+  --shadow-glow-ai:       0 0 12px -4px  oklch(72% 0.13 270 / 0.45);
+  --shadow-glow-promoted: 0 0 12px -4px  oklch(82% 0.15 80 / 0.50);
+}
+
+/* tailwind v4 theme — bind utilities to tokens */
+@theme {
+  --color-base:      var(--c-bg);
+  --color-surface1:  var(--c-bg-elev);
+  --color-surface2:  var(--c-bg-elev-2);
+  --color-surface3:  var(--c-bg-elev-2);
+  --color-border1:   var(--c-border-strong);
+  --color-border2:   var(--c-border);
+  --color-txt1:      var(--c-fg);
+  --color-txt2:      var(--c-fg-2);
+  --color-txt3:      var(--c-fg-muted);
+  --color-txt4:      var(--c-fg-disabled);
+  --color-brand:     var(--c-accent);
+  --color-brandSoft: var(--c-accent-soft);
+  --color-ok:        var(--c-ok);
+  --color-warn:      var(--c-warn);
+  --color-err:       var(--c-err);
+  --color-live:      var(--c-live);
+  --color-ai:        var(--c-ai);
+  --color-promoted:  var(--c-promoted);
+
+  --font-sans:    "Inter", "Inter Variable", system-ui, sans-serif;
+  --font-display: "Inter Tight", "Inter", system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-input: var(--r-input);
+  --radius-card:  var(--r-card);
+  --radius-panel: var(--r-panel);
+  --radius-pill:  var(--r-pill);
+}
+
+/* base reset / typography */
+html, body {
+  background: var(--c-bg);
+  color: var(--c-fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-14);
+  line-height: var(--lh-comfy);
+  letter-spacing: var(--ls-soft);
+  font-feature-settings: "ss01", "cv11", "tnum";
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection { background: var(--c-accent-bg); color: var(--c-fg); }
+
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--c-border-strong); border-radius: var(--r-pill); }
+*::-webkit-scrollbar-thumb:hover { background: var(--c-fg-disabled); }
+
+/* utility overlays */
+.brand-glow::before {
+  content: ""; position: absolute; inset: -40% -60% auto auto;
+  width: 380px; height: 380px;
+  background: radial-gradient(closest-side, var(--c-accent-bg), transparent 70%);
+  pointer-events: none; filter: blur(20px);
+}
+
+@keyframes breathe { 0%,100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 1; transform: scale(1.15); } }
+.pulse-live { animation: breathe 1.6s var(--ease-soft) infinite; }
+
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.shimmer-pill {
+  background: linear-gradient(110deg, transparent 30%, var(--c-border-strong) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: shimmer 3.4s linear infinite;
+}
+
+.hairline      { box-shadow: inset 0 0 0 1px var(--c-border-strong); }
+.hairline-soft { box-shadow: inset 0 0 0 1px var(--c-border); }
+.lift          { transition: background-color var(--dur-fast) var(--ease-snap), box-shadow var(--dur-fast) var(--ease-snap); }
+.lift:hover    { background-color: var(--c-bg-elev); }
+
+.grid-bg {
+  background-image:
+    radial-gradient(circle at 100% 0%, oklch(64% 0.20 295 / 0.06), transparent 40%),
+    radial-gradient(circle at 0%   100%, oklch(78% 0.13 200 / 0.04), transparent 40%);
+}
+
+.tab-active::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px;
+  height: 2px; background: var(--c-accent); border-radius: var(--r-pill);
+}
+
+.ring-ai       { box-shadow: inset 0 0 0 1px var(--c-ai-soft),       var(--shadow-glow-ai); }
+.ring-ok       { box-shadow: inset 0 0 0 1px var(--c-ok-soft),       var(--shadow-glow-ok); }
+.ring-promoted { box-shadow: inset 0 0 0 1px var(--c-promoted-soft), var(--shadow-glow-promoted); }
+.ring-warn     { box-shadow: inset 0 0 0 1px var(--c-warn-soft); }
+.ring-live     { box-shadow: inset 0 0 0 1px var(--c-live-soft),     var(--shadow-glow-live); }
+
+@keyframes slidein { from { transform: translateX(8px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+.feed-item { animation: slidein var(--dur-base) var(--ease-out-quart) both; }
+
+@keyframes ingest { 0%,100% { r: 2.4; opacity: 1; } 50% { r: 4; opacity: 0.55; } }
+.orb-ingest { animation: ingest 2.2s var(--ease-soft) infinite; transform-origin: center; }
+
+.text-nano  { font-family: var(--font-mono); font-size: var(--fs-11); letter-spacing: var(--ls-loose); text-transform: uppercase; }
+.text-micro { font-family: var(--font-sans); font-size: var(--fs-12); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0ms !important; transition-duration: 0ms !important; }
+}
