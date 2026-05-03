@@ -1,9 +1,9 @@
 # Session handover
 
 > Pick up where the last session left off. Designed to be the first file a new Claude (or you) reads when starting fresh.
-> Last updated: 2026-05-03 (after Phase 3.3 session bridge complete).
+> Last updated: 2026-05-03 (after Phase 3.4 dashboard frontend + Phase 3.7 web push complete).
 
-> **In-progress sub-task:** Phase 3.4 dashboard visual design pass is mid-flight. The v4 mockup is committed and the user loves it; we then started running the `design-website` skill to take it from "designer-y by feel" to "designer-y with computed values," but hit an MCP-surfacing blocker. Read `08-dashboard/HANDOVER.md` AFTER this file for the precise resume point.
+> **State now:** Phase 3.4 dashboard frontend is complete end-to-end against the existing daemon endpoints. Phase 3.7 web push (VAPID + service worker + subscribe button) is wired. The dashboard scaffolds at `08-dashboard/` (Next.js 15 + Tailwind v4 + Tanstack Query), every panel hits a real endpoint, and `npm run build` produces a passing optimized bundle.
 
 ---
 
@@ -34,15 +34,15 @@ DevNeural v2 is a local-first second brain: capture, semantic RAG, learning wiki
 | **3.1** | **Daemon API extensions** (auth, system metrics, services, sessions, search/all, reminders, notifications, projects/new, dashboard/health, dashboard/daily-brief) | **done, pushed** | `07-daemon/src/dashboard/` |
 | **3.2** | **Reference corpus pipeline** (PDF, image, markdown, DOCX upload + extract + chunk + embed) | **done, pushed** | `07-daemon/src/reference/` |
 | **3.3** | **Session bridge VS Code extension** | **done, pushed** | `09-bridge/` |
-| 3.4 | Dashboard frontend (Next.js + Tailwind + shadcn, PIN auth, all panels real) | next | `docs/spec/phase-3-dashboard.md` |
-| 3.5 | Audio + video processing (whisper.cpp + ffmpeg) | deferred | spec |
-| 3.6 | Stream Deck + session detail polish | deferred | spec |
-| 3.7 | Notifications + reminders + web push | partially done (reminders + notifications storage; push deferred) | spec |
-| 3.8 | System panel + metrics charts | endpoints done, UI in 3.4 | spec |
-| 3.9 | New project flow (UI for /projects/new) | endpoint done, UI in 3.4 | spec |
-| 3.10 | Daily brief + whats-new rendering UI | endpoint done, UI in 3.4 | spec |
-| 3.11 | PWA polish + mobile | deferred to after 3.4 | spec |
-| 3.12 | Polish pass | deferred | spec |
+| **3.4** | **Dashboard frontend (Next.js + Tailwind v4 + Tanstack Query, PIN auth, all panels real)** | **done, pushed** (3.4.1-3.4.6) | `08-dashboard/` |
+| 3.5 | Audio + video processing (whisper.cpp + ffmpeg) | NOT STARTED — needs whisper.cpp + ffmpeg binaries installed on OTLCDEV before code can be validated | spec |
+| **3.6** | **Stream Deck + session detail polish** | **done in 3.4.2** | `08-dashboard/components/{StreamDeck,SessionDetail,SendPromptForm}.tsx` |
+| **3.7** | **Notifications + reminders + web push** | **done, pushed** (VAPID, push subscribe, service worker push handler) | `07-daemon/src/dashboard/push.ts`, `08-dashboard/components/PushSubscribeButton.tsx` |
+| **3.8** | **System panel + metrics charts** | **basic version done in 3.4.4**; sparkline charts (Tremor) deferred to 3.12 polish | `08-dashboard/components/SystemPanel.tsx` |
+| **3.9** | **New project flow** | **done in 3.4.4** | `08-dashboard/components/NewProjectModal.tsx` |
+| **3.10** | **Daily brief + whats-new rendering** | **done in 3.4.1**; inline markdown renderer; the LLM-driven generator already exists in the lint cycle which writes wiki/whats-new.md | `08-dashboard/components/DailyBrief.tsx` |
+| 3.11 | PWA polish + mobile | scaffold done in 3.4.6 (manifest + service worker + mobile tab bar); needs real PNG icons (192/512) — design work, not code | `08-dashboard/public/{manifest.json,sw.js}` |
+| 3.12 | Polish pass | TODO — Tremor sparklines on System panel, install prompt for PWA, prefers-reduced-motion verification, axe sweep on every route | spec |
 | 4 | Orb rebind to wiki data model | spec done, deferred | `docs/spec/phase-4-orb.md` |
 | 5 | Settings audit, finalizes personalized install docs | spec done, deferred | `docs/spec/phase-5-settings-audit.md` |
 
@@ -147,29 +147,79 @@ Dashboard / curl POSTs prompt to /sessions/<id>/prompt
 
 ---
 
-## What's next: Phase 3.4 (dashboard frontend)
+## What's next
 
-The full spec is in `docs/spec/phase-3-dashboard.md`. Visual design language is in section 10.
+Phase 3 is substantively complete. What's actually left:
 
-Recommended approach for 3.4:
+### 3.5 Audio + video processing (NEEDS BINARIES)
 
-1. Scaffold `08-dashboard/` as a Next.js 15 App Router project with Tailwind + shadcn/ui.
-2. Wire PIN auth flow (set PIN on first launch, unlock prompt on subsequent).
-3. Layout shell: top bar with brand + search + cmd+K + notification bell + status pill, left rail (Stream Deck of sessions), main area (tabs), right rail (live activity stream, collapsible).
-4. Each panel hits a real endpoint (Home → `/dashboard/daily-brief`, Wiki → `/search/all`, Sessions → `/sessions`, Projects → `/projects` and `POST /projects/new`, System → `/dashboard/system-metrics` + `/services`, Reminders → `/reminders`).
-5. PWA manifest + service worker scaffold (push delivery in 3.7).
-6. Mobile-responsive single-column layout.
-7. Visual polish per section 10 design language.
+Daemon side. The reference pipeline currently handles PDF, image, markdown, DOCX. Audio and video need:
 
-This is a chunky build. Several hours of work. The endpoints are all real and tested via curl, so the front end is mostly UI work against a known API surface.
+- **whisper.cpp** built locally on OTLCDEV (`base.en` default model). Wrapper TS module at `07-daemon/src/reference/audio.ts` to spawn the binary on incoming uploads.
+- **ffmpeg** in PATH. Wrapper at `07-daemon/src/reference/video.ts` to extract audio (and optionally sample frames every N seconds for OCR) before feeding to whisper.
+- Wire both into `process.ts` dispatcher kind detection.
 
-Sub-phases to consider for 3.4 itself:
-- 3.4.1 Scaffold + auth + layout shell
-- 3.4.2 Home (daily brief) + Sessions panels
-- 3.4.3 Wiki search + reference upload UI
-- 3.4.4 Projects + System panels
-- 3.4.5 Reminders + notifications + cmd+K
-- 3.4.6 Mobile responsive polish + PWA manifest
+This is implementation + binary install. The code skeleton can be written without testing, then validated on OTLCDEV after `winget install Gyan.FFmpeg` and a whisper.cpp build.
+
+### 3.11 PWA icon assets (design work, not code)
+
+`08-dashboard/public/icons/icon-192.png` and `icon-512.png` are referenced from the manifest but not yet created. Real PNG icons need design (the violet brain mark from the dashboard wordmark, exported at both sizes with `purpose: "any maskable"` safe area). Out of scope for a code agent.
+
+### 3.12 Polish pass
+
+- Add Tremor `<SparkAreaChart>` to System panel for CPU/memory trend lines (last 60 samples)
+- Add a beforeinstallprompt listener + "install dashboard" affordance on mobile
+- Verify `prefers-reduced-motion` shortens every animation across the app
+- Run axe via Playwright on every route and fix any criticals
+- Replace lingering `text-[11px]` arbitrary classes with `text-nano` utility for consistency
+
+### Phase 4 (Orb rebind)
+
+Explicitly deferred. Spec at `docs/spec/phase-4-orb.md`. The dashboard's `/orb` route is a placeholder card. Phase 4 plugs the wiki graph data model into a force-directed visualization that lands in the same panel.
+
+### Phase 5 (Settings audit)
+
+Personalized. Spec at `docs/spec/phase-5-settings-audit.md`. Walks through every config knob in the daemon and the dashboard and produces a finalized `INSTALL.md` for a fresh OTLCDEV install. Needs the user to walk through it interactively.
+
+## Where the dashboard lives now
+
+```
+08-dashboard/
+  app/                  # Next.js App Router
+    layout.tsx          # root: fonts, providers, service worker
+    page.tsx            # Home (daily brief)
+    unlock/, set-pin/   # PIN auth pages (Suspense-wrapped)
+    sessions/, sessions/[id]/
+    wiki/, projects/, system/, reminders/, orb/
+  components/           # AppShell, TopBar, StreamDeck, RightRail, VitalsRibbon,
+                        # CommandPalette, DailyBrief, SessionsTable, SessionDetail,
+                        # SendPromptForm, WikiSearch, UploadModal, ReferenceList,
+                        # ProjectsGrid, NewProjectModal, SystemPanel, RemindersPanel,
+                        # PushSubscribeButton, RegisterServiceWorker, Icon, StatusDot, PinForm
+  lib/
+    daemon-client.ts    # typed wrappers for every daemon endpoint
+  public/
+    manifest.json       # PWA manifest
+    sw.js               # service worker (install/activate/push/notificationclick)
+  middleware.ts         # cookie presence gate; daemon does signature verification
+  next.config.mjs       # rewrites /auth/*, /sessions/*, /dashboard/*, /push/*, etc to localhost:3747
+  app/globals.css       # tokens.css inlined under @theme directive (tailwind v4)
+  mockup/               # original v4 static mockup, kept as reference baseline
+  references/           # reference doc analyses from design pass + verification artifacts
+```
+
+Run with the daemon up:
+
+```powershell
+cd C:/dev/Projects/DevNeural/07-daemon
+npm run start
+# in a separate terminal
+cd C:/dev/Projects/DevNeural/08-dashboard
+npm run dev
+# open http://localhost:3000 — first run prompts to set PIN, subsequent prompts to unlock
+```
+
+For prod (single-origin, daemon serves the static export): `npm run build` then point the daemon at `08-dashboard/out` as a static dir. That wiring is part of 3.12 polish.
 
 ---
 
