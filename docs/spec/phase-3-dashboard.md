@@ -407,7 +407,132 @@ VAPID keys generated on first dashboard launch and stored at `dashboard/vapid.js
 
 ---
 
-## 10. Tech stack
+## 10. Visual design language
+
+The dashboard is the visible product surface of DevNeural. It needs to be visually stunning, not utilitarian. This section locks the design language so individual screens stay coherent.
+
+### 10.1 Identity
+
+- **Name**: DevNeural Dashboard. The "Hub."
+- **Voice**: confident, terse, technical without being academic. No marketing fluff in copy.
+- **Personality**: a control room. Not a CRM. Not a "productivity app." A cockpit.
+- **Audience**: Michael primarily. A potential buyer secondarily. Both reward density and clarity over decoration.
+
+### 10.2 Color palette
+
+Dark theme is default and the only theme that ships in v1. (Light theme is a Phase 8 polish item if at all.)
+
+| Role | Color | Hex (start) | Notes |
+|---|---|---|---|
+| Background base | true black | `#000000` | OLED-friendly, gives charts room to breathe |
+| Surface 1 (cards) | near black | `#0A0A0B` | Subtle elevation |
+| Surface 2 (modals, popovers) | dark slate | `#16161A` | Higher elevation |
+| Border / divider | charcoal | `#26262B` | Hairline 1px |
+| Text primary | off-white | `#F4F4F5` | Never pure white |
+| Text secondary | mid gray | `#A1A1AA` | For metadata |
+| Text tertiary | low gray | `#52525B` | For deemphasized |
+| Brand accent | electric violet | `#8B5CF6` | Used sparingly for active state, brand mark |
+| Status: healthy | green | `#10B981` | All systems operational |
+| Status: warning | amber | `#F59E0B` | Attention needed |
+| Status: error / blocked | red | `#EF4444` | Action required |
+| Status: active session | cyan | `#22D3EE` | Live, in-progress |
+| Status: AI event (ingest, hit, promotion) | indigo | `#818CF8` | Daemon doing work |
+| Status: promoted-to-canonical highlight | gold | `#FBBF24` | Rare, celebratory |
+
+Colors are tokens. Reference via Tailwind theme extension, never hex literals in components.
+
+### 10.3 Typography
+
+- **UI font**: Inter (variable). Fallback: system sans (`-apple-system, Segoe UI`).
+- **Code / IDs / numerics**: JetBrains Mono.
+- **Display headings (Daily Brief title, Section names)**: Inter Tight or Inter, weight 700, generous line-height.
+- **Body**: Inter, weight 400, line-height 1.5.
+- **Tabular numbers**: enabled site-wide (`font-variant-numeric: tabular-nums`) so changing values do not jiggle layout.
+- **Sizes**: a small scale. `text-xs (12), text-sm (14), text-base (16), text-lg (18), text-xl (20), text-2xl (24), text-3xl (30), text-5xl (48)`. No more.
+
+### 10.4 Spacing and layout
+
+- **Spacing scale**: 4-based (`4, 8, 12, 16, 24, 32, 48, 64`). Tailwind defaults.
+- **Container max-width**: `1440px` desktop. Centered. Side rails are part of the layout, not floating.
+- **Card padding**: `16px` for compact, `24px` for primary cards. Consistent within a context.
+- **Border radius**: `6px` for cards, `4px` for inputs and buttons, `9999px` for pills. No square corners anywhere.
+- **Information density**: high. Compare to Linear, Raycast, Vercel dashboard, OpenStatus. Not Notion. Not Asana.
+- **Whitespace between sections**: `48px` minimum so the eye can find groupings.
+
+### 10.5 Motion
+
+Motion is functional, not decorative. Every animation answers a question.
+
+- **Page transitions**: 150ms fade + slight slide. Never longer.
+- **Component mount**: subtle scale-in (0.97 → 1.0) over 120ms.
+- **Hover**: 100ms color transition, no scale.
+- **Status pill state change** (green → amber): 250ms color cross-fade, no flash.
+- **Stream Deck card "active session" indicator**: 1.5s breathing pulse (opacity 0.6 → 1.0 → 0.6) for cyan dot.
+- **Live activity stream entry arrives**: slides in from right, settles into list, ~200ms.
+- **Page promoted to canonical event**: brief gold halo on the orb node (Phase 4) and a 600ms gold flash on the dashboard event card.
+- **Long-running operations** (ingest, lint): inline spinner using brand accent. Never a full-screen blocker.
+
+Use `framer-motion` for component animations, CSS for hover/focus.
+
+### 10.6 Iconography
+
+- **Library**: Lucide. Stroke 1.5px. Size 16/20/24 only.
+- **No emoji in UI** (per global CLAUDE.md). Status icons use Lucide CheckCircle, AlertTriangle, XCircle, Clock, Zap, etc.
+- **Brand mark**: a stylized neuron / orb glyph. To be designed in Phase 3.4 with Figma MCP.
+
+### 10.7 Components
+
+Built on shadcn/ui + Tailwind. Specific components used:
+- Card, Badge, Button, Input, Dialog, Sheet, Tabs, Tooltip, Toast, Command (cmd+K), DropdownMenu, ScrollArea, Skeleton (loading states)
+- Chart components from Tremor (LineChart, BarChart, AreaChart, DonutChart, SparkAreaChart) for system metrics
+- Custom: StreamDeckCard, ServiceStatusPill, ActivityFeedItem, PageCard, ProjectCard, UploadDropzone, OrbPanel (Phase 4)
+
+### 10.8 Mobile-first responsiveness
+
+Phone view designed first. Desktop adds panels rather than the reverse.
+
+- **Mobile (< 768px)**: single column scroll. Bottom tab bar (Home, Wiki, Sessions, System). No left rail. No right rail. Hamburger drawer for less-used pages (Reminders, Orb, Settings).
+- **Tablet (768-1279px)**: single column main + collapsible right rail. Bottom tab bar still present.
+- **Desktop (>= 1280px)**: full three-pane layout (Stream Deck left, content center, Activity Stream right).
+- **Touch targets**: minimum 44x44px on mobile. Buttons sized by Tailwind `h-11` minimum.
+- **Gestures**: swipe left/right to switch tabs on mobile. Long-press a Stream Deck card on mobile = quick-prompt sheet.
+
+### 10.9 Loading and empty states
+
+Every panel has three states: loading, empty, populated. Each is designed.
+
+- **Loading**: skeleton placeholders matching final shape. Pulse animation 1.4s.
+- **Empty**: icon + one-sentence explanation + one primary action. Example: empty Wiki tab → "Your wiki is still learning. Use Claude for a few days and pages will appear here automatically." + "Open recent sessions" button.
+- **Error**: red-bordered card with the error, a "retry" button, and a link to the troubleshooting doc.
+
+### 10.10 Accessibility
+
+- All interactive elements keyboard-focusable. Visible focus ring (2px brand accent, 2px offset).
+- Color contrast meets WCAG AA on every text + background combination.
+- Screen reader labels on every icon-only button.
+- `prefers-reduced-motion` respected: animations shortened to 0ms when set.
+
+### 10.11 Tooling
+
+- **Magic MCP**: used at dev time to generate component scaffolds quickly. Output reviewed before commit.
+- **Figma MCP**: used at dev time for asset iteration (brand mark, illustrations, chart styling). Final assets exported as SVG and committed.
+- **Storybook**: optional; if added, lives at `08-dashboard/.storybook/`.
+
+### 10.12 Reference inspiration
+
+Aesthetic direction (NOT to copy, just to anchor):
+- **Linear**: density, dark theme, motion restraint
+- **Raycast**: command palette as primary navigation, monospace for data
+- **Vercel dashboard**: information density, status pills
+- **OpenStatus**: monitoring board UX
+- **Apple Watch**: glanceable status at very small sizes (mobile widget consideration)
+- **Tremor catalog**: chart styling
+
+The dashboard should feel like a tool a senior engineer keeps open all day. Not like a SaaS landing page.
+
+---
+
+## 11. Tech stack
 
 | Layer | Choice | Why |
 |---|---|---|
@@ -442,7 +567,7 @@ VAPID keys generated on first dashboard launch and stored at `dashboard/vapid.js
 
 ---
 
-## 11. API extensions to the daemon
+## 12. API extensions to the daemon
 
 New routes on the existing Fastify instance.
 
@@ -487,7 +612,7 @@ All write endpoints require the auth cookie. Read endpoints also require it (sin
 
 ---
 
-## 12. File layout
+## 13. File layout
 
 ```
 c:/dev/Projects/DevNeural/
@@ -596,7 +721,7 @@ c:/dev/data/skill-connections/
 
 ---
 
-## 13. Build phases for Phase 3 itself
+## 14. Build phases for Phase 3 itself
 
 Phase 3 is large. Sub-phases so each is shippable.
 
@@ -619,7 +744,7 @@ Phase 3 is large. Sub-phases so each is shippable.
 
 ---
 
-## 14. Open design questions
+## 15. Open design questions
 
 1. **Session bridge: VS Code extension vs PowerShell + AutoHotkey.** Extension is cleaner but adds a moving part. PowerShell is fragile but no install step. Recommend extension.
 
@@ -647,7 +772,7 @@ Phase 3 is large. Sub-phases so each is shippable.
 
 ---
 
-## 15. Out of scope for Phase 3
+## 16. Out of scope for Phase 3
 
 - Multi-user authentication.
 - Multi-machine sync (everything on `OTLCDEV`).
@@ -663,7 +788,7 @@ Phase 3 is large. Sub-phases so each is shippable.
 
 ---
 
-## 16. Acknowledgements / dependencies
+## 17. Acknowledgements / dependencies
 
 - Builds on top of the daemon shipped in Phase 1.
 - Phase 2 (v1 burndown) cleans up `01-data-layer`, `02-api-server`, `04-session-intelligence`, root `start.bat`, and root `README.md`. Phase 3 adds, Phase 2 removes; can run in parallel.

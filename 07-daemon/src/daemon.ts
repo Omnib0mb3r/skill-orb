@@ -147,7 +147,17 @@ async function main(): Promise<void> {
     return { ok: true, collection, count: results.length, results };
   });
 
-  app.post('/sync', async () => ({ ok: true, note: 'sync hook for devneural-projects' }));
+  // /sync was the legacy monday.com sync endpoint used by devneural-projects.
+  // Monday integration is dead. Returning 410 Gone so any caller still hitting
+  // it gets a clear deprecation signal instead of silently succeeding.
+  app.post('/sync', async (_req, reply) => {
+    reply.code(410);
+    return {
+      ok: false,
+      error: 'gone',
+      note: 'monday integration deprecated; project status board coming in Phase 3 dashboard',
+    };
+  });
 
   app.post('/reseed', async () => {
     const r = await runSeed(store, { log: logger });

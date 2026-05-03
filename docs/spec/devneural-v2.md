@@ -2,11 +2,28 @@
 
 > Status: design lock. Source of truth for the rewrite.
 > Author: Michael Collins, with Claude.
-> Last updated: 2026-04-30.
+> Last updated: 2026-05-02.
 
-This document supersedes the v1 architecture in `requirements.md`, `project-manifest.md`, and the per-module spec files under `01-data-layer/`, `02-api-server/`, `03-web-app/`, and `04-session-intelligence/`. v1 modules will be torn down or repurposed as described in section 12.
+This document supersedes the v1 architecture (now archived under `archive/v1/`). v1 modules will be torn down or repurposed as described in section 13.
 
 The companion document `docs/spec/DEVNEURAL.md` is the standing instruction set the LLM reads on every wiki operation. This spec defines the system; that document defines what gets written.
+
+---
+
+## 0. Identity: this is a second brain
+
+DevNeural is a second brain. Not a tool that supports one. Not a metaphor. The identity.
+
+A second brain has six properties. DevNeural has all six.
+
+1. **Persistent memory across sessions, projects, and time.** Your normal brain forgets a decision you made three months ago in a different repo. DevNeural keeps it, retrievable on demand or surfaced automatically when relevant.
+2. **Semantic recall, not keyword recall.** You remember the shape of a problem, not the exact words you used. DevNeural retrieves by meaning (vector embeddings), not by string match.
+3. **Watches and learns without being asked.** You do not have to file things, tag things, or remember to "save this for later." Capture is automatic and continuous via Claude Code hooks and a transcript watcher.
+4. **Surfaces relevant prior thinking in real time.** Not on demand. Not on search. While you are typing your next prompt to Claude, the system has already searched, decided what is relevant, and injected it as context. Claude appears smarter because it is actually informed.
+5. **Compounds with use.** Every session leaves a trace. Every trace refines what the system knows is useful (reinforcement). The wiki, the weights, the cross-reference graph, the glossary all get sharper over time. The model itself does not learn (it is frozen weights); the system around it does.
+6. **Lives entirely on your hardware.** Your second brain is not in someone else's data center. Local LLM (ollama). Local embedder. Local vector store. Local wiki. The only network calls leave the machine when you choose to share.
+
+Everything that follows in this document is in service of those six properties. The wiki, the RAG layer, the dashboard (Phase 3), the orb (Phase 4) are the surfaces. The capture pipeline, ingest, query, reinforcement are the machinery. The identity is "second brain." If a design decision contradicts one of the six properties above, the design is wrong.
 
 ---
 
@@ -115,7 +132,7 @@ Hook execution is hot-path. The hook itself only:
 3. Scrubs secrets via the regex from section 4.5.
 4. Appends one line to `observations.jsonl`.
 5. Bumps a signal counter and, every 20 events, sends `SIGUSR1` to the running daemon.
-6. Lazy-starts the daemon if no PID file exists (see section 10).
+6. Lazy-starts the daemon if no PID file exists (see section 11).
 
 The daemon is the one doing real work. The hook is dumb on purpose.
 
@@ -337,8 +354,8 @@ This is a hard rule. The system is judged on whether it autonomously produces us
 Triggered by:
 - `Stop` hook firing for a session (primary)
 - Crossing a chunk threshold mid-session (secondary, every N tokens of new prose)
-- Coverage gap signal (see section 7.5)
-- Bypass signal (see section 7.6)
+- Coverage gap signal (see section 8.5)
+- Bypass signal (see section 8.6)
 
 Steps:
 
@@ -466,15 +483,69 @@ Hand-editing is for correcting the system, not for seeding it.
 
 ---
 
-## 7. Learning loop
+## 7. The two layers: semantics and logic
+
+DevNeural is built on two complementary layers. Both are required. Neither alone is sufficient.
+
+### 7.1 The semantics layer (meaning-based)
+
+This is the fuzzy half. It uses vector embeddings to capture meaning rather than words.
+
+Components:
+- **Local embedder** (`Xenova/all-MiniLM-L6-v2`, 384-dim, normalized vectors). Runs in-process via ONNX. No API.
+- **Three Chroma collections** (in-process, persisted as packed Float32 + metadata sidecars):
+  - `raw_chunks` — every transcript chunk, every meaningful capture
+  - `wiki_pages` — every wiki page (canonical + pending) embedded by title + summary + body
+  - `reference_chunks` (Phase 3) — every external doc upload (PDF / image / audio / video transcript)
+- **Cosine similarity search** with project-id and kind metadata filters
+- **Two-tier retrieval at query time**: wiki first (cosine > 0.55), raw fallback (cosine > 0.65), reference as tertiary
+- **FTS5 keyword index** in SQLite for terms that embeddings miss (function names, error codes, specific identifiers)
+- **Multi-signal candidate selection at ingest** (cosine + cross-ref hops + entity overlap + FTS keyword)
+
+This is what lets you ask "the warehouse layout decision" three months later and get back work where you didn't use those exact words. It is associative recall.
+
+### 7.2 The logic layer (rules-based)
+
+This is the strict half. It enforces what counts as a real insight, when something can be promoted, when it should be archived.
+
+Components:
+- **Page schema discipline**: title format `[trigger] → [insight]`, summary ≤ 80 tokens, body ≤ 800 tokens, ≤ 8 cross-references, ≤ 20 evidence entries, mandatory frontmatter fields (see DEVNEURAL.md sections 2 and 7)
+- **Validation gates at every LLM output**: schema-checked, repaired-and-retried up to N times, dropped on failure (see `07-daemon/src/llm/validator.ts`)
+- **Promotion criteria** (pending → canonical): recurrence (same trigger seen in a meaningfully different situation) OR useful retrieval (injected and used in a reply with no correction)
+- **Reinforcement rules**: HIT raises weight by `(1 - w) * 0.05`; CORRECTION lowers by `w * 0.10`; passive decay `w *= 0.995` per session of non-use; archive at `w < 0.15` plus age threshold
+- **Speculation tier**: new patterns live in `pending/` until they prove themselves. Empirical proof, not human judgment, decides promotion.
+- **Five-layer self-loop guards** (see section 11.2) prevent the daemon from observing the LLM-driven sessions it spawns
+- **Hard rules in DEVNEURAL.md section 7**: do not invent (every claim cites evidence), do not synthesize across projects without grounding (multi-project promotion requires evidence from at least two), do not overwrite human edits, do not chase volume
+
+This is what keeps the wiki from becoming a junk drawer. It is the editorial discipline.
+
+### 7.3 How they work together
+
+| Phase | Semantics does | Logic does |
+|---|---|---|
+| Capture | Embeds prose chunks into raw_chunks | Scrubs secrets, gates by self-loop guards |
+| Ingest candidate selection | Cosine, FTS, graph-hop union | Caps the candidate pool at 50 |
+| Ingest pass 1 (filter) | LLM reads candidates by relevance | Schema-validates the JSON output, retries on failure |
+| Ingest pass 2 (write) | LLM proposes new pending page | Hard-rejects if title lacks `→`, if no evidence, if oversize |
+| Query | Embeds prompt, finds nearest pages | Floors out below 0.55 cosine, prefers canonical, applies same-session blacklist, caps at 600-token budget |
+| Reinforce | Embeds reply, computes overlap with injected page | Applies `(1-w)*0.05` hit rule, demotes on correction, decays slowly |
+| Lint | Embedding clusters proposed for merge | Schema repairs auto-applied, merges flagged for explicit confirm |
+
+Without semantics: you have a junk drawer of insights nobody can find. Without logic: you have a vector store of unstructured noise that scores high but means nothing.
+
+The combination is what makes the wiki a *brain* and not just a database.
+
+---
+
+## 8. Learning loop
 
 Six mechanisms make this an actual learning system.
 
-### 7.1 Provenance per claim
+### 8.1 Provenance per claim
 
 Every line in `## Evidence` cites a session id, file path, or commit hash. Pages with no evidence are ineligible for promotion from `pending/`. Lint flags pages whose evidence has been deleted from disk.
 
-### 7.2 Speculation tier (pending → canonical)
+### 8.2 Speculation tier (pending → canonical)
 
 A new pattern observed once goes to `pending/`. Promotion requires ONE of:
 
@@ -483,7 +554,7 @@ A new pattern observed once goes to `pending/`. Promotion requires ONE of:
 
 Either condition promotes to canonical. The recurrence path is the conservative bootstrap (matching ECC's project → global model). The useful-retrieval path is the aggressive bootstrap (the page proved itself in production immediately). Both are valid signals; either is sufficient.
 
-### 7.3 Reinforcement signal
+### 8.3 Reinforcement signal
 
 When a page is injected at query time, the daemon waits for the next assistant reply, then checks:
 
@@ -493,21 +564,21 @@ When a page is injected at query time, the daemon waits for the next assistant r
 
 `weight` floors at 0 and ceilings at 1. Pages whose `weight` falls below 0.15 are eligible for lint-archive.
 
-### 7.4 Self-query closing the loop
+### 8.4 Self-query closing the loop
 
 After a session ends and reinforcement runs, for any page that was injected and used, the daemon optionally asks Haiku one cheap question per page: "did this page help, what was missing, what should be added." The answer appends to the page's `## Log` section. Disabled by default; enable with `observer.self_query.enabled` in config.
 
-### 7.5 Coverage gap signal
+### 8.5 Coverage gap signal
 
 When a Query op finds a strong hit in `raw_chunks` but no `wiki_pages` page above the floor, the topic is hot in raw content but uncovered by the wiki. The daemon records a `coverage-gap` event. When 3+ gaps accumulate on similar content (cosine clustering), an ingest pass is triggered with the matching raw chunks as input. The result is one or more new `pending/` pages compiling the gap into transferable insight.
 
 This is the mechanism by which the wiki self-bootstraps: it writes new pages on demand when the system notices it lacks coverage for things the user is actually asking about.
 
-### 7.6 Bypass signal
+### 8.6 Bypass signal
 
 When a Query hits in both collections, but the raw chunk score outranks the closest wiki page by > 0.10, the existing wiki page is stale or incomplete on this topic. Daemon flags the page for re-ingest. The flag is consumed at the next ingest pass, which rewrites the page with the new content folded in.
 
-### 7.7 What's-new digest
+### 8.7 What's-new digest
 
 Lint writes `wiki/whats-new.md` weekly. Format:
 
@@ -539,9 +610,9 @@ This is your weekly view into how the system is learning. Replaces the "browse t
 
 ---
 
-## 8. Surfaces
+## 9. Surfaces
 
-### 8.1 Orb (preserved, downgraded in priority)
+### 9.1 Orb (preserved, downgraded in priority)
 
 The Three.js orb in `03-web-app/` keeps its visual code: force layout, edge heat, pulses, dendrites, single-click highlight, double-click open. Rebound to the wiki data model:
 
@@ -555,25 +626,25 @@ The Three.js orb in `03-web-app/` keeps its visual code: force layout, edge heat
 
 Single-click highlights the page and its 1-hop neighbors. Double-click opens the markdown page in VS Code. The orb is ambient peripheral display, not the daily-driver UI. Daily UI is `whats-new.md` and the injection itself.
 
-### 8.2 Context injection
+### 9.2 Context injection
 
 `UserPromptSubmit` hook calls a small `query` binary that talks to the daemon over local socket, gets back a markdown blob (the top page summary, possibly a raw chunk fallback), and writes it to the hook's stdout in the format Claude Code expects for additional context. Per-prompt, every turn within a session.
 
-### 8.3 Voice interface
+### 9.3 Voice interface
 
 `05-voice-interface` reshapes from "graph queries" to "wiki queries." Calls the same Query op. Returns the matching page's summary as voice output. STT in, daemon Query, TTS out.
 
-### 8.4 monday.com sync
+### 9.4 Project status board (formerly monday.com sync; deprecated)
 
 `devneural-projects` is unchanged. The `POST /sync` endpoint is the only thing the daemon needs to expose for compatibility. URL stays `http://localhost:3747/sync`.
 
-### 8.5 NotebookLM / Obsidian sync
+### 9.5 NotebookLM / Obsidian sync
 
 `06-notebooklm-integration` reshapes to "publish wiki pages to Obsidian." One-way sync: copy `wiki/pages/` into the configured Obsidian vault path with a small frontmatter transform. NotebookLM-specific cluster detection is replaced by "send the highest-weight pages."
 
 ---
 
-## 9. Project identity
+## 10. Project identity
 
 Project ID is a 12-character hash of `git remote get-url origin` (lowercased, trailing slash stripped, `.git` stripped). Same repo cloned on different machines yields the same ID.
 
@@ -587,11 +658,11 @@ A registry at `c:/dev/data/skill-connections/projects.json` maps id → human na
 
 ---
 
-## 10. Daemon lifecycle
+## 11. Daemon lifecycle
 
 Single daemon process per machine. Long-running. Owns Chroma, the wiki, SQLite index, and the WebSocket server.
 
-### 10.1 Start
+### 11.1 Start
 
 Lazy. The first hook event after a reboot or daemon crash:
 1. Check `c:/dev/data/skill-connections/daemon.pid`.
@@ -600,7 +671,7 @@ Lazy. The first hook event after a reboot or daemon crash:
 4. Spawn the daemon: `node c:/dev/Projects/DevNeural/07-daemon/dist/daemon.js` detached, output redirected to `daemon.log`.
 5. Write the new PID to `daemon.pid`. Release the lock.
 
-### 10.2 Self-loop guards
+### 11.2 Self-loop guards
 
 The daemon calls Claude (Haiku for ingest, Sonnet for lint, optional Haiku for self-query). Those calls produce hooks. Without guards, observation spirals.
 
@@ -616,17 +687,17 @@ Five-layer guard, lifted from ECC's `continuous-learning-v2` and adapted:
 
 The daemon sets `DEVNEURAL_SKIP_OBSERVE=1` on every Anthropic SDK call it makes.
 
-### 10.3 Stop
+### 11.3 Stop
 
 `/devneural-stop`, or signal the PID. Daemon traps `SIGTERM` and `SIGINT`, flushes Chroma, closes the wiki git repo if dirty, removes its PID file.
 
-### 10.4 Throttle
+### 11.4 Throttle
 
 Hook signals the daemon every 20 events. Daemon coalesces signals: it does not start a new ingest while one is running. New events accumulate in `observations.jsonl` and are picked up on the next pass.
 
 ---
 
-## 11. Tech stack
+## 12. Tech stack
 
 | Concern | Choice | Reason |
 |---|---|---|
@@ -646,9 +717,9 @@ Hook signals the daemon every 20 events. Daemon coalesces signals: it does not s
 
 ---
 
-## 12. Migration
+## 13. Migration
 
-### 12.1 What dies
+### 13.1 What dies
 
 | Path | Action |
 |---|---|
@@ -661,7 +732,7 @@ Hook signals the daemon every 20 events. Daemon coalesces signals: it does not s
 | `04-session-intelligence/src/install-hook.ts` | Repurpose into the new `install-hooks` script wiring all four hooks. |
 | v1 weights at `c:/dev/data/skill-connections/weights.json` | Archive to `weights.json.v1.bak`. v2 starts cold. |
 
-### 12.2 What lives
+### 13.2 What lives
 
 | Path | Action |
 |---|---|
@@ -671,7 +742,7 @@ Hook signals the daemon every 20 events. Daemon coalesces signals: it does not s
 | `devneural-projects` repo | Untouched except `POST /sync` URL pointing at the new daemon (same port 3747, same path). |
 | `scripts/fill-devneural.mjs` SessionStart hook in `devneural-projects` | Untouched. |
 
-### 12.3 What is new
+### 13.3 What is new
 
 | Path | Purpose |
 |---|---|
@@ -688,7 +759,7 @@ Hook signals the daemon every 20 events. Daemon coalesces signals: it does not s
 | `c:/dev/data/skill-connections/chroma/` | Chroma persistent store. |
 | `c:/dev/data/skill-connections/index.db` | SQLite metadata + FTS5. |
 
-### 12.4 Build order
+### 13.4 Build order
 
 All eight phases are day-one scope. There is no MVP cut. Phases exist as a sequencing tool because some depend on others; not as a scope-cutting tool.
 
@@ -708,7 +779,7 @@ Each phase ships fully working. P0 comes before P1 because the entire system rea
 
 ---
 
-## 13. File layout (final)
+## 14. File layout (final)
 
 ```
 c:/dev/Projects/DevNeural/
@@ -805,7 +876,7 @@ c:/dev/data/skill-connections/
 
 ---
 
-## 14. Operator commands
+## 15. Operator commands
 
 | Command | Effect |
 |---|---|
@@ -825,7 +896,7 @@ c:/dev/data/skill-connections/
 
 ---
 
-## 15. Non-goals and explicit out-of-scope
+## 16. Non-goals and explicit out-of-scope
 
 - **Multi-user collaboration on a shared wiki.** v2 is single-machine, single-user.
 - **A web-hosted version on `onthelevelconcepts.com`.**
@@ -838,7 +909,7 @@ Note: per-prompt mid-session injection is **in scope**, not a non-goal. UserProm
 
 ---
 
-## 16. Open questions deliberately left unresolved
+## 17. Open questions deliberately left unresolved
 
 These do not block P0-P5 but need answers before P6:
 
@@ -850,7 +921,7 @@ These do not block P0-P5 but need answers before P6:
 
 ---
 
-## 17. Acknowledgements
+## 18. Acknowledgements
 
 - ECC `continuous-learning-v2` skill (Affaan Mustafa) for the hook capture pattern, observations.jsonl format, project-id-via-hashed-remote, lazy daemon spawn with PID + flock, five-layer self-loop guard, secret scrub regex, and the recurrence-based promotion model. Architectural concepts adopted, no code copied.
 - Andrej Karpathy's "LLM Wiki" gist for the compiled-not-retrieved knowledge model. The brain layer is his.

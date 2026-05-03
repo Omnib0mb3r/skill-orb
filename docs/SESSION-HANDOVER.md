@@ -1,18 +1,20 @@
 # Session handover
 
 > Pick up where the last session left off. Designed to be the first file a new Claude (or you) reads when starting fresh.
-> Last updated: 2026-05-02.
+> Last updated: 2026-05-02 (after Phase 2 burndown complete).
 
 ---
 
 ## Where we are
 
-DevNeural v2 is being rebuilt as a local-first, learning wiki + RAG + dashboard system. Phase 1 (the daemon) is built and pushed. Documentation is comprehensive. Next concrete work is Phase 2 (v1 burndown).
+DevNeural v2 is a local-first second brain: capture, semantic RAG, learning wiki, real-time recommendation, reinforcement, and (coming) a central dashboard. Phase 1 (the daemon) is built and pushed. Phase 2 (v1 burndown) is done. Documentation is comprehensive and reframed around the second-brain identity. Next concrete work is Phase 3 (the dashboard build).
 
 ## TL;DR
 
-- **Read first:** `docs/spec/devneural-v2.md` for the system architecture, then `docs/spec/DEVNEURAL.md` for the wiki schema, then this file.
-- **Phase status:** Phase 1 done. Phase 2 next. Phases 3, 4, 5 specs written and queued.
+- **Identity is "second brain."** Not a metaphor. The system has all six second-brain properties (persistent memory, semantic recall, watches without being asked, surfaces in real time, compounds with use, lives on local hardware). See `docs/spec/devneural-v2.md` section 0.
+- **Two layers: semantics + logic.** Semantics = embeddings, vector search, fuzzy recall. Logic = `[trigger] → [insight]` schema, validation, promotion rules, hard editorial rules. Both required. See section 7.
+- **Read first:** `README.md` (top-level overview), then `docs/spec/devneural-v2.md` for the system architecture, then `docs/spec/DEVNEURAL.md` for the wiki schema, then this file.
+- **Phase status:** Phases 1 and 2 done. Phase 3 next. Phases 4 and 5 specs written and queued.
 - **Branch:** `master`. All work is on master, no feature branches.
 - **Local-first:** ollama with `qwen3:8b` is the LLM. No API keys required. Anthropic SDK is installed but only used if `DEVNEURAL_LLM_PROVIDER=anthropic`.
 - **No em dashes anywhere** (per global CLAUDE.md). Use periods, commas, colons, semicolons, parens, hyphens. This applies to chat output, code comments, commit messages, docs.
@@ -25,8 +27,8 @@ DevNeural v2 is being rebuilt as a local-first, learning wiki + RAG + dashboard 
 | # | Scope | Status | Spec |
 |---|---|---|---|
 | 1 | Build the daemon (capture, ingest, query, reinforce, lint, setup) | done, pushed | `docs/spec/devneural-v2.md` |
-| 2 | Burn down v1 (archive 01/02/04, port `monday/`, rewrite `start.bat` and root `README.md`) | next | inline in v2 spec section 12 |
-| 3 | Central control dashboard (Next.js + PWA + Tailscale) | spec done | `docs/spec/phase-3-dashboard.md` |
+| 2 | Burn down v1 (archive 01/02/04, kill monday, rewrite top-level docs) | done | inline in v2 spec section 13 |
+| 3 | Central control dashboard (Next.js + PWA + Tailscale + visual design language) | spec done, build queued | `docs/spec/phase-3-dashboard.md` |
 | 4 | Orb rebind to wiki data model + visual features | spec done, deferred | `docs/spec/phase-4-orb.md` |
 | 5 | Settings audit, finalizes personalized parts of install docs | spec done, deferred | `docs/spec/phase-5-settings-audit.md` |
 
@@ -53,25 +55,34 @@ The `07-daemon/` module is complete end to end: capture → store/embed → inge
 
 ---
 
-## What's next: Phase 2 (v1 burndown)
+## What was done in Phase 2 (burndown)
 
-Concrete tasks, in order:
+Completed in this session:
 
-1. **Port `02-api-server/src/monday/` to `07-daemon/src/surfaces/monday/`** so the `devneural-projects` MCP server can keep hitting `POST http://localhost:3747/sync`. The user said in earlier session "monday is dead" so this might actually mean: kill the monday integration entirely and stop the sync endpoint. **Confirm with the user before porting vs deleting.**
+- Moved `01-data-layer/`, `02-api-server/`, `04-session-intelligence/` to `archive/v1/` (git mv, history preserved).
+- Moved v1 planning docs (`requirements.md`, `project-manifest.md`, `devneural.md`, `deep_project_interview.md`, `deep_project_session.json`) to `archive/v1/`.
+- Killed the `/sync` endpoint: now returns `410 Gone` with a deprecation message. Monday integration is dead. Project status board is moving into Phase 3 dashboard.
+- Rewrote `start.bat` at repo root to launch the daemon (with `status`, `setup`, `stop` subcommands). v1 server references gone.
+- Rewrote top-level `README.md` with the second-brain identity as the lead, capabilities table, two-layers architecture explanation, and updated file map.
+- Added `Pics/` to `.gitignore` (personal screenshots, not for repo).
+- Renumbered v2 spec to add new section 0 (Identity) and section 7 (The two layers), pushing prior 7-17 to 8-18.
+- Added section 10 (Visual design language) to phase-3-dashboard, renumbering 10-16 to 11-17.
 
-2. **Move `01-data-layer/`, `02-api-server/`, `04-session-intelligence/` to `archive/v1/`.** Keep them git-readable for reference. Do not `rm -rf`.
+47/47 tests still passing after burndown. Daemon compiles clean. Hooks unchanged (already point at v2 paths).
 
-3. **Rewrite `start.bat`** at repo root to launch `07-daemon` instead of v1 servers.
+## What's next: Phase 3 (dashboard build)
 
-4. **Rewrite top-level `README.md`** to describe v2 architecture. Reference the install docs and phase specs. Strip v1 instructions.
+The full spec is in `docs/spec/phase-3-dashboard.md`. Scope is broken into 12 sub-phases (3.1 through 3.12). MVP is 3.1-3.4. Detailed visual design language lives in section 10.
 
-5. **Verify `npm run install-hooks`** strips v1 entries cleanly from `~/.claude/settings.json` (it already has the v1 detection logic).
+Recommended approach:
 
-6. **Commit** as `chore(burndown): archive v1 modules and rewrite top-level docs`.
+1. Confirm user is ready to start build (or wants to pause).
+2. Begin with 3.1 (daemon API extensions): add the new HTTP routes for dashboard data without writing UI yet.
+3. Then 3.2 (reference corpus pipeline): PDF + image upload → OCR → chunk → embed → store. Audio/video can defer to 3.5.
+4. Then 3.3 (session bridge VS Code extension at `09-bridge/`).
+5. Then 3.4 (dashboard scaffold at `08-dashboard/` with Next.js + Tailwind + shadcn, PIN auth, all pages stubbed against real data).
 
-7. **Push.**
-
-After Phase 2: ask user whether to start Phase 3 dashboard build or pause.
+Each sub-phase ships independently and is verifiable.
 
 ---
 
@@ -109,8 +120,8 @@ These are durable preferences. Honor them every session.
 
 These are real choices the user has not yet made:
 
-1. **Monday.com sync: port or kill?** User said "monday is dead." If kill: stop exposing `/sync`, don't port `02-api-server/src/monday/`. If port: keep `/sync` working for `devneural-projects` MCP. **Default to kill** unless user says otherwise.
-2. **Phase 3 dashboard: when to start?** After Phase 2 burndown completes. User has not explicitly authorized starting Phase 3 build.
+1. **Phase 3 dashboard: when to start?** Phase 2 burndown is done. User has not explicitly authorized starting Phase 3 build.
+2. **Project status board (Kanban):** added to Phase 3 dashboard scope as the replacement for monday. Stage source of truth stays `devneural.jsonc`. Confirm scope before building.
 3. **Self-update mechanism** for the daemon. Currently: `git pull && npm install && npm run build`. Could automate. Deferred to Phase 3 polish.
 4. **Telemetry from friends' installs** if user ever distributes this. Earlier conversation: user disregarded the "send to a friend" angle and reframed as "documentation must be reconstructable." Telemetry is therefore not in scope.
 5. **Reference-corpus image processing:** tesseract default vs vision-model upgrade. Phase 3 spec defaults to tesseract; vision is opt-in.

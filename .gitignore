@@ -4,3 +4,11 @@ dist/
 *.log
 *.vsix
 .superpowers/
+
+# Personal screenshots (chat-history captures, design references)
+Pics/
+
+# DevNeural data root if symlinked or co-located
+skill-connections/
+*.tsbuildinfo
+.next/

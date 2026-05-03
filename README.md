@@ -1,328 +1,189 @@
 # DevNeural
 
-A living neural network of everything you build — projects, tools, skills, and their interconnections. DevNeural tracks every dependency, connection, and pattern across your entire dev ecosystem, then gives Claude the intelligence to reference that graph when starting new work.
+> Your second brain. Local. Learning. Watching. Surfacing what matters when you need it.
+
+DevNeural is a personal second brain for software work. It captures everything you do in Claude Code, builds a semantic search layer (RAG) over the raw record, compiles transferable insights into a maintained wiki, recommends relevant prior thinking to Claude in real time, learns from what actually works, and surfaces it all through a dashboard you can hit from anywhere via Tailscale.
+
+It runs entirely on your own hardware. No API costs. No cloud. Your data never leaves your machine.
 
 ---
 
-## Ecosystem Map
+## What it is
 
-> The infrastructure that wires everything together. Individual projects are not listed here — they live in the graph. Query with `voice` or run `sync_all` to see all registered projects.
+A second brain has six properties. DevNeural has all six.
 
-### Infrastructure repos
-
-| Repo | Role |
+| Property | DevNeural |
 |---|---|
-| [DevNeural](https://github.com/Omnib0mb3r/DevNeural) | **Graph brain** — API server, orb visualization, session context injection, tool-use logging |
-| [devneural-projects](https://github.com/Omnib0mb3r/devneural-projects) | **Project lifecycle** — monday.com MCP, stage sync, task boards, `fill-devneural.mjs` hook |
-| [dev-template](https://github.com/Omnib0mb3r/dev-template) | **Project starter** — `devneural.jsonc`, `OTLC-Brainstorm.MD`, `CLAUDE.md` for every new project |
-| [Claude-Setup](https://github.com/Omnib0mb3r/Claude-Setup) | **Config backup** — reference copy of `~/.claude/settings.json` and global `CLAUDE.md` |
-
-### How a session flows
-
-```
-Claude opens in any project
-  │
-  ├─ SessionStart: fill-devneural.mjs        [devneural-projects]
-  │    └─ auto-fills devneural.jsonc REPLACE_ME values on first run
-  │
-  ├─ SessionStart: session-start.js          [DevNeural/04-session-intelligence]
-  │    └─ queries graph API → injects top skill/project connections into context
-  │
-  └─ Claude is now running
-       │
-       ├─ PostToolUse: hook-runner.js        [DevNeural/01-data-layer]
-       │    └─ logs every tool call → updates weights.json
-       │
-       ├─ PreToolUse: devneural-skill-tracker.js  [~/.claude/hooks/ — standalone]
-       │    └─ tracks skill invocations
-       │
-       ├─ stage changes in devneural.jsonc
-       │    └─ Claude calls move_project MCP  [devneural-projects] → monday.com
-       │
-       └─ bug or task identified
-            └─ Claude calls add_task MCP      [devneural-projects] → monday.com
-```
-
-### External paths
-
-Everything outside a git repo that must exist on the machine:
-
-| Path | What it is | Owned by |
-|---|---|---|
-| `C:\dev\Projects\DevNeural\` | This repo | DevNeural |
-| `C:\dev\Projects\devneural-projects\` | Project lifecycle repo | devneural-projects |
-| `C:\dev\data\skill-connections\` | Shared data dir — `weights.json` + logs. Not in any repo. | DevNeural/01 |
-| `C:\Users\mcollins\.claude\settings.json` | Global Claude hooks + MCP config | Claude-Setup (backup) |
-| `C:\Users\mcollins\.claude\hooks\devneural-skill-tracker.js` | Standalone PreToolUse hook | Claude-Setup (backup) |
-| `C:\Users\mcollins\.claude\hooks\gsd-check-update.js` | GSD update check hook | GSD plugin |
-| `C:\Users\mcollins\.claude\hooks\gsd-context-monitor.js` | PostToolUse context monitor | GSD plugin |
-| `C:\Users\mcollins\.claude\hooks\gsd-prompt-guard.js` | PreToolUse prompt guard | GSD plugin |
-| `C:\Users\mcollins\.claude\hooks\gsd-statusline.js` | Status line renderer | GSD plugin |
-
-> For the full migration checklist when moving to a new machine, see [Machine Migration Guide](#machine-migration-guide).
+| **Persistent memory** across sessions, projects, and time | Wiki + RAG layers stored locally, versioned in git |
+| **Semantic recall** (you remember the shape of a problem, not the words) | Local embedder + vector search over wiki and raw transcripts |
+| **Watches and learns without being asked** | Claude Code hooks + transcript watcher capture continuously |
+| **Surfaces relevant prior thinking in real time** | At every prompt, the curator injects the most useful 600 tokens |
+| **Compounds with use** | Reinforcement loop: useful injections strengthen, ignored ones decay |
+| **Lives entirely on your hardware** | Local LLM (ollama), local embedder (ONNX), local vector store, local wiki |
 
 ---
 
-## Current State
+## Capabilities at a glance
 
-**Repo:** `C:\dev\Projects\DevNeural` (master branch)
-
-**What's working:**
-- API server (`02-api-server`) — Fastify REST + WebSocket on port 3747, Monday sync route wired
-- Orb (`03-web-app`) — Three.js visualization, single-click highlight, double-click opens GitHub, auto camera-fit on simulation cool
-- Session intelligence (`04-session-intelligence`) — SessionStart hook installed in `~/.claude/settings.json`
-- Data layer (`01-data-layer`) — PostToolUse hook logging to `C:\dev\data\skill-connections\`
-
-**To resume:** run `start.bat` from `C:\dev\Projects\DevNeural`, open `http://localhost:5173`
+| Capability | What it does |
+|---|---|
+| **RAG layer** | Every transcript chunk and uploaded doc embedded into local vector store. Semantic recall by meaning, not keywords. |
+| **Learning wiki** | LLM-compiled markdown pages following a `[trigger] → [insight]` schema. Edges are explicit cross-references. |
+| **Recommendation engine** | At every Claude prompt, top-relevance page injected as additional context. Below threshold = silence. Better nothing than noise. |
+| **Cross-project intelligence** | Insights observed in two or more projects promote to global. The brain spans your work, not one repo. |
+| **Reference corpus** (Phase 3) | Upload manuals, books, PDFs, images, videos. Local OCR + transcription. Searchable second-brain knowledge. |
+| **Reinforcement** | Useful injections raise page weight; corrections lower it; unused pages decay. Empirical, not editorial. |
+| **Dashboard** (Phase 3) | Central hub. Sessions, projects, search, system metrics, daily brief, reminders, web push. PWA-installable on phone. Tailscale for remote access. |
+| **Orb** (Phase 4) | 3D visualization of the concept graph. The "look at the cool thing" surface. |
+| **Local-first** | Default LLM is ollama (qwen3:8b). Anthropic API supported as fallback. Zero cost in default config. |
 
 ---
 
-## What It Does
+## The two layers
 
-DevNeural is not just a visualizer — it is a neural network Claude actively uses. It tracks every skill invocation, repo reference, and tool usage across all your projects, building a weighted dependency graph over time. When starting a new project, Claude queries DevNeural to surface existing tools, skills, and patterns — preventing duplicate work and unlocking cross-project intelligence.
+DevNeural is built on two complementary layers. Neither alone is sufficient.
 
-- **Claude-native intelligence** — Claude queries the graph at session start to recommend relevant repos, skills, and tools
-- **3D orb visualization** — floating VS Code webview panel rendering the neural network in real time
-- **Connection strength** — active connections pulse and glow; color-coded by intensity (cool → warm = weak → strong)
-- **Voice interface** — natural language queries ("What's connected to this project?", "What skills are we using most?")
-- **NotebookLM integration** — auto-generates Obsidian notes and training materials from high-dependency clusters
+**Semantics layer (meaning-based).** Vector embeddings, cosine similarity, two-tier retrieval. This is what lets you recall by intent. "The warehouse layout decision" finds work where you didn't use those words.
+
+**Logic layer (rules-based).** The structured `[trigger] → [insight]` page schema, validation gates on every LLM output, promotion criteria, reinforcement rules, hard editorial rules. This is what keeps the wiki from becoming a junk drawer.
+
+Without semantics: a junk drawer of insights nobody can find. Without logic: a vector store of noise that scores high but means nothing. The combination is what makes the wiki a brain.
+
+See [docs/spec/devneural-v2.md section 7](docs/spec/devneural-v2.md) for the full breakdown.
 
 ---
 
 ## Architecture
 
 ```
-Claude Code (any project)
-  → PostToolUse hook
-  → C:\dev\data\skill-connections\logs\
-  → weights.json (0–10 scale per connection pair)
-  → 02-api-server reads + streams via WebSocket
-  → 03-web-app renders orb in VS Code webview
-  → 04-session-intelligence injects context at session start
+Claude Code session(s)
+  ├─ hooks (Pre/Post/UserPromptSubmit/Stop) → hook-runner
+  └─ transcripts → ~/.claude/projects/<slug>/<session>.jsonl
+                        │
+                        ▼
+                  ┌─────────────────────────────────────────┐
+                  │  07-daemon (long-running, lazy-spawned) │
+                  │   capture → embed → ingest → query      │
+                  │   reinforce → lint → reconcile          │
+                  │   curate at UserPromptSubmit            │
+                  └──┬──────────────┬──────────────┬────────┘
+                     │              │              │
+              POST /api/chat    in-process    on-disk
+                     │              │              │
+                     ▼              ▼              ▼
+                ┌──────┐     ┌──────────┐   ┌──────────────┐
+                │ollama│     │ Chroma + │   │ wiki/ + ref/ │
+                │qwen3 │     │ SQLite   │   │ + git log    │
+                └──────┘     │ FTS5     │   └──────────────┘
+                             └──────────┘
+                     ▲
+              served at
+                     │
+              ┌──────────────────────────────────────┐
+              │  08-dashboard (Phase 3, Next.js PWA)│
+              │  - reachable via Tailscale          │
+              │  - mobile-installable                │
+              └──────────────────────────────────────┘
 ```
 
-| Module | Purpose |
-|---|---|
-| `01-data-layer` | Hook runner — intercepts Claude tool events, writes logs and weights |
-| `02-api-server` | Fastify REST + WebSocket server — serves graph data to all consumers |
-| `03-web-app` | Three.js orb — VS Code webview panel |
-| `04-session-intelligence` | SessionStart hook — injects top connections into every Claude session |
-| `05-voice-interface` | NL query layer — routes voice queries to API calls |
-| `06-notebooklm-integration` | Obsidian sync — generates session summaries from logs |
-
-Shared runtime data lives **outside this repo** at `C:\dev\data\skill-connections\` so every project on the machine can write to it.
+For the full architecture, read [docs/spec/devneural-v2.md](docs/spec/devneural-v2.md).
+For the LLM's standing instructions on writing wiki pages, read [docs/spec/DEVNEURAL.md](docs/spec/DEVNEURAL.md).
 
 ---
 
-## Machine Migration Guide
+## Status
 
-> If you move DevNeural to a new machine or new path, every item below must be updated. This is the complete list — nothing else outside this table holds a hard-coded path.
-
-### External files that reference this repo
-
-| File | What to update |
-|---|---|
-| `C:\Users\mcollins\.claude\settings.json` | All hook `command` values pointing to DevNeural |
-| `C:\Users\mcollins\.claude\hooks\devneural-skill-tracker.js` | Standalone PreToolUse hook — not in this repo, copy manually |
-
-### Hook paths in `~/.claude/settings.json`
-
-| Hook type | Matcher | Command |
+| Phase | Scope | Status |
 |---|---|---|
-| `SessionStart` | `startup`, `resume`, `clear`, `compact` | `node "C:/dev/Projects/DevNeural/04-session-intelligence/dist/session-start.js"` |
-| `PostToolUse` | _(all tools)_ | `node C:/dev/Projects/DevNeural/01-data-layer/dist/hook-runner.js` |
-| `PreToolUse` | `Write\|Edit` | `node "C:/Users/mcollins/.claude/hooks/devneural-skill-tracker.js"` _(standalone)_ |
-| `SessionStart` | _(all)_ | `node c:/dev/Projects/devneural-projects/scripts/fill-devneural.mjs` |
+| 1 | Daemon: capture, ingest, query, reinforce, lint, setup | done |
+| 2 | v1 burndown: archive 01/02/04, kill monday sync, rewrite top-level docs | done |
+| 3 | Central control dashboard | spec done, build queued |
+| 4 | Orb rebind to wiki data model | spec done, deferred |
+| 5 | Settings audit, finalizes personalized install docs | spec done, deferred |
 
-### Related repos and directories that must also move
+See [docs/SESSION-HANDOVER.md](docs/SESSION-HANDOVER.md) for current state and what comes next.
 
-| Path | What it is |
-|---|---|
-| `C:\dev\Projects\DevNeural\` | **This repo** |
-| `C:\dev\Projects\devneural-projects\` | Separate repo — contains `scripts/fill-devneural.mjs` |
-| `C:\dev\data\skill-connections\` | Shared data directory — create manually: `mkdir -p C:/dev/data/skill-connections/logs` |
+---
 
-### After moving — checklist
+## Install
 
-1. Update all hook paths in `~/.claude/settings.json` to the new repo location
-2. Rebuild all modules: `npm install && npm run build` in each numbered subdirectory
-3. Copy `devneural-skill-tracker.js` to `~/.claude/hooks/` on the new machine
-4. Create the shared data directory: `mkdir -p C:/dev/data/skill-connections/logs`
-5. Start the API server and open a new Claude session — verify the SessionStart banner appears
+Read [INSTALL.md](INSTALL.md). It points to detailed step-by-step docs under [docs/install/](docs/install/).
+
+Short version:
+
+```powershell
+git clone https://github.com/Omnib0mb3r/DevNeural C:/dev/Projects/DevNeural
+cd C:/dev/Projects/DevNeural/07-daemon
+npm install
+npm run setup
+```
+
+`setup` is idempotent. It creates the data root, scaffolds the wiki, verifies ollama, installs the four hooks in `~/.claude/settings.json` (with backup), and prints status. Re-run any time.
+
+To check the state of the system at any point:
+
+```powershell
+npm run status
+```
 
 ---
 
 ## Prerequisites
 
-- **Node.js 18+**
-- **npm 9+**
-- **Claude Code CLI** (installed and configured)
-- Windows 10/11 (paths in `start.bat` and default config are Windows-specific; other platforms require manual path adjustment)
+- Node 20+
+- Git
+- ollama with `qwen3:8b` (or `qwen2.5:7b-instruct`)
+- VS Code (or any Claude Code-compatible editor)
+- Claude Code CLI
+- Tailscale (optional, required for Phase 3 remote dashboard)
+
+Detailed setup at [docs/install/01-prerequisites.md](docs/install/01-prerequisites.md).
 
 ---
 
-## Setup
+## Where things live
 
-### 1. Clone and place the repo
-
-```bash
-git clone https://github.com/Omnib0mb3r/DevNeural c:/dev/Projects/DevNeural
-```
-
-### 2. Create the shared data directory
-
-```bash
-mkdir -p "C:/dev/data/skill-connections/logs"
-```
-
-### 3. Install and build all modules
-
-```bash
-cd c:/dev/Projects/DevNeural
-
-cd 01-data-layer && npm install && npm run build && cd ..
-cd 02-api-server && npm install && npm run build && cd ..
-cd 03-web-app && npm install && npm run build && cd ..
-cd 04-session-intelligence && npm install && npm run build && cd ..
-cd 05-voice-interface && npm install && npm run build && cd ..
-cd 06-notebooklm-integration && npm install && npm run build && cd ..
-```
-
-### 4. Wire the Claude hooks
-
-Add the following to `~/.claude/settings.json` under the `hooks` key:
-
-```json
-"SessionStart": [
-  {
-    "matcher": "startup",
-    "hooks": [{ "type": "command", "command": "node \"C:/dev/Projects/DevNeural/04-session-intelligence/dist/session-start.js\"", "timeout": 10, "statusMessage": "Loading DevNeural context..." }]
-  },
-  {
-    "matcher": "resume",
-    "hooks": [{ "type": "command", "command": "node \"C:/dev/Projects/DevNeural/04-session-intelligence/dist/session-start.js\"", "timeout": 10 }]
-  },
-  {
-    "matcher": "clear",
-    "hooks": [{ "type": "command", "command": "node \"C:/dev/Projects/DevNeural/04-session-intelligence/dist/session-start.js\"", "timeout": 10 }]
-  },
-  {
-    "matcher": "compact",
-    "hooks": [{ "type": "command", "command": "node \"C:/dev/Projects/DevNeural/04-session-intelligence/dist/session-start.js\"", "timeout": 10 }]
-  },
-  {
-    "hooks": [{ "type": "command", "command": "node c:/dev/Projects/devneural-projects/scripts/fill-devneural.mjs", "timeout": 10 }]
-  }
-],
-"PostToolUse": [
-  {
-    "hooks": [{ "type": "command", "command": "node C:/dev/Projects/DevNeural/01-data-layer/dist/hook-runner.js" }]
-  }
-],
-"PreToolUse": [
-  {
-    "matcher": "Write|Edit",
-    "hooks": [{ "type": "command", "command": "node \"C:/Users/mcollins/.claude/hooks/devneural-skill-tracker.js\"" }]
-  }
-]
-```
-
-### 5. Add a devneural.jsonc to each tracked project
-
-Use the [dev-template](https://github.com/Omnib0mb3r/dev-template) — it includes a pre-configured `devneural.jsonc` that auto-fills on first session start.
+| Path | What |
+|---|---|
+| `07-daemon/` | The brain. Capture, ingest, query, lint, HTTP/WS API. |
+| `03-web-app/` | The orb (Phase 4 rebind, currently the v1 visual). |
+| `05-voice-interface/` | Voice query layer (reshapes later). |
+| `06-notebooklm-integration/` | Obsidian sync (reshapes later). |
+| `08-dashboard/` | Central control dashboard (Phase 3, not yet built). |
+| `09-bridge/` | VS Code extension for session steering (Phase 3). |
+| `archive/v1/` | v1 modules: 01-data-layer, 02-api-server, 04-session-intelligence. |
+| `docs/spec/` | System architecture and phase plans. |
+| `docs/install/` | Install, recovery, troubleshooting. |
+| `INSTALL.md` | Top-level install entry point. |
+| `start.bat` | Quick launcher for the daemon. |
+| `devneural.jsonc` | Project metadata for DevNeural itself. |
 
 ---
 
-## Running
+## What's not here anymore
 
-### Quick start (Windows)
+If you came from v1, the following are gone or moved:
 
-```bat
-start.bat
-```
+- **monday.com sync.** The `/sync` endpoint returns `410 Gone`. Project status is going into the Phase 3 dashboard as a real Kanban board.
+- **`01-data-layer/`** (PostToolUse weights tracker). Moved to `archive/v1/`. Replaced by capture in 07-daemon.
+- **`02-api-server/`** (Fastify weights server). Moved to `archive/v1/`. Replaced by 07-daemon's HTTP surface.
+- **`04-session-intelligence/`** (one-shot SessionStart context inject). Moved to `archive/v1/`. Replaced by per-prompt curator.
+- **`requirements.md`, `project-manifest.md`, `devneural.md`, `deep_project_*`** at repo root. Moved to `archive/v1/`.
 
-This kills any existing processes on ports 3747 and 5173, starts the API server and web app in separate terminal windows, and opens the browser.
-
-### Manual start
-
-```bash
-# Terminal 1 — API server (port 3747)
-cd 02-api-server && npm run dev
-
-# Terminal 2 — Web app / orb (port 5173)
-cd 03-web-app && npm run dev
-```
-
-### Environment variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `DEVNEURAL_DATA_ROOT` | `C:/dev/data/skill-connections` | Override the shared data directory |
-| `DEVNEURAL_API_URL` | _(none)_ | Override full API base URL for session-intelligence |
-| `DEVNEURAL_PORT` | `3747` | Override API port when `DEVNEURAL_API_URL` is not set |
+The orb in `03-web-app/` still references the old data model; it gets rebuilt in Phase 4.
 
 ---
 
-## Updating
+## Why this exists
 
-After pulling new commits:
-
-```bash
-cd 01-data-layer && npm install && npm run build && cd ..
-cd 02-api-server && npm install && npm run build && cd ..
-cd 03-web-app && npm install && npm run build && cd ..
-cd 04-session-intelligence && npm install && npm run build && cd ..
-cd 05-voice-interface && npm install && npm run build && cd ..
-cd 06-notebooklm-integration && npm install && npm run build && cd ..
-```
+Because Claude forgets between sessions, and you forget between projects. Together you keep solving the same problems in slightly different ways. DevNeural is the persistent layer that makes both of you smarter at your actual work, while keeping every byte on your own machine.
 
 ---
 
-## NotebookLM / Obsidian sync (06)
+## License
 
-Copy the example config and fill in your paths:
-
-```bash
-cp 06-notebooklm-integration/config.example.json 06-notebooklm-integration/config.json
-```
-
-Edit `config.json`:
-
-```json
-{
-  "vault_path": "C:/Users/you/Documents/ObsidianVault",
-  "notes_subfolder": "DevNeural/Projects",
-  "data_root": "C:/dev/data/skill-connections",
-  "api_base_url": "http://localhost:3747",
-  "prepend_sessions": true,
-  "claude_model": "claude-haiku-4-5-20251001"
-}
-```
-
-Requires a valid `ANTHROPIC_API_KEY` environment variable.
+See `LICENSE`.
 
 ---
 
-## Troubleshooting
-
-**API server not responding**
-Check that port 3747 is free: `netstat -aon | findstr :3747`
-
-**Session start shows "API offline"**
-Start the API server first, then open a new Claude session.
-
-**Orb shows no nodes**
-Verify at least one `devneural.jsonc` file is present in a tracked project and that the API server is running.
-
-**Hook not firing**
-Confirm `~/.claude/settings.json` contains the correct `SessionStart` entries. Restart Claude Code — hook config is read at session startup, not hot-reloaded.
-
-**Port 5173 already in use**
-`start.bat` kills it automatically. For manual starts: `npx kill-port 5173`
-
-**Moved the repo and hooks stopped working**
-See the [Machine Migration Guide](#machine-migration-guide) above — update every path in `~/.claude/settings.json` and rebuild all modules.
-
----
-
-*Michael Collins // Stay on the level.*
+*Michael Collins. Stay on the level.*
