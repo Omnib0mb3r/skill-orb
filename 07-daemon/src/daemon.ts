@@ -28,6 +28,7 @@ import { runLint } from './wiki/lint.js';
 import { generateWhatsNew } from './wiki/whats-new.js';
 import { registerDashboardRoutes } from './dashboard/routes.js';
 import fastifyCookie from '@fastify/cookie';
+import fastifyMultipart from '@fastify/multipart';
 
 const PORT = Number(process.env.DEVNEURAL_PORT ?? 3747);
 
@@ -100,12 +101,18 @@ async function main(): Promise<void> {
 
   const app = Fastify({ logger: false });
   await app.register(fastifyCookie);
+  await app.register(fastifyMultipart, {
+    limits: {
+      fileSize: Number(process.env.DEVNEURAL_UPLOAD_MAX_BYTES ?? 100 * 1024 * 1024),
+      files: 1,
+    },
+  });
   await registerDashboardRoutes(app, store, logger);
   app.get('/health', async () => ({
     ok: true,
     pid: process.pid,
     uptime_s: Math.round(process.uptime()),
-    phase: 'P3.1-dashboard-api',
+    phase: 'P3.2-reference-corpus',
     raw_chunks: store.rawChunks.size(),
     wiki_pages: store.wikiPages.size(),
     llm: providerStatus(),

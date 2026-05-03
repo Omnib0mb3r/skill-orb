@@ -60,6 +60,19 @@ export const sessionTaskFile = (sessionId: string): string =>
 export const sessionMetaFile = (sessionId: string): string =>
   path.posix.join(sessionStateDir(), `${sessionId}.meta.json`);
 
+export const referenceRoot = (): string =>
+  path.posix.join(DATA_ROOT, 'reference');
+export const referenceQueueDir = (): string =>
+  path.posix.join(referenceRoot(), 'queue');
+export const referenceDocsDir = (): string =>
+  path.posix.join(referenceRoot(), 'docs');
+export const referenceImagesDir = (): string =>
+  path.posix.join(referenceRoot(), 'images');
+export const referenceAudioDir = (): string =>
+  path.posix.join(referenceRoot(), 'audio');
+export const referenceVideoDir = (): string =>
+  path.posix.join(referenceRoot(), 'video');
+
 export function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true });
 }

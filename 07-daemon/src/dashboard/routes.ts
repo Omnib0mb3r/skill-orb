@@ -6,8 +6,11 @@
  * every route except the small public set in auth.ts.
  */
 import type { FastifyInstance } from 'fastify';
+import type { MultipartFile } from '@fastify/multipart';
 import type { Store } from '../store/index.js';
 import { authMiddleware, registerAuthRoutes, isPinSet } from './auth.js';
+import { ReferenceStore } from '../reference/store.js';
+import { ingestUpload } from '../reference/process.js';
 import { getSystemMetrics } from './system-metrics.js';
 import { checkAll, rollupStatus } from './services.js';
 import {
@@ -41,6 +44,7 @@ export async function registerDashboardRoutes(
   store: Store,
   log: (msg: string) => void = () => undefined,
 ): Promise<void> {
+  const referenceStore = await ReferenceStore.open();
   // Auth middleware on every request before route handlers
   app.addHook('preHandler', (req, reply, done) => {
     authMiddleware(req, reply, done);
@@ -129,12 +133,16 @@ export async function registerDashboardRoutes(
       top_k?: number;
     };
     if (!body.q) return { ok: false, error: 'q required' };
-    const results = await searchAll(store, {
-      query: body.q,
-      ...(body.project_id ? { project_id: body.project_id } : {}),
-      ...(body.collections ? { collections: body.collections } : {}),
-      ...(body.top_k ? { top_k: body.top_k } : {}),
-    });
+    const results = await searchAll(
+      store,
+      {
+        query: body.q,
+        ...(body.project_id ? { project_id: body.project_id } : {}),
+        ...(body.collections ? { collections: body.collections } : {}),
+        ...(body.top_k ? { top_k: body.top_k } : {}),
+      },
+      referenceStore,
+    );
     return { ok: true, results };
   });
 
@@ -260,14 +268,76 @@ export async function registerDashboardRoutes(
     return r;
   });
 
-  // ── Reference upload (Phase 3.2 stub) ────────────────────────────
-  app.post('/upload', async (_req, reply) => {
-    reply.code(501);
+  // ── Reference upload + corpus management ─────────────────────────
+  app.post('/upload', async (req, reply) => {
+    const isMultipart = req.isMultipart && req.isMultipart();
+    if (!isMultipart) {
+      reply.code(400);
+      return { ok: false, error: 'multipart upload required' };
+    }
+    // Single pass: stream the file into a buffer when encountered, capture
+    // all field parts. Field order in the multipart is not guaranteed.
+    let filename: string | undefined;
+    let buffer: Buffer | undefined;
+    let projectId = 'global';
+    let tags: string[] = [];
+    try {
+      for await (const part of req.parts()) {
+        if (part.type === 'file') {
+          if (filename) {
+            // Already have a file; consume and discard extras to drain stream
+            await part.toBuffer();
+            continue;
+          }
+          filename = (part as MultipartFile).filename;
+          buffer = await (part as MultipartFile).toBuffer();
+        } else {
+          if (part.fieldname === 'project_id' && typeof part.value === 'string') {
+            projectId = part.value;
+          }
+          if (part.fieldname === 'tags' && typeof part.value === 'string') {
+            tags = part.value
+              .split(',')
+              .map((t) => t.trim())
+              .filter(Boolean);
+          }
+        }
+      }
+    } catch (err) {
+      reply.code(400);
+      return { ok: false, error: `upload parse failed: ${(err as Error).message}` };
+    }
+    if (!filename || !buffer) {
+      reply.code(400);
+      return { ok: false, error: 'no file in upload' };
+    }
+
+    const r = await ingestUpload(
+      referenceStore,
+      { filename, buffer, project_id: projectId, tags },
+      log,
+    );
+    return r;
+  });
+
+  app.get('/reference', async (req) => {
+    const projectId = (req.query as { project_id?: string }).project_id;
     return {
-      ok: false,
-      error:
-        'reference corpus pipeline ships in Phase 3.2. Endpoint is reserved.',
+      ok: true,
+      docs: referenceStore.listDocs({
+        ...(projectId ? { project_id: projectId } : {}),
+      }),
     };
+  });
+
+  app.get('/reference/:doc_id', async (req, reply) => {
+    const docId = (req.params as { doc_id: string }).doc_id;
+    const doc = referenceStore.getDoc(docId);
+    if (!doc) {
+      reply.code(404);
+      return { ok: false, error: 'doc not found' };
+    }
+    return { ok: true, doc };
   });
 
   // Use the notification event bus to suppress unused-import lint

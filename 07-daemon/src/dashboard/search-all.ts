@@ -7,6 +7,7 @@
  */
 import { embedOne } from '../embedder/index.js';
 import type { Store } from '../store/index.js';
+import type { ReferenceStore } from '../reference/store.js';
 
 export interface UnifiedSearchHit {
   source: 'wiki_page' | 'raw_chunk' | 'reference_chunk';
@@ -25,6 +26,7 @@ export interface UnifiedSearchOptions {
 export async function searchAll(
   store: Store,
   options: UnifiedSearchOptions,
+  referenceStore?: ReferenceStore,
 ): Promise<UnifiedSearchHit[]> {
   const collections = options.collections ?? ['wiki_page', 'raw_chunk'];
   const topK = Math.min(Math.max(options.top_k ?? 20, 1), 100);
@@ -92,8 +94,37 @@ export async function searchAll(
     }
   }
 
-  // reference_chunks collection is wired in Phase 3.2 when the upload
-  // pipeline lands. For now, the result set is just wiki + raw.
+  if (
+    collections.includes('reference_chunk') &&
+    referenceStore &&
+    referenceStore.chunks.size() > 0
+  ) {
+    const hits = (
+      referenceStore.chunks as unknown as {
+        search: (
+          q: Float32Array,
+          o: { topK: number; filter?: (m: unknown) => boolean },
+        ) => Array<{ id: string; score: number; metadata: unknown }>;
+      }
+    ).search(vec, {
+      topK,
+      filter: (m) => {
+        const meta = m as Record<string, unknown>;
+        if (options.project_id && meta.project_id !== options.project_id) {
+          return false;
+        }
+        return true;
+      },
+    });
+    for (const h of hits) {
+      all.push({
+        source: 'reference_chunk',
+        id: h.id,
+        score: h.score,
+        metadata: h.metadata as Record<string, unknown>,
+      });
+    }
+  }
 
   all.sort((a, b) => b.score - a.score);
   return all.slice(0, topK);
