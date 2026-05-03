@@ -5,6 +5,7 @@ import { TopBar } from "./TopBar";
 import { StreamDeck } from "./StreamDeck";
 import { RightRail } from "./RightRail";
 import { VitalsRibbon } from "./VitalsRibbon";
+import { CommandPalette } from "./CommandPalette";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? "/";
@@ -21,6 +22,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <RightRail />
       </div>
       <VitalsRibbon />
+      <CommandPalette />
     </div>
   );
 }
