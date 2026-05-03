@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { sessions as sessionsClient, type SessionSummary } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
@@ -63,9 +64,10 @@ export function StreamDeck() {
                 ? ""
                 : "";
         return (
-          <button
+          <Link
             key={s.id}
-            className={`text-left p-3 rounded-card bg-surface1 hairline lift ${ring}`}
+            href={`/sessions/${s.id}`}
+            className={`block text-left p-3 rounded-card bg-surface1 hairline lift ${ring}`}
             aria-label={`Session ${project}, status ${s.status}`}
           >
             <div className="flex items-center justify-between mb-1.5">
@@ -84,7 +86,7 @@ export function StreamDeck() {
             <div className="mt-1.5 text-[11px] font-mono text-txt3">
               last {relTime(s.last_activity)} ago
             </div>
-          </button>
+          </Link>
         );
       })}
 
