@@ -157,7 +157,14 @@ export interface SearchHit {
   doc_id?: string;
   page_id?: string;
 }
-export const searchAll = (q: string, opts: { project_id?: string; top_k?: number } = {}) =>
+export const searchAll = (
+  q: string,
+  opts: {
+    project_id?: string;
+    top_k?: number;
+    collections?: Array<"wiki_page" | "raw_chunk" | "reference_chunk">;
+  } = {},
+) =>
   request<{ ok: boolean; results: SearchHit[] }>("/search/all", {
     method: "POST",
     body: { q, ...opts },
