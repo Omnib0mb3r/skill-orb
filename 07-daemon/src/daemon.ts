@@ -26,6 +26,8 @@ import { curate, updateSummary, updateGlossary, updateCurrentTask } from './cura
 import { decayInactivePages } from './reinforcement/index.js';
 import { runLint } from './wiki/lint.js';
 import { generateWhatsNew } from './wiki/whats-new.js';
+import { registerDashboardRoutes } from './dashboard/routes.js';
+import fastifyCookie from '@fastify/cookie';
 
 const PORT = Number(process.env.DEVNEURAL_PORT ?? 3747);
 
@@ -97,11 +99,13 @@ async function main(): Promise<void> {
     .catch((err) => logger(`embedder warm failed: ${(err as Error).message}`));
 
   const app = Fastify({ logger: false });
+  await app.register(fastifyCookie);
+  await registerDashboardRoutes(app, store, logger);
   app.get('/health', async () => ({
     ok: true,
     pid: process.pid,
     uptime_s: Math.round(process.uptime()),
-    phase: 'P6-lint',
+    phase: 'P3.1-dashboard-api',
     raw_chunks: store.rawChunks.size(),
     wiki_pages: store.wikiPages.size(),
     llm: providerStatus(),
@@ -367,8 +371,13 @@ async function main(): Promise<void> {
   });
 
   try {
-    await app.listen({ port: PORT, host: '127.0.0.1' });
-    logger(`listening on http://127.0.0.1:${PORT}`);
+    // Bind 0.0.0.0 so Tailscale can route to the dashboard from your
+    // other devices on the tailnet. Localhost-only callers (hooks)
+    // continue to hit 127.0.0.1 transparently. Override with
+    // DEVNEURAL_BIND if you want to lock back down to 127.0.0.1.
+    const host = process.env.DEVNEURAL_BIND ?? '0.0.0.0';
+    await app.listen({ port: PORT, host });
+    logger(`listening on http://${host}:${PORT}`);
   } catch (err) {
     logger(`http listen failed: ${(err as Error).message}`);
   }
