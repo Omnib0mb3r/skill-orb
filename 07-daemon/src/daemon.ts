@@ -29,6 +29,8 @@ import { generateWhatsNew } from './wiki/whats-new.js';
 import { registerDashboardRoutes } from './dashboard/routes.js';
 import fastifyCookie from '@fastify/cookie';
 import fastifyMultipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
+import * as path from 'node:path';
 
 const PORT = Number(process.env.DEVNEURAL_PORT ?? 3747);
 
@@ -376,6 +378,47 @@ async function main(): Promise<void> {
     );
     return { ok: true, ...r };
   });
+
+  // Serve the dashboard static export when present. The export lives at
+  // 08-dashboard/out/ and is produced by `npm run build` in that workspace.
+  // Resolves relative to this file at runtime so it works whether started
+  // from dist/ or src/ via tsx.
+  try {
+    const dashboardOut = path.posix.join(
+      path.dirname(new URL(import.meta.url).pathname).replace(/^\//, ''),
+      '..',
+      '..',
+      '..',
+      '08-dashboard',
+      'out',
+    );
+    if (fs.existsSync(dashboardOut)) {
+      await app.register(fastifyStatic, {
+        root: dashboardOut,
+        prefix: '/',
+        decorateReply: false,
+      });
+      // SPA fallback: any non-API GET that isn't a file falls back to index.html
+      // so client-side routing works on /sessions/:id, /unlock, etc.
+      app.setNotFoundHandler((req, reply) => {
+        if (req.method !== 'GET') {
+          reply.code(404).send({ ok: false, error: 'not found' });
+          return;
+        }
+        const url = (req.url ?? '/').split('?')[0] ?? '/';
+        if (url === '/' || !url.includes('.')) {
+          reply.type('text/html').sendFile('index.html');
+          return;
+        }
+        reply.code(404).send({ ok: false, error: 'not found' });
+      });
+      logger(`dashboard static serve enabled from ${dashboardOut}`);
+    } else {
+      logger(`dashboard static export not found at ${dashboardOut}; API only`);
+    }
+  } catch (err) {
+    logger(`dashboard static serve setup failed: ${(err as Error).message}`);
+  }
 
   try {
     // Bind 0.0.0.0 so Tailscale can route to the dashboard from your
