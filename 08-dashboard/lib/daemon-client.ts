@@ -210,18 +210,13 @@ export const dismissNotification = (id: string) =>
 export interface ProjectRecord {
   id: string;
   name: string;
-  stage?: string;
-  description?: string;
-  tags?: string[];
-  last_activity?: string;
-  active_sessions?: number;
-  alerts?: number;
+  root: string;
+  remote: string | null;
+  first_seen: string;
+  last_seen: string;
 }
-// /projects list endpoint not yet shipped — projects-new is. Stub a list call
-// that hits a future endpoint and returns an empty list gracefully.
 export const projects = () =>
-  request<{ ok: boolean; projects: ProjectRecord[] }>("/projects").catch(() => ({
-    ok: false,
+  request<{ projects: ProjectRecord[] }>("/projects").catch(() => ({
     projects: [] as ProjectRecord[],
   }));
 export const createProject = (input: {
