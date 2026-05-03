@@ -25,7 +25,6 @@ export function VitalsRibbon() {
 
   const cpu = m.data?.cpu.usage_percent ?? 0;
   const mem = m.data?.memory.used_percent ?? 0;
-  const ollama = m.data?.ollama.reachable;
   const dataRoot = m.data?.data_root_bytes ?? 0;
   const svc = s.data?.services ?? [];
 
@@ -41,16 +40,13 @@ export function VitalsRibbon() {
         DATA <span className="text-txt1">{fmtBytes(dataRoot)}</span>
       </div>
       <div className="ml-auto flex items-center gap-3 text-[11px] font-mono text-txt3">
+        {/* The services manifest already contains ollama, so we render it once here. */}
         {svc.slice(0, 6).map((svcEntry) => (
           <span key={svcEntry.id} className="flex items-center gap-1.5">
             <StatusDot status={svcEntry.status === "ok" ? "ok" : svcEntry.status === "warn" ? "warn" : "fail"} size={6} />
             {svcEntry.label}
           </span>
         ))}
-        <span className="flex items-center gap-1.5">
-          <StatusDot status={ollama ? "ok" : "fail"} size={6} />
-          ollama
-        </span>
       </div>
     </footer>
   );

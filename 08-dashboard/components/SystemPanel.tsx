@@ -80,11 +80,11 @@ export function SystemPanel() {
               caption={`${fmtBytes(mem.used_bytes)} / ${fmtBytes(mem.total_bytes)}`}
               tone={memTone}
             />
-            {disks.map((d) => (
+            {disks.map((d, i) => (
               <Bar
-                key={d.mount}
+                key={`${d.mount ?? "disk"}-${i}`}
                 pct={d.used_percent}
-                label={`Disk ${d.mount}`}
+                label={`Disk ${d.mount ?? i}`}
                 caption={`${fmtBytes(d.used_bytes)} / ${fmtBytes(d.total_bytes)}`}
                 tone={d.used_percent > 90 ? "err" : d.used_percent > 80 ? "warn" : "ok"}
               />
