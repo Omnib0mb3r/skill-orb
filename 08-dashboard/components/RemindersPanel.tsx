@@ -9,6 +9,7 @@ import {
   deleteReminder,
 } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
+import { PushSubscribeButton } from "./PushSubscribeButton";
 
 export function RemindersPanel() {
   const qc = useQueryClient();
@@ -48,6 +49,9 @@ export function RemindersPanel() {
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-end">
+        <PushSubscribeButton />
+      </div>
       {/* Quick add */}
       <form
         onSubmit={(e) => {

@@ -38,6 +38,12 @@ import {
   events as notificationEvents,
 } from './notifications.js';
 import { createProject } from './projects-new.js';
+import {
+  vapidPublicKey,
+  saveSubscription,
+  removeSubscription,
+  listSubscriptions,
+} from './push.js';
 
 export async function registerDashboardRoutes(
   app: FastifyInstance,
@@ -246,6 +252,46 @@ export async function registerDashboardRoutes(
     dismissNotification(id);
     return { ok: true };
   });
+
+  // ── Web push (VAPID) ────────────────────────────────────────────
+  app.get('/push/vapid-public-key', async () => ({
+    ok: true,
+    public_key: vapidPublicKey(),
+  }));
+
+  app.post('/push/subscribe', async (req, reply) => {
+    const body = req.body as {
+      endpoint?: string;
+      keys?: { p256dh?: string; auth?: string };
+      user_agent?: string;
+    };
+    if (!body.endpoint || !body.keys?.p256dh || !body.keys?.auth) {
+      reply.code(400);
+      return { ok: false, error: 'endpoint + keys.{p256dh,auth} required' };
+    }
+    const sub = saveSubscription({
+      endpoint: body.endpoint,
+      keys: { p256dh: body.keys.p256dh, auth: body.keys.auth },
+      ...(body.user_agent ? { user_agent: body.user_agent } : {}),
+    });
+    return { ok: true, id: sub.id };
+  });
+
+  app.delete('/push/subscribe/:id', async (req) => {
+    const id = (req.params as { id: string }).id;
+    removeSubscription(id);
+    return { ok: true };
+  });
+
+  app.get('/push/subscriptions', async () => ({
+    ok: true,
+    subscriptions: listSubscriptions().map((s) => ({
+      id: s.id,
+      endpoint: s.endpoint,
+      created_at: s.created_at,
+      user_agent: s.user_agent,
+    })),
+  }));
 
   // ── Projects (new) ────────────────────────────────────────────────
   app.post('/projects/new', async (req, reply) => {

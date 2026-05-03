@@ -10,6 +10,7 @@ const DAEMON_PATHS = [
   'reference',
   'reminders',
   'notifications',
+  'push',
   'search',
   'upload',
 ];

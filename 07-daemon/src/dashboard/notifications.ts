@@ -54,6 +54,16 @@ export function emitNotification(input: {
   };
   append(n);
   events.emit('notification', n);
+  // Web push delivery (warn + alert only). Imported lazily to avoid a circular
+  // load and to keep the persistence layer functional even if push setup fails.
+  void (async () => {
+    try {
+      const { maybePushNotification } = await import('./push.js');
+      await maybePushNotification(n);
+    } catch {
+      /* push delivery is best-effort */
+    }
+  })();
   return n;
 }
 

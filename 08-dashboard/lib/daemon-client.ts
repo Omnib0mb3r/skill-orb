@@ -231,6 +231,23 @@ export const createProject = (input: {
     { method: "POST", body: input },
   );
 
+// ── push (VAPID) ──────────────────────────────────────────────
+export const vapidPublicKey = () =>
+  request<{ ok: boolean; public_key: string }>("/push/vapid-public-key");
+
+export const subscribePush = (input: {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  user_agent?: string;
+}) =>
+  request<{ ok: boolean; id?: string; error?: string }>("/push/subscribe", {
+    method: "POST",
+    body: input,
+  });
+
+export const unsubscribePush = (id: string) =>
+  request<{ ok: boolean }>(`/push/subscribe/${id}`, { method: "DELETE" });
+
 // ── reference docs ──────────────────────────────────────────────
 export interface ReferenceDoc {
   doc_id: string;
