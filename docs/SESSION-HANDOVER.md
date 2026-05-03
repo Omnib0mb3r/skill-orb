@@ -51,24 +51,25 @@ DevNeural v2 is a local-first second brain: capture, semantic RAG, learning wiki
 ## Recent commits
 
 ```
+2e9946e  docs: handover update covering P3.4 + P3.7
+1bf3df8  fix(08-dashboard): align DailyBrief client with daemon's response shape
+5b2ac9c  feat(07-daemon,08-dashboard): P3.7 web push notifications via VAPID
+829b2d7  feat(08-dashboard): P3.4.6 mobile responsive layout + PWA manifest + service worker
+7ec706b  feat(08-dashboard): P3.4.5 reminders page + command palette + lock action
+95cef49  feat(08-dashboard): P3.4.4 projects grid + new-project modal + system panel
+954d409  feat(08-dashboard): P3.4.3 wiki search + reference upload + corpus list
+e006aa9  feat(08-dashboard): P3.4.2 sessions table + detail + send-prompt steering
+59dd078  feat(08-dashboard): P3.4.1 Next.js scaffold + auth + layout shell + home brief
+37ba4a9  docs(08-dashboard): post-mortem closing P3.4 design pass
+f1b4b73  feat(08-dashboard): P3.4 design pass via design-website skill
 4707385  feat(09-bridge): P3.3 session bridge VS Code extension
 253090e  feat(07-daemon): P3.2 reference corpus pipeline
 6b6c1eb  feat(07-daemon): P3.1 dashboard API extensions
-59013a6  chore(burndown): phase 2 complete - archive v1, kill monday, rewrite top docs
-030e12c  docs: session handover for next pickup
-c41c54a  docs(install,spec): install/recovery docs + phase 3/4/5 specs
-6eafb80  feat(07-daemon): P7-lite graph endpoints + P8 setup polish
-aee5078  feat(07-daemon): P6 lint + whats-new digest
-698a1b7  feat(07-daemon): P4 prompt injection + P5 reinforcement
-fc41743  feat(07-daemon): P3.6 curation layer (summarizer, glossary, task, curator)
-6c7dca4  feat(07-daemon): P3.5 local-first LLM substrate with validation
-2ee2766  feat(07-daemon): P3 wiki ingest pipeline
-9c45adc  feat(07-daemon): P2 embedder, vector store, sqlite index
-c1ddf41  feat(07-daemon): P1 capture layer
+59013a6  chore(burndown): phase 2 complete
 345fafb  docs(spec): lock v2 architecture and wiki schema
 ```
 
-53/53 unit tests pass.
+53/53 unit tests pass on the daemon. Dashboard build passes (12 routes prerender static, 1 dynamic /sessions/[id]).
 
 ---
 
