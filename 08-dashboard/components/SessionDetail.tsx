@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { sessionDetail } from "@/lib/daemon-client";
+import { projectFromSlug, relTime } from "@/lib/session-helpers";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
 
@@ -30,6 +31,7 @@ export function SessionDetail({ sessionId }: { sessionId: string }) {
   }
 
   const s = q.data.session;
+  const project = projectFromSlug(s.project_slug);
 
   return (
     <div className="space-y-5">
@@ -37,30 +39,27 @@ export function SessionDetail({ sessionId }: { sessionId: string }) {
         <div className="px-5 py-3 border-b border-border1 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Icon name="Terminal" className="text-brandSoft" size={16} />
-            <h2 className="font-display text-sm font-emphasized">{s.id.slice(0, 12)}</h2>
+            <h2 className="font-display text-sm font-emphasized">{project}</h2>
             <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-txt3 ml-2">
-              <StatusDot
-                status={
-                  s.status === "active" ? "live" : s.status === "errored" ? "fail" : "idle"
-                }
-                pulse={s.status === "active"}
-              />
-              {s.status}
+              <StatusDot status={s.active ? "live" : "idle"} pulse={s.active} />
+              {s.active ? "active" : "idle"}
             </span>
           </div>
-          <div className="text-nano text-txt3 truncate max-w-md">{s.cwd}</div>
+          <div className="text-nano text-txt3 truncate max-w-md font-mono">
+            {s.session_id.slice(0, 12)} · {relTime(s.last_modified_ms)} ago
+          </div>
         </div>
-        {s.current_task && (
+        {s.task && (
           <div className="px-5 py-3 border-b border-border2">
             <div className="text-nano text-txt3 mb-1">Current task</div>
-            <div className="text-sm text-txt1">{s.current_task}</div>
+            <div className="text-sm text-txt1 whitespace-pre-wrap">{s.task}</div>
           </div>
         )}
-        {s.rolling_summary && (
+        {s.summary && (
           <div className="px-5 py-3">
             <div className="text-nano text-txt3 mb-1">Rolling summary</div>
             <div className="text-sm text-txt2 whitespace-pre-wrap line-clamp-6">
-              {s.rolling_summary}
+              {s.summary}
             </div>
           </div>
         )}
@@ -86,12 +85,14 @@ export function SessionDetail({ sessionId }: { sessionId: string }) {
               <div className="text-xs text-txt2 font-mono whitespace-pre-wrap flex-1 min-w-0">
                 {c.text}
               </div>
-              <span className="text-nano text-txt3 shrink-0 mt-0.5">
-                {new Date(c.ts).toLocaleTimeString(undefined, {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
+              {c.timestamp && (
+                <span className="text-nano text-txt3 shrink-0 mt-0.5">
+                  {new Date(c.timestamp).toLocaleTimeString(undefined, {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              )}
             </div>
           ))}
         </div>

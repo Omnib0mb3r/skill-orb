@@ -3,23 +3,9 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { sessions as sessionsClient, type SessionSummary } from "@/lib/daemon-client";
+import { projectFromSlug, relTime } from "@/lib/session-helpers";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
-
-function relTime(ts: string | undefined): string {
-  if (!ts) return "—";
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return "—";
-  const diffS = Math.max(0, (Date.now() - d.getTime()) / 1000);
-  if (diffS < 60) return `${Math.round(diffS)}s`;
-  if (diffS < 3600) return `${Math.round(diffS / 60)}m`;
-  if (diffS < 86400) return `${Math.round(diffS / 3600)}h`;
-  return `${Math.round(diffS / 86400)}d`;
-}
-
-function projectFromCwd(cwd: string): string {
-  return cwd.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? "unknown";
-}
 
 export function StreamDeck() {
   const q = useQuery({
@@ -28,10 +14,15 @@ export function StreamDeck() {
     refetchInterval: 5_000,
   });
 
-  const sessions: SessionSummary[] = q.data?.sessions ?? [];
+  const all: SessionSummary[] = q.data?.sessions ?? [];
+  // Sort: active first, then by recency.
+  const visible = [...all].sort((a, b) => {
+    if (a.active !== b.active) return a.active ? -1 : 1;
+    return b.last_modified_ms - a.last_modified_ms;
+  });
 
   return (
-    <aside className="w-64 flex-shrink-0 flex flex-col gap-3 p-4 hairline-soft border-r border-border2">
+    <aside className="w-64 flex-shrink-0 flex flex-col gap-3 p-4 hairline-soft border-r border-border2 overflow-y-auto">
       <div className="flex items-center justify-between mb-1">
         <div className="text-nano text-txt3">Stream deck</div>
         <button className="text-txt3 hover:text-txt1" aria-label="Pin stream deck">
@@ -47,44 +38,38 @@ export function StreamDeck() {
         </div>
       )}
 
-      {!q.isLoading && sessions.length === 0 && (
+      {!q.isLoading && visible.length === 0 && (
         <div className="text-xs text-txt3 px-2 py-3">
-          No active sessions. Start a Claude session in any VS Code window on OTLCDEV.
+          No sessions captured yet. Start a Claude session in any VS Code window on OTLCDEV
+          and it&apos;ll appear here within a few seconds.
         </div>
       )}
 
-      {sessions.map((s) => {
-        const project = s.project_id ?? projectFromCwd(s.cwd);
-        const ring =
-          s.status === "active"
-            ? "ring-live"
-            : s.status === "errored"
-              ? "ring-warn"
-              : s.status === "idle"
-                ? ""
-                : "";
+      {visible.slice(0, 20).map((s) => {
+        const project = projectFromSlug(s.project_slug);
+        const ring = s.active ? "ring-live" : "";
         return (
           <Link
-            key={s.id}
-            href={`/sessions/${s.id}`}
+            key={s.session_id}
+            href={`/sessions/${s.session_id}`}
             className={`block text-left p-3 rounded-card bg-surface1 hairline lift ${ring}`}
-            aria-label={`Session ${project}, status ${s.status}`}
+            aria-label={`Session ${project}, ${s.active ? "active" : "idle"}`}
           >
             <div className="flex items-center justify-between mb-1.5">
               <div className="font-display text-sm font-emphasized truncate text-txt1">
                 {project}
               </div>
-              <StatusDot
-                status={s.status === "active" ? "live" : s.status === "errored" ? "fail" : "idle"}
-                pulse={s.status === "active"}
-              />
+              <StatusDot status={s.active ? "live" : "idle"} pulse={s.active} />
             </div>
-            <div className="text-xs text-txt3 truncate font-mono">{s.id.slice(0, 8)}</div>
-            {s.current_task && (
-              <div className="mt-1 text-xs text-txt2 line-clamp-2">{s.current_task}</div>
-            )}
-            <div className="mt-1.5 text-[11px] font-mono text-txt3">
-              last {relTime(s.last_activity)} ago
+            <div className="text-xs text-txt3 truncate font-mono">
+              {s.session_id.slice(0, 8)}
+            </div>
+            <div className="mt-1.5 flex items-center justify-between text-[11px] font-mono text-txt3">
+              <span>last {relTime(s.last_modified_ms)} ago</span>
+              <span className="flex items-center gap-1">
+                {s.has_task && <Icon name="ListTodo" size={11} />}
+                {s.has_summary && <Icon name="ScrollText" size={11} />}
+              </span>
             </div>
           </Link>
         );

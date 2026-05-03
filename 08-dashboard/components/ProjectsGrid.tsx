@@ -2,10 +2,11 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { projects as projectsClient, sessions as sessionsClient } from "@/lib/daemon-client";
+import { sessionsByProject } from "@/lib/session-helpers";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
 
-function relTime(ts: string | undefined): string {
+function relTimeIso(ts: string | undefined): string {
   if (!ts) return "—";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "—";
@@ -29,11 +30,7 @@ export function ProjectsGrid() {
   });
 
   const list = projQ.data?.projects ?? [];
-  const sessByProject = new Map<string, number>();
-  (sessQ.data?.sessions ?? []).forEach((s) => {
-    const key = s.project_id ?? s.cwd;
-    sessByProject.set(key, (sessByProject.get(key) ?? 0) + 1);
-  });
+  const sessByProject = sessionsByProject(sessQ.data?.sessions ?? []);
 
   if (projQ.isLoading) {
     return (
@@ -66,7 +63,8 @@ export function ProjectsGrid() {
   return (
     <div className="grid grid-cols-3 gap-4">
       {list.map((p) => {
-        const liveSessions = sessByProject.get(p.id) ?? 0;
+        // Match by both id and name since session slugs decode to varying forms.
+        const liveSessions = sessByProject.get(p.name) ?? sessByProject.get(p.id) ?? 0;
         return (
           <div
             key={p.id}
@@ -89,7 +87,7 @@ export function ProjectsGrid() {
               <span className="truncate" title={p.remote ?? "no remote"}>
                 {p.remote ? new URL(p.remote.replace(/^git@([^:]+):/, "https://$1/")).pathname.replace(/^\//, "").replace(/\.git$/, "") : "no remote"}
               </span>
-              <span>{relTime(p.last_seen)} ago</span>
+              <span>{relTimeIso(p.last_seen)} ago</span>
             </div>
           </div>
         );

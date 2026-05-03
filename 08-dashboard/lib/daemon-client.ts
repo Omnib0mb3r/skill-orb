@@ -127,20 +127,29 @@ export const services = () =>
   );
 
 // ── sessions ────────────────────────────────────────────────────
+// Shape mirrors 07-daemon/src/dashboard/sessions.ts SessionListItem exactly.
 export interface SessionSummary {
-  id: string;
-  cwd: string;
-  project_id?: string;
-  status: "active" | "idle" | "errored";
-  last_activity: string;
-  current_task?: string;
+  session_id: string;
+  project_slug: string;
+  jsonl_path: string;
+  bytes: number;
+  last_modified_ms: number;
+  active: boolean;
+  has_summary: boolean;
+  has_task: boolean;
 }
 export const sessions = () =>
   request<{ ok: boolean; sessions: SessionSummary[] }>("/sessions");
 
+export interface SessionChunk {
+  role: string;
+  text: string;
+  timestamp?: string;
+}
 export interface SessionDetail extends SessionSummary {
-  rolling_summary?: string;
-  recent_chunks: Array<{ ts: string; role: string; text: string }>;
+  summary: string;
+  task: string;
+  recent_chunks: SessionChunk[];
 }
 export const sessionDetail = (id: string) =>
   request<{ ok: boolean; session: SessionDetail }>(`/sessions/${id}`);

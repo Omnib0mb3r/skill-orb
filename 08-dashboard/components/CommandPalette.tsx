@@ -84,11 +84,11 @@ export function CommandPalette() {
     : navActions;
 
   const sessionItems: Action[] = (sessQ.data?.sessions ?? []).map((s) => ({
-    id: `session-${s.id}`,
-    label: `Open session: ${s.project_id ?? s.cwd.split(/[/\\]/).pop() ?? s.id}`,
-    hint: s.id.slice(0, 8),
+    id: `session-${s.session_id}`,
+    label: `Open session: ${s.project_slug.split("-").filter(Boolean).pop() ?? s.session_id}`,
+    hint: s.session_id.slice(0, 8),
     icon: "Terminal" as const,
-    run: () => router.push(`/sessions/${s.id}`),
+    run: () => router.push(`/sessions/${s.session_id}`),
   }));
 
   const items: Action[] = [
