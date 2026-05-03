@@ -3,6 +3,8 @@
 > Pick up where the last session left off. Designed to be the first file a new Claude (or you) reads when starting fresh.
 > Last updated: 2026-05-03 (after Phase 3.3 session bridge complete).
 
+> **In-progress sub-task:** Phase 3.4 dashboard visual design pass is mid-flight. The v4 mockup is committed and the user loves it; we then started running the `design-website` skill to take it from "designer-y by feel" to "designer-y with computed values," but hit an MCP-surfacing blocker. Read `08-dashboard/HANDOVER.md` AFTER this file for the precise resume point.
+
 ---
 
 ## Where we are
