@@ -31,6 +31,7 @@ import fastifyCookie from '@fastify/cookie';
 import fastifyMultipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const PORT = Number(process.env.DEVNEURAL_PORT ?? 3747);
 
@@ -380,33 +381,32 @@ async function main(): Promise<void> {
   });
 
   // Serve the dashboard static export when present. The export lives at
-  // 08-dashboard/out/ and is produced by `npm run build` in that workspace.
-  // Resolves relative to this file at runtime so it works whether started
-  // from dist/ or src/ via tsx.
+  // 08-dashboard/out/ produced by `npm run build` in that workspace. Path
+  // resolution uses fileURLToPath so it works on Windows whether started
+  // from dist/ or src/ via tsx. Layout: <repo>/07-daemon/dist/daemon.js
+  // and <repo>/08-dashboard/out, so we go up two levels from this file's
+  // directory then over to 08-dashboard/out.
   try {
-    const dashboardOut = path.posix.join(
-      path.dirname(new URL(import.meta.url).pathname).replace(/^\//, ''),
-      '..',
-      '..',
-      '..',
-      '08-dashboard',
-      'out',
-    );
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const dashboardOut = path.resolve(here, '..', '..', '08-dashboard', 'out');
     if (fs.existsSync(dashboardOut)) {
       await app.register(fastifyStatic, {
         root: dashboardOut,
         prefix: '/',
-        decorateReply: false,
+        index: ['index.html'],
       });
-      // SPA fallback: any non-API GET that isn't a file falls back to index.html
-      // so client-side routing works on /sessions/:id, /unlock, etc.
+      // SPA fallback for client-side routes that have no matching .html on disk.
+      // Static export emits one .html per route (out/orb.html, out/sessions.html,
+      // etc.), so most paths resolve directly. The fallback only handles a small
+      // residual set: query-string variations of /sessions/detail, refreshes
+      // mid-route, etc.
       app.setNotFoundHandler((req, reply) => {
         if (req.method !== 'GET') {
           reply.code(404).send({ ok: false, error: 'not found' });
           return;
         }
         const url = (req.url ?? '/').split('?')[0] ?? '/';
-        if (url === '/' || !url.includes('.')) {
+        if (!url.includes('.')) {
           reply.type('text/html').sendFile('index.html');
           return;
         }

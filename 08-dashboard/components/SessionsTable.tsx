@@ -63,7 +63,7 @@ export function SessionsTable() {
               <tr key={s.session_id} className="border-b border-border2 lift">
                 <td className="px-5 py-3">
                   <Link
-                    href={`/sessions/${s.session_id}`}
+                    href={`/sessions/detail?id=${encodeURIComponent(s.session_id)}`}
                     className="text-txt1 hover:text-brandSoft font-emphasized text-sm"
                   >
                     {projectFromSlug(s.project_slug)}

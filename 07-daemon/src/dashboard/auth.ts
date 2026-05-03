@@ -162,25 +162,57 @@ export function verifyToken(token: string | undefined): boolean {
   }
 }
 
+/**
+ * API path prefixes that require the dn_session cookie. Everything else
+ * (HTML pages, static assets, _next chunks) is public — the dashboard
+ * pages render unconditionally and detect 401s on API calls to redirect
+ * to /unlock client-side. This keeps the auth model simple: the cookie
+ * is only checked at the API surface, not at the page-render surface.
+ */
+const PROTECTED_API_PREFIXES = [
+  '/dashboard/',
+  '/sessions',
+  '/services',
+  '/projects',
+  '/reference',
+  '/reminders',
+  '/notifications',
+  '/push',
+  '/search',
+  '/upload',
+];
+
+function isProtectedApi(url: string): boolean {
+  // Strip query string for the prefix match
+  const path = url.split('?')[0] ?? '/';
+  return PROTECTED_API_PREFIXES.some(
+    (p) => path === p.replace(/\/$/, '') || path.startsWith(p),
+  );
+}
+
 export function authMiddleware(
   req: FastifyRequest,
   reply: FastifyReply,
   done: () => void,
 ): void {
-  // Public routes: /auth/*, /health (basic), /
   const url = req.url;
+
+  // Always-public paths.
   if (
     url.startsWith('/auth/') ||
-    url === '/health' ||
-    url === '/' ||
-    url.startsWith('/_next/') ||
-    url.startsWith('/static/')
+    url === '/health'
   ) {
     done();
     return;
   }
 
-  // If no PIN has been set yet, allow everything (first-run setup).
+  // HTML pages, static assets, _next chunks → public. Auth only gates the API.
+  if (!isProtectedApi(url)) {
+    done();
+    return;
+  }
+
+  // First-run: no PIN set, dashboard hasn't been initialized → allow.
   if (!isPinSet()) {
     done();
     return;

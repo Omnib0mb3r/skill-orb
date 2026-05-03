@@ -51,7 +51,7 @@ export function StreamDeck() {
         return (
           <Link
             key={s.session_id}
-            href={`/sessions/${s.session_id}`}
+            href={`/sessions/detail?id=${encodeURIComponent(s.session_id)}`}
             className={`block text-left p-3 rounded-card bg-surface1 hairline lift ${ring}`}
             aria-label={`Session ${project}, ${s.active ? "active" : "idle"}`}
           >

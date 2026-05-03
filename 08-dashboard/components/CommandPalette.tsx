@@ -88,7 +88,8 @@ export function CommandPalette() {
     label: `Open session: ${s.project_slug.split("-").filter(Boolean).pop() ?? s.session_id}`,
     hint: s.session_id.slice(0, 8),
     icon: "Terminal" as const,
-    run: () => router.push(`/sessions/${s.session_id}`),
+    run: () =>
+      router.push(`/sessions/detail?id=${encodeURIComponent(s.session_id)}`),
   }));
 
   const items: Action[] = [
