@@ -1,0 +1,65 @@
+{
+  "name": "devneural-bridge",
+  "displayName": "DevNeural Session Bridge",
+  "description": "Delivers queued prompts and focus actions from the DevNeural daemon into the VS Code terminal hosting your Claude Code session.",
+  "version": "0.1.0",
+  "publisher": "omnib0mb3r",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "devneural.bridge.status",
+        "title": "DevNeural: Bridge Status",
+        "category": "DevNeural"
+      },
+      {
+        "command": "devneural.bridge.toggle",
+        "title": "DevNeural: Toggle Bridge",
+        "category": "DevNeural"
+      },
+      {
+        "command": "devneural.bridge.openClaudeTerminal",
+        "title": "DevNeural: Pick Claude Terminal for This Window",
+        "category": "DevNeural"
+      }
+    ],
+    "configuration": {
+      "title": "DevNeural Bridge",
+      "properties": {
+        "devneural.bridge.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the DevNeural session bridge."
+        },
+        "devneural.bridge.dataRoot": {
+          "type": "string",
+          "default": "C:/dev/data/skill-connections",
+          "description": "DevNeural data root. Must match the daemon's DEVNEURAL_DATA_ROOT."
+        },
+        "devneural.bridge.terminalNamePattern": {
+          "type": "string",
+          "default": "claude",
+          "description": "Case-insensitive substring match against terminal names. The bridge sends prompts to the most recently focused matching terminal in this window."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -p . --watch",
+    "package": "vsce package --no-dependencies -o devneural-bridge.vsix",
+    "build:check": "tsc -p . --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.0",
+    "typescript": "^5.7.0"
+  }
+}
