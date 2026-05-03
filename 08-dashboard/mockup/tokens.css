@@ -1,0 +1,174 @@
+/* DevNeural Hub — design tokens
+ * Authored 2026-05-03 from references/{linear.app, raycast.com, openstatus.dev, vercel.com}.md.
+ * Locked dark theme. Light theme would override the same custom property names under [data-theme="light"].
+ *
+ * Naming rules:
+ *   --c-*    color
+ *   --fs-*   font-size
+ *   --fw-*   font-weight
+ *   --lh-*   line-height
+ *   --ls-*   letter-spacing
+ *   --sp-*   spacing (4px base)
+ *   --r-*    radius
+ *   --ease-* cubic-bezier easing
+ *   --dur-*  duration (ms)
+ *   --shadow-*
+ */
+
+:root {
+  /* ────── color: surfaces ────── */
+  /* canvas: cool-tilted near-black, never pure #000 (anti-slop rule 6, lifted from linear.app) */
+  --c-bg:           oklch(11.5% 0.005 250);
+  --c-bg-elev:      oklch(14% 0.006 250);   /* card */
+  --c-bg-elev-2:    oklch(17% 0.008 250);   /* hover, secondary card */
+  --c-bg-overlay:   oklch(8% 0.004 250 / 0.72);
+
+  /* ────── color: foreground ────── */
+  --c-fg:           oklch(96% 0.005 250);  /* off-white, slight cool tilt — never pure #FFF */
+  --c-fg-2:         oklch(85% 0.012 250);  /* secondary text */
+  --c-fg-muted:     oklch(70% 0.014 258);  /* muted body (linear-flavored, raised from 62% to clear 4.5:1 on bg for app-mode small text per ANTI-SLOP rule 22) */
+  --c-fg-disabled:  oklch(46% 0.011 263);
+
+  /* ────── color: borders (hairline white-alpha pattern, lifted from linear.app) ────── */
+  --c-border-faint:  oklch(96% 0.005 250 / 0.05);
+  --c-border:        oklch(96% 0.005 250 / 0.08);
+  --c-border-strong: oklch(96% 0.005 250 / 0.14);
+
+  /* ────── color: accent ────── */
+  /* electric violet — locked in BRIEF.md from spec section 10 */
+  --c-accent:       oklch(64% 0.20 295);
+  --c-accent-soft:  oklch(73% 0.16 295);
+  --c-accent-bg:    oklch(64% 0.20 295 / 0.15);
+  --c-accent-fg:    oklch(11.5% 0.005 250);  /* on-accent text (dark on light pill) */
+
+  /* indigo companion (linear.app accent), used for AI / agent badges */
+  --c-accent-2:     oklch(58% 0.18 270);
+
+  /* ────── color: status (saturation profile lifted from raycast.com signal hues) ────── */
+  --c-ok:        oklch(70% 0.18 155);   /* green — services healthy, brief ready */
+  --c-warn:      oklch(78% 0.16 80);    /* amber — degraded */
+  --c-err:       oklch(63% 0.22 25);    /* red — failure */
+  --c-live:      oklch(78% 0.13 200);   /* cyan — live ingest, active session */
+  --c-ai:        oklch(72% 0.13 270);   /* indigo — AI / agent activity */
+  --c-promoted:  oklch(82% 0.15 80);    /* gold — wiki promotion, surfaced insights */
+
+  /* alpha companions for ring strokes / outlined pills (openstatus.dev pattern) */
+  --c-ok-soft:        oklch(70% 0.18 155 / 0.40);
+  --c-warn-soft:      oklch(78% 0.16 80  / 0.40);
+  --c-err-soft:       oklch(63% 0.22 25  / 0.40);
+  --c-live-soft:      oklch(78% 0.13 200 / 0.45);
+  --c-ai-soft:        oklch(72% 0.13 270 / 0.40);
+  --c-promoted-soft:  oklch(82% 0.15 80  / 0.50);
+
+  /* ────── type: families ────── */
+  --font-sans:    "Inter", "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Inter Tight", "Inter", system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", "Berkeley Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ────── type: scale (two-band: tight body band + display jump, lifted from linear.app) ────── */
+  /* body band, ratio 1.143 (deliberate, denser than 1.25 for an info-dense app shell) */
+  --fs-9:   9px;     /* mono nano label — ornamental only, never body (ANTI-SLOP rule 22) */
+  --fs-11:  11px;    /* mono pill, ribbon labels */
+  --fs-12:  12px;    /* small label */
+  --fs-13:  13px;    /* caption, menu */
+  --fs-14:  14px;    /* body */
+  --fs-16:  16px;    /* body-l, panel title */
+  --fs-18:  18px;    /* lead, h4 */
+  /* display band, dramatic jumps */
+  --fs-22:  22px;    /* h3 panel heading */
+  --fs-28:  28px;    /* h2 section heading */
+  --fs-40:  40px;    /* h1 page heading (rare in app context) */
+  --fs-56:  56px;    /* display, hero only */
+
+  /* ────── type: weight ────── */
+  --fw-regular:     400;
+  --fw-medium:      500;
+  --fw-emphasized:  560;  /* between linear's 510 and vercel's 600 — confident, not aggressive */
+  --fw-bold:        640;
+  --fw-display:     680;  /* Inter Tight display */
+
+  /* ────── type: line-height ────── */
+  --lh-tight:  1.0;
+  --lh-snug:   1.1;
+  --lh-base:   1.4;
+  --lh-comfy:  1.5;
+  --lh-loose:  1.6;
+
+  /* ────── type: letter-spacing (scales with size, lifted from linear.app) ────── */
+  --ls-tight:  -0.04em;   /* h1 / display, vercel-style decisive */
+  --ls-snug:   -0.022em;  /* h2 / h3 */
+  --ls-soft:   -0.011em;  /* body, caption */
+  --ls-normal: 0;
+  --ls-loose:  0.04em;    /* uppercase mono labels */
+
+  /* ────── space: 4px base ────── */
+  --sp-0:   0;
+  --sp-1:   2px;
+  --sp-2:   4px;
+  --sp-3:   6px;
+  --sp-4:   8px;
+  --sp-5:   12px;
+  --sp-6:   16px;
+  --sp-7:   20px;
+  --sp-8:   24px;
+  --sp-9:   32px;
+  --sp-10:  40px;
+  --sp-11:  48px;
+  --sp-12:  64px;
+  --sp-13:  80px;
+  --sp-14:  96px;
+  --sp-15:  128px;
+
+  /* ────── radius ────── */
+  --r-input:  4px;
+  --r-card:   6px;
+  --r-panel:  8px;
+  --r-pill:   9999px;
+
+  /* ────── motion: easing (custom cubics, ANTI-SLOP rule 16) ────── */
+  --ease-snap:       cubic-bezier(0.2, 0.8, 0.2, 1.0);   /* hover / focus / button press */
+  --ease-soft:       cubic-bezier(0.4, 0.0, 0.2, 1.0);   /* panel transitions */
+  --ease-out-quart:  cubic-bezier(0.165, 0.84, 0.44, 1); /* scroll reveals, panel mount */
+
+  /* ────── motion: duration ────── */
+  --dur-instant:  0ms;
+  --dur-fast:     120ms;
+  --dur-base:     200ms;
+  --dur-slow:     320ms;
+  --dur-pace:     600ms;
+
+  /* ────── shadow / glow ────── */
+  --shadow-glow-brand: 0 0 60px -10px oklch(64% 0.20 295 / 0.55);
+  --shadow-glow-live:  0 0 24px -4px  oklch(78% 0.13 200 / 0.55);
+  --shadow-glow-ok:    0 0 16px -4px  oklch(70% 0.18 155 / 0.55);
+  --shadow-glow-ai:    0 0 12px -4px  oklch(72% 0.13 270 / 0.45);
+  --shadow-glow-promoted: 0 0 12px -4px oklch(82% 0.15 80 / 0.50);
+
+  --shadow-card-soft: 0 1px 0 oklch(96% 0.005 250 / 0.04) inset;
+  --shadow-card:      0 0 0 1px var(--c-border) inset;
+  --shadow-card-strong: 0 0 0 1px var(--c-border-strong) inset;
+}
+
+/* base reset / typography defaults */
+html {
+  background: var(--c-bg);
+  color: var(--c-fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-14);
+  line-height: var(--lh-comfy);
+  letter-spacing: var(--ls-soft);
+  font-feature-settings: "ss01", "cv11", "tnum";
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body { background: var(--c-bg); color: var(--c-fg); }
+
+::selection { background: var(--c-accent-bg); color: var(--c-fg); }
+
+/* scrollbar */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--c-border-strong); border-radius: var(--r-pill); }
+*::-webkit-scrollbar-thumb:hover { background: var(--c-fg-disabled); }
