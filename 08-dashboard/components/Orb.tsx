@@ -223,42 +223,100 @@ export function Orb({ compact = false }: OrbProps = {}) {
     }
   }, []);
 
-  /* Frame the graph in the viewport. Called on a few staggered timers
-   * after data/size changes; once the user has interacted (panned or
-   * zoomed) we stop fighting them. */
+  /* Frame the graph in the viewport. zoomToFit() uses the raw bbox of
+   * every node which gets blown out by the disconnected stragglers
+   * d3-force pushes to the canvas perimeter early in life. We compute
+   * the bbox of the *connected* subgraph instead (any node that has at
+   * least one edge), then centerAt + zoom against the actual container
+   * size so the dense cluster fills the panel.
+   *
+   * Falls back to zoomToFit if there are no edges yet (everything's
+   * disconnected) so a fresh wiki still gets framed sensibly. */
   const userInteractedRef = useRef(false);
   const frame = useCallback(() => {
     const fg = fgRef.current;
     if (!fg || userInteractedRef.current) return;
-    // Bigger padding values shrink the cluster (more empty around it);
-    // we want the opposite. Negative-leaning padding zooms in past the
-    // bbox edges so dense clusters fill the panel.
+    if (size.w === 0 || size.h === 0) return;
     const padding = compact ? 8 : 16;
+
     try {
-      fg.zoomToFit(400, padding);
+      const nodes = graphData.nodes as ForceNode[];
+      const links = graphData.links as ForceLink[];
+
+      // Collect ids that participate in at least one edge.
+      const connectedIds = new Set<string>();
+      for (const l of links) {
+        const sId = typeof l.source === "object" ? (l.source as ForceNode).id : String(l.source);
+        const tId = typeof l.target === "object" ? (l.target as ForceNode).id : String(l.target);
+        connectedIds.add(sId);
+        connectedIds.add(tId);
+      }
+
+      const target = connectedIds.size >= 2
+        ? nodes.filter((n) => connectedIds.has(n.id))
+        : nodes;
+
+      if (target.length === 0) {
+        fg.zoomToFit(400, padding);
+        return;
+      }
+
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      let any = false;
+      for (const n of target) {
+        if (typeof n.x !== "number" || typeof n.y !== "number") continue;
+        if (n.x < minX) minX = n.x;
+        if (n.x > maxX) maxX = n.x;
+        if (n.y < minY) minY = n.y;
+        if (n.y > maxY) maxY = n.y;
+        any = true;
+      }
+      if (!any) {
+        fg.zoomToFit(400, padding);
+        return;
+      }
+
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      // Add 20% margin so node radii + glow halos don't clip the edges.
+      const w = Math.max(maxX - minX, 1) * 1.2 + padding * 2;
+      const h = Math.max(maxY - minY, 1) * 1.2 + padding * 2;
+
+      const zoomX = size.w / w;
+      const zoomY = size.h / h;
+      // Cap the zoom so a tiny graph (3 nodes huddled together) doesn't
+      // blow up to fill the viewport with comically-large blobs.
+      const targetZoom = Math.min(zoomX, zoomY, 3);
+
+      fg.centerAt(cx, cy, 600);
+      fg.zoom(targetZoom, 600);
     } catch {
-      // ignore: lib API drift would just leave the graph at default zoom.
+      // Force methods are best-effort; fall through silently.
     }
-  }, [compact]);
+  }, [compact, graphData, size.w, size.h]);
 
   const nodeCount = q.data?.nodes.length ?? 0;
   const edgeCount = q.data?.edges.length ?? 0;
 
   // Re-tune forces and re-frame whenever the data set or container size
-  // changes. Staggered timers cover the layout's settle window: by 350ms
-  // the warm-up ticks have spread the cluster, by 1200ms it has fully
-  // converged. Reset the user-interaction flag on data/size change so a
-  // refetch reframes even after the user previously zoomed.
+  // changes. With cooldownTicks=Infinity the simulation never reaches a
+  // truly settled state, so we sample at a few delays then stop.
+  // Staggered timers cover the warm window: 350ms after the warmup ticks
+  // spread the cluster, 1200ms once links contract, 2500ms after long-
+  // tail drift. Reset the user-interaction flag on data/size change so
+  // a refetch reframes even after the user previously zoomed.
   useEffect(() => {
     if (nodeCount === 0 || size.w === 0 || size.h === 0) return;
     userInteractedRef.current = false;
     const t1 = setTimeout(tuneForces, 50);
-    const t2 = setTimeout(frame, 350);
-    const t3 = setTimeout(frame, 1200);
+    const t2 = setTimeout(frame, 400);
+    const t3 = setTimeout(frame, 1500);
+    const t4 = setTimeout(frame, 3000);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
+      clearTimeout(t4);
     };
   }, [nodeCount, edgeCount, size.w, size.h, tuneForces, frame]);
 
