@@ -20,9 +20,8 @@ Captured 2026-05-04. Living list. Tick when shipped.
 ## Stream deck (virtual deck in dashboard)
 
 - [x] Arrow tile foreground color: was greyed-out slate, now pure white for visibility.
-- [ ] Tile-tap focus: clicking a session tile must bring the matching VS Code window to OS foreground. Currently flaky on Windows because `SetForegroundWindow` has caller-thread restrictions when the click originates in a browser.
-- [ ] Nav-mode key inject: pressing 1-5, arrows, mic, enter, backspace must inject into the focused VS Code window. Currently lands in whatever window is OS-foreground at PS spawn time, which is the browser, not Claude.
-- [ ] Mirror hardware StreamDeck.App behaviour. Long-term: have the tray app (already running) listen for daemon-side focus/key events and perform the OS-level work. Tray apps have fewer focus restrictions than browser-spawned children.
+- [x] Tile-tap focus and Nav-mode key inject. Routed through StreamDeck.App tray (commit `3147c41` in stream-deck repo, `59cfd2e` in DevNeural). Tray app holds the OS focus rights the bridge could not. Daemon writes to `%LOCALAPPDATA%\stream-deck\virtual-input\<sessionId>.in`, app's VirtualInputWatcher dispatches through the same WindowManager.FocusWindow + NavKeymap.InjectFor paths the physical deck uses.
+- [x] Workspace resolution: ResolveVSCodeWindowSmart walks cwd segments deepest-to-shallowest so a session launched in a subdir (e.g. `07-daemon`) still resolves the workspace-root VS Code window (`DevNeural`).
 
 ## Deferred / future
 
@@ -34,3 +33,5 @@ Captured 2026-05-04. Living list. Tick when shipped.
 
 - [ ] Audit and prune `~/.claude/settings.json.*.bak.*` backup files. Keep one canonical recovery point, drop the rest.
 - [ ] `silence-all-hooks.ps1` cmd-/c logic is broken (re-runs trash settings). Either redesign with a multi-arg shim that preserves stdin pipethrough, or delete the script. Do not re-run as-is.
+- [ ] Bridge no longer carries focus or key inject (those moved to StreamDeck.App). Audit `09-bridge` to remove now-dead `focusWindow` + `injectKey` code paths. Bridge keeps prompt text delivery (`terminal.sendText`).
+- [ ] deck-hook.sh double-escapes backslashes in cwd JSON output. Works because of segment-walk fallback in ResolveVSCodeWindowSmart, but the escape itself is wrong and worth fixing at the source.
