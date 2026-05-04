@@ -22,6 +22,7 @@ import * as vscode from 'vscode';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { spawn } from 'node:child_process';
 
 const channel = vscode.window.createOutputChannel('DevNeural Bridge');
 
@@ -89,13 +90,54 @@ function findTargetTerminal(): vscode.Terminal | undefined {
 }
 
 function focusWindow(): void {
-  // Trigger a no-op command that brings VS Code forward on most platforms.
-  // VS Code does not directly expose "focus this window" but writing to the
-  // active editor or showing a status message effectively pulls focus on
-  // Windows when the extension host is running in an attended session.
+  // VS Code's extension API has no "bring my window to OS foreground" call.
+  // workbench.action.focusActiveEditorGroup moves focus inside VS Code but
+  // does NOT pull the window above other apps on Windows. To match the
+  // physical Stream Deck's tap-to-focus behavior we shell out to a hidden
+  // PowerShell that calls Win32 SetForegroundWindow against the matching
+  // Code.exe process. Match by workspace folder name in MainWindowTitle so
+  // the right window comes forward when the user has multiple VS Codes
+  // open.
   void vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
   vscode.window.setStatusBarMessage('DevNeural Bridge: focus requested', 1500);
   channel.appendLine(`[focus] requested at ${new Date().toISOString()}`);
+
+  if (process.platform !== 'win32') return;
+
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  const folderName = folders[0]?.name ?? '';
+  // PowerShell escapes: keep folder name simple. If empty, fall back to any
+  // VS Code window (better than nothing).
+  const titleFilter = folderName
+    ? `$_.MainWindowTitle -like '*${folderName.replace(/'/g, "''")}*'`
+    : '$_.MainWindowHandle -ne 0';
+  const ps = `
+$ErrorActionPreference = 'SilentlyContinue'
+$sig = @'
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int n);
+[DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+'@
+Add-Type -MemberDefinition $sig -Name W -Namespace DN -ErrorAction SilentlyContinue
+$proc = Get-Process Code -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and (${titleFilter}) } | Select-Object -First 1
+if (-not $proc) { $proc = Get-Process Code -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1 }
+if ($proc) {
+  [DN.W]::ShowWindow($proc.MainWindowHandle, 9) | Out-Null
+  [DN.W]::BringWindowToTop($proc.MainWindowHandle) | Out-Null
+  [DN.W]::SetForegroundWindow($proc.MainWindowHandle) | Out-Null
+}
+`.trim();
+  try {
+    const child = spawn(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', ps],
+      { detached: true, stdio: 'ignore', windowsHide: true },
+    );
+    child.unref();
+    channel.appendLine(`[focus] dispatched SetForegroundWindow for "${folderName || '(any)'}"`);
+  } catch (err) {
+    channel.appendLine(`[focus] powershell failed: ${(err as Error).message}`);
+  }
 }
 
 async function handleMessage(message: BridgeMessage): Promise<void> {
