@@ -281,11 +281,13 @@ export function Orb({ compact = false }: OrbProps = {}) {
     try {
       const charge = fg.d3Force("charge") as { strength?: (s: number) => unknown } | undefined;
       if (charge && typeof charge.strength === "function") {
-        charge.strength(-22);
+        charge.strength(-30);
       }
       const center = fg.d3Force("center") as { strength?: (s: number) => unknown } | undefined;
       if (center && typeof center.strength === "function") {
-        center.strength(0.22);
+        // Strong global pull so the cluster stays anchored at origin
+        // instead of drifting off-frame as the simulation cools.
+        center.strength(0.35);
       }
       const link = fg.d3Force("link") as {
         distance?: (d: ((l: { weight?: number }) => number) | number) => unknown;
@@ -671,52 +673,6 @@ export function Orb({ compact = false }: OrbProps = {}) {
               return sign * mag;
             }) as never
           }
-          /* Subtle additive glow ONLY on the hottest edges. Earlier pass
-           * fired on weight >= 0.4 with 4x line width; that turned half
-           * the graph into chunky orange tubes that buried the real
-           * structure. New: weight >= 0.7, 2x line width, lower alpha.
-           * Reads as a delicate halo on the top connections, not a
-           * highlighter swipe across the whole network. */
-          linkCanvasObjectMode={(() => "before") as never}
-          linkCanvasObject={
-            ((raw: object, ctx: CanvasRenderingContext2D) => {
-              const link = raw as ForceLink & {
-                source: ForceNode;
-                target: ForceNode;
-                __controlPoints?: number[];
-              };
-              if (
-                typeof link.source !== "object" ||
-                typeof link.target !== "object"
-              ) return;
-              const w = link.weight ?? 0.5;
-              if (w < 0.7) return;
-              const sx = link.source.x ?? 0;
-              const sy = link.source.y ?? 0;
-              const tx = link.target.x ?? 0;
-              const ty = link.target.y ?? 0;
-              const base = edgeHeatColor(w);
-              const m = base.match(/^rgba\((\d+), (\d+), (\d+), ([0-9.]+)\)$/);
-              if (!m) return;
-              const haloAlpha = Math.min(0.18, (w - 0.7) * 0.5);
-              ctx.save();
-              ctx.globalCompositeOperation = "lighter";
-              ctx.strokeStyle = `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${haloAlpha.toFixed(3)})`;
-              ctx.lineWidth = (1.2 + w * 3) * 2;
-              ctx.lineCap = "round";
-              ctx.beginPath();
-              if (link.__controlPoints && link.__controlPoints.length >= 2) {
-                const cp = link.__controlPoints;
-                ctx.moveTo(sx, sy);
-                ctx.quadraticCurveTo(cp[0]!, cp[1]!, tx, ty);
-              } else {
-                ctx.moveTo(sx, sy);
-                ctx.lineTo(tx, ty);
-              }
-              ctx.stroke();
-              ctx.restore();
-            }) as never
-          }
           /* Animated particles flowing along each edge. Density and speed
            * scale with weight so the eye follows the most active pathways.
            * Source-to-target direction comes from the cross-reference graph;
@@ -746,18 +702,18 @@ export function Orb({ compact = false }: OrbProps = {}) {
             ((l: object) =>
               edgeHeatColor(((l as ForceLink).weight ?? 0.5) * 1.0)) as never
           }
-          /* Long-tail cooldown keeps the simulation barely warm forever so
-           * the canvas keeps redrawing every frame. That's what surfaces
-           * the breathe()/edgeBreathe() animations - force-graph only
-           * paints when the engine is alive. We pair it with a very low
-           * alpha decay + a periodic d3ReheatSimulation tick (see
-           * autoReheatRef effect) to keep nodes drifting gently instead
-           * of snapping into a frozen frame. */
-          cooldownTicks={Infinity}
-          cooldownTime={Infinity}
-          warmupTicks={40}
-          d3AlphaDecay={0.0008}
-          d3VelocityDecay={0.45}
+          /* Finite cooldown so the cluster actually settles. Earlier I
+           * tried Infinity to keep breathe animations running, but the
+           * simulation never reached equilibrium and the cluster drifted
+           * away from center forever. Layout stops at ~3s; particles +
+           * edge-color animations keep redrawing without forcing live
+           * physics, because force-graph re-renders when ANY of its
+           * accessor outputs would change. */
+          cooldownTicks={250}
+          cooldownTime={5000}
+          warmupTicks={60}
+          d3AlphaDecay={0.025}
+          d3VelocityDecay={0.4}
           onNodeClick={((n: object) => onNodeClick(n as ForceNode)) as never}
           onNodeHover={((n: object | null) => onNodeHover(n as ForceNode | null)) as never}
           enableNodeDrag={!compact}
