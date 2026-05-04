@@ -46,15 +46,26 @@ if (-not $pwshCmd) { $pwshCmd = Get-Command powershell -ErrorAction SilentlyCont
 if (-not $pwshCmd) { throw 'no PowerShell on PATH' }
 $pwsh = $pwshCmd.Source
 
-$argList = @(
-    '-NoProfile',
-    '-NonInteractive',
-    '-WindowStyle', 'Hidden',
-    '-ExecutionPolicy', 'Bypass',
-    '-File', "`"$scriptPath`""
-) -join ' '
+# Wrap the PowerShell call in wscript + silent-shim.vbs so the 5-minute
+# safety fire never flashes a console window. Task Scheduler's
+# -WindowStyle Hidden alone leaves a brief flash on interactive logon
+# tasks (Windows shows the conhost window before the SW_HIDE message
+# applies). The shim invokes Run with WindowStyle 0 which suppresses
+# conhost entirely, mirroring how silence-all-hooks.ps1 handles
+# Claude Code hook commands.
+$shim = "$PSScriptRoot\..\dist\capture\hooks\silent-shim.vbs"
+$shim = [System.IO.Path]::GetFullPath($shim)
+if (-not (Test-Path -LiteralPath $shim)) {
+    throw "silent-shim.vbs not found at $shim. Run 'npm run build' or 'npm run silence-hooks' first."
+}
+$wscript = "$env:WINDIR\System32\wscript.exe"
 
-$action = New-ScheduledTaskAction -Execute $pwsh -Argument $argList
+# Single-string command the shim will pass to WshShell.Run with
+# WindowStyle=0. Quote arguments with embedded spaces.
+$inner = "$pwsh -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$scriptPath`""
+$argList = "`"$shim`" `"$inner`""
+
+$action = New-ScheduledTaskAction -Execute $wscript -Argument $argList
 
 # Two triggers stacked for resilience:
 #   AtLogOn  - covers fresh login + reboot (with 30s delay so the

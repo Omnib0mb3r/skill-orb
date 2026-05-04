@@ -50,18 +50,22 @@ if (-not $pwshCmd) { $pwshCmd = Get-Command powershell -ErrorAction SilentlyCont
 if (-not $pwshCmd) { throw "no PowerShell on PATH" }
 $pwsh = $pwshCmd.Source
 
-$args = @(
-    "-NoProfile",
-    "-NonInteractive",
-    "-WindowStyle", "Hidden",
-    "-ExecutionPolicy", "Bypass",
-    "-File", "`"$scriptPath`"",
-    "-Target", "`"$BackupRoot`"",
-    "-Source", "`"$DataRoot`"",
-    "-Keep", $Keep
-) -join " "
+# Wrap the PowerShell call in wscript + silent-shim.vbs (the same shim
+# used by silence-all-hooks for Claude Code hooks). Task Scheduler's
+# -WindowStyle Hidden alone leaves a brief conhost flash on user-context
+# scheduled tasks; the VBS shim runs the command with WindowStyle 0
+# from the start, suppressing the flash entirely.
+$shim = "$PSScriptRoot\..\dist\capture\hooks\silent-shim.vbs"
+$shim = [System.IO.Path]::GetFullPath($shim)
+if (-not (Test-Path -LiteralPath $shim)) {
+    throw "silent-shim.vbs not found at $shim. Run 'npm run build' or 'npm run silence-hooks' first."
+}
+$wscript = "$env:WINDIR\System32\wscript.exe"
 
-$action = New-ScheduledTaskAction -Execute $pwsh -Argument $args
+$inner = "$pwsh -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$scriptPath`" -Target `"$BackupRoot`" -Source `"$DataRoot`" -Keep $Keep"
+$args = "`"$shim`" `"$inner`""
+
+$action = New-ScheduledTaskAction -Execute $wscript -Argument $args
 
 # Daily at the specified time
 $trigger = New-ScheduledTaskTrigger -Daily -At $Time
