@@ -16,16 +16,21 @@ export function SessionsTable() {
     queryFn: sessionsClient,
     refetchInterval: 5_000,
   });
+  const [showIdle, setShowIdle] = useState(false);
   const [showStale, setShowStale] = useState(false);
 
   const list: SessionSummary[] = q.data?.sessions ?? [];
   const now = Date.now();
-  const fresh = list.filter((s) => s.active || now - s.last_modified_ms < STALE_HIDE_MS);
-  const staleCount = list.length - fresh.length;
-  const visible = [...(showStale ? list : fresh)].sort((a, b) => {
-    if (a.active !== b.active) return a.active ? -1 : 1;
-    return b.last_modified_ms - a.last_modified_ms;
-  });
+  const active = list.filter((s) => s.active);
+  const idle = list.filter((s) => !s.active && now - s.last_modified_ms < STALE_HIDE_MS);
+  const stale = list.filter((s) => !s.active && now - s.last_modified_ms >= STALE_HIDE_MS);
+  const sortByRecency = (a: SessionSummary, b: SessionSummary) =>
+    b.last_modified_ms - a.last_modified_ms;
+  const visible = [
+    ...active.slice().sort(sortByRecency),
+    ...(showIdle ? idle.slice().sort(sortByRecency) : []),
+    ...(showStale ? stale.slice().sort(sortByRecency) : []),
+  ];
 
   return (
     <div className="rounded-panel bg-surface1 hairline overflow-hidden">
@@ -36,15 +41,24 @@ export function SessionsTable() {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-nano text-txt3">
-            {visible.filter((s) => s.active).length} active · {visible.length} shown
+            {active.length} active · {visible.length} shown
           </span>
-          {staleCount > 0 && (
+          {idle.length > 0 && (
+            <button
+              onClick={() => setShowIdle((v) => !v)}
+              className="text-nano text-txt3 hover:text-txt1"
+              aria-expanded={showIdle}
+            >
+              {showIdle ? `Hide ${idle.length} idle` : `+${idle.length} idle`}
+            </button>
+          )}
+          {stale.length > 0 && (
             <button
               onClick={() => setShowStale((v) => !v)}
               className="text-nano text-txt3 hover:text-txt1"
               aria-expanded={showStale}
             >
-              {showStale ? `Hide ${staleCount} stale` : `+${staleCount} stale`}
+              {showStale ? `Hide ${stale.length} stale` : `+${stale.length} stale`}
             </button>
           )}
         </div>
