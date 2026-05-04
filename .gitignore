@@ -12,3 +12,9 @@ Pics/
 skill-connections/
 *.tsbuildinfo
 .next/
+
+# Playwright dev artifacts (exploration screenshots, MCP traces)
+.playwright-mcp/
+/orb-*.png
+/home-*.png
+

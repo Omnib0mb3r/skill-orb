@@ -607,9 +607,15 @@ function processFile(file: string): void {
     let consumed = 0;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      const isLastIncomplete =
-        i === lines.length - 1 && !text.endsWith('\n');
+      const isLast = i === lines.length - 1;
+      const isLastIncomplete = isLast && !text.endsWith('\n');
       if (isLastIncomplete) break;
+      // split('\n') of "a\nb\n" yields ["a","b",""]; the trailing empty
+      // token after a final newline is not a real line and must not
+      // contribute to `consumed`, otherwise the offset overshoots EOF
+      // by 1 byte and the next tick treats the unchanged file as
+      // truncated, replaying every message every 750ms.
+      if (isLast && line === '' && text.endsWith('\n')) break;
       consumed += Buffer.byteLength(line, 'utf-8') + 1;
       const trimmed = line.trim();
       if (!trimmed) continue;
@@ -622,7 +628,8 @@ function processFile(file: string): void {
         );
       }
     }
-    lastOffsets.set(file, lastOffset + consumed);
+    const nextOffset = Math.min(lastOffset + consumed, stat.size);
+    lastOffsets.set(file, nextOffset);
     saveOffsetsDebounced();
   } finally {
     fs.closeSync(fd);

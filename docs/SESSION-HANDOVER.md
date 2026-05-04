@@ -1,22 +1,31 @@
 # Session handover
 
 > Pick up where the last session left off. Designed to be the first file a new Claude (or you) reads when starting fresh.
-> Last updated: 2026-05-03 (after Phase 3.4 dashboard frontend + Phase 3.7 web push complete).
+> Last updated: 2026-05-04 (post wiki backfill, orb visual rewrite, bridge auto-detect, terminal-mode flip).
 
-> **State now:** Phase 3.4 dashboard frontend is complete end-to-end against the existing daemon endpoints. Phase 3.7 web push (VAPID + service worker + subscribe button) is wired. The dashboard scaffolds at `08-dashboard/` (Next.js 15 + Tailwind v4 + Tanstack Query), every panel hits a real endpoint, and `npm run build` produces a passing optimized bundle.
+> **State now:** All Phase 3.x dashboard work is shipped. Wiki backfill of 168MB / 180 historical Claude session jsonl files is complete (116 wiki pages, 5185 raw chunks, 81 graph edges). Orb visual rewrite landed (curved bezier edges + custom particles + breathing glow + screen-stable widths + isolation/gravity forces + connected-subgraph framing). VS Code session-bridge now auto-detects the Claude terminal via process-tree walk, no manual mapping required. User has flipped `claudeCode.useTerminal: true` so future sessions are remote-driveable from the dashboard. Daemon autostart task installed and verified (logon + 5min repeat watchdog). PWA brand icons generated. Off-site weekly backup script ready (not yet installed).
 
 ---
 
 ## Where we are
 
-DevNeural v2 is a local-first second brain: capture, semantic RAG, learning wiki, real-time recommendation, reinforcement, and (in progress) a central dashboard. Phases 1, 2, 3.1, 3.2, and 3.3 are done. The end-to-end loop "daemon → session bridge → Claude terminal" is now closed. Next concrete work is Phase 3.4 (dashboard frontend).
+DevNeural v2 is a local-first second brain: capture, semantic RAG, learning wiki, real-time recommendation, reinforcement, and a central dashboard. Phases 1 - 3.x done. The full loop "host → daemon → dashboard → bridge → claude terminal" is closed; next concrete work is whatever the user identifies as the next bug.
 
 ## TL;DR
 
 - **Identity is "second brain."** Not a metaphor. Six properties: persistent memory, semantic recall, watches without being asked, surfaces in real time, compounds with use, lives on local hardware. See `docs/spec/devneural-v2.md` section 0.
 - **Two layers: semantics + logic.** Semantics = embeddings, vector search, fuzzy recall. Logic = `[trigger] → [insight]` schema, validation, promotion rules, hard editorial rules. Both required. See section 7.
 - **Read first:** `README.md` (top-level), then `docs/spec/devneural-v2.md` for architecture, then `docs/spec/DEVNEURAL.md` for the wiki schema, then this file.
-- **Phase status:** 1, 2, 3.1, 3.2, 3.3 done. Phase 3.4 (dashboard frontend) is next.
+- **Phase status:** 1, 2, 3.1 - 3.12 done. 4 (orb visual rewrite) done. 5 (settings audit + autostart + backup tasks) done.
+- **Today's headline shipments (2026-05-04):**
+  - Wiki backfill from history complete (168MB / 180 jsonl files, 116 wiki pages indexed, 5185 raw chunks, /graph returns 81 edges).
+  - Orb rewrite: curved bezier edges + custom particles drawn in same closure, screen-stable widths, breathing glow, animated promoted ring, isolation-pull + global-gravity forces, connected-subgraph framing.
+  - Wiki search: per-collection grouped sections + per-section pagination, wiki-page modal with Pattern/Evidence/Cross-refs/Log + clickable session UUIDs in evidence + Related Transcripts vector search.
+  - Session detail: terminal-styled transcripts (`> ai` / `> you` / `> tool`), full-jsonl scan when `?q=` is set so search hits found anywhere highlight properly.
+  - Stream Deck Nav mode: 5x3 hardware-mirror grid with mic + arrows + numbers, owns its own bezier + particles.
+  - Session-bridge: auto-detects Claude terminal via Win32 process-tree walk (no manual mapping). Strict, never auto-injects into unrelated shells. Per-workspace offset persistence so VS Code reload doesn't replay backlog.
+  - Daemon autostart Task Scheduler entry installed and verified (logon trigger + 5-min watchdog repeat with cheap /health probe short-circuit).
+  - PWA icons generated, off-site backup task script ready, whisper.cpp Release/ fallback path so audio uploads auto-resolve.
 - **Branch:** `master`. All work is on master, no feature branches.
 - **Local-first:** ollama with `qwen3:8b` is the LLM. No API keys required. Anthropic SDK installed, used only if `DEVNEURAL_LLM_PROVIDER=anthropic`.
 - **Daemon binds `0.0.0.0:3747` by default** so Tailscale routes in. `DEVNEURAL_BIND=127.0.0.1` reverts to local only.
