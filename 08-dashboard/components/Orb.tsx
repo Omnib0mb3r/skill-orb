@@ -5,11 +5,14 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { graph as fetchGraph, type GraphNode, type GraphEdge } from "@/lib/daemon-client";
+import type { OrbCanvasMethods } from "./OrbCanvas";
 
 /* react-force-graph-2d touches `window` at module load via its `force-graph`
- * dep (uses canvas + d3-force). Dynamic import with ssr:false is the only
- * way to keep `next build` (static export) from blowing up. */
-const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
+ * dep (uses canvas + d3-force). We dynamic-import a thin forwardRef wrapper
+ * (OrbCanvas) instead of the lib directly because Next.js `dynamic` shims
+ * the ref to expose only `{ retry }`. Our wrapper restores the real
+ * imperative API (zoomToFit, d3Force, centerAt). */
+const OrbCanvas = dynamic(() => import("./OrbCanvas"), {
   ssr: false,
   loading: () => <OrbSkeleton />,
 });
@@ -94,14 +97,10 @@ interface OrbProps {
   compact?: boolean;
 }
 
-interface FGHandle {
-  zoomToFit: (durationMs?: number, padding?: number) => void;
-}
-
 export function Orb({ compact = false }: OrbProps = {}) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const fgRef = useRef<FGHandle | null>(null);
+  const fgRef = useRef<OrbCanvasMethods | null>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const [hovered, setHovered] = useState<ForceNode | null>(null);
   const [pointer, setPointer] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -109,10 +108,12 @@ export function Orb({ compact = false }: OrbProps = {}) {
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
+    const measure = () => {
       const r = el.getBoundingClientRect();
       setSize({ w: Math.floor(r.width), h: Math.floor(r.height) });
-    });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -161,20 +162,73 @@ export function Orb({ compact = false }: OrbProps = {}) {
     setHovered(n ?? null);
   }, []);
 
-  /* Auto-frame the graph whenever the data set or container size changes.
-   * Without this the force layout stabilizes at whatever zoom the canvas
-   * happened to render at first paint, which is usually too zoomed in
-   * for a small embed and leaves nodes off-screen. zoomToFit re-centers
-   * with padding and is cheap because the layout is already converged. */
+  /* Tune d3-force so the layout looks good in every regime, especially the
+   * early-life "lots of nodes, no edges" case where d3's defaults push
+   * everything to the canvas perimeter.
+   *
+   * - charge: weaker repulsion than default (-30) so nodes don't fly apart.
+   * - center: keeps the cluster anchored at (0,0) which we then frame.
+   * - link: a soft default distance; once edges populate, the force-graph
+   *   default link strength still applies. */
+  const tuneForces = useCallback(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    try {
+      const charge = fg.d3Force("charge") as { strength?: (s: number) => unknown } | undefined;
+      if (charge && typeof charge.strength === "function") {
+        charge.strength(-60);
+      }
+      const center = fg.d3Force("center") as { strength?: (s: number) => unknown } | undefined;
+      if (center && typeof center.strength === "function") {
+        // Default centerForce in force-graph is fairly weak; bump so a fully
+        // disconnected node set still pulls toward the middle.
+        center.strength(0.05);
+      }
+      const link = fg.d3Force("link") as { distance?: (d: number) => unknown } | undefined;
+      if (link && typeof link.distance === "function") {
+        link.distance(36);
+      }
+    } catch {
+      // Force methods are best-effort. If the lib's API ever changes shape
+      // the layout still runs with defaults; the orb just frames less tightly.
+    }
+  }, []);
+
+  /* Frame the graph in the viewport. Called on a few staggered timers
+   * after data/size changes; once the user has interacted (panned or
+   * zoomed) we stop fighting them. */
+  const userInteractedRef = useRef(false);
+  const frame = useCallback(() => {
+    const fg = fgRef.current;
+    if (!fg || userInteractedRef.current) return;
+    const padding = compact ? 32 : 48;
+    try {
+      fg.zoomToFit(400, padding);
+    } catch {
+      // ignore: lib API drift would just leave the graph at default zoom.
+    }
+  }, [compact]);
+
   const nodeCount = q.data?.nodes.length ?? 0;
+  const edgeCount = q.data?.edges.length ?? 0;
+
+  // Re-tune forces and re-frame whenever the data set or container size
+  // changes. Staggered timers cover the layout's settle window: by 350ms
+  // the warm-up ticks have spread the cluster, by 1200ms it has fully
+  // converged. Reset the user-interaction flag on data/size change so a
+  // refetch reframes even after the user previously zoomed.
   useEffect(() => {
-    if (!fgRef.current || nodeCount === 0 || size.w === 0 || size.h === 0) return;
-    const padding = compact ? 24 : 40;
-    const t = setTimeout(() => {
-      fgRef.current?.zoomToFit(600, padding);
-    }, 200);
-    return () => clearTimeout(t);
-  }, [nodeCount, size.w, size.h, compact]);
+    if (nodeCount === 0 || size.w === 0 || size.h === 0) return;
+    userInteractedRef.current = false;
+    const t1 = setTimeout(tuneForces, 50);
+    const t2 = setTimeout(frame, 350);
+    const t3 = setTimeout(frame, 1200);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [nodeCount, edgeCount, size.w, size.h, tuneForces, frame]);
 
   const drawNode = useCallback(
     (raw: ForceNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -197,7 +251,7 @@ export function Orb({ compact = false }: OrbProps = {}) {
 
       // Labels appear once the user has zoomed in enough that they don't
       // overlap. globalScale is the d3-zoom k factor; threshold tuned by eye.
-      if (globalScale >= 1.6) {
+      if (globalScale >= 1.4) {
         const fontSize = Math.max(8, 10 / globalScale * 1.2);
         ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
         ctx.textAlign = "center";
@@ -215,6 +269,13 @@ export function Orb({ compact = false }: OrbProps = {}) {
     if (!el) return;
     const rect = el.getBoundingClientRect();
     setPointer({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  }, []);
+
+  // Real user-interaction signals. We listen on the container so we don't
+  // confuse our own programmatic zoomToFit transitions with a user gesture.
+  // Once flipped, the staggered re-frame timers stop fighting the user.
+  const markInteracted = useCallback(() => {
+    userInteractedRef.current = true;
   }, []);
 
   if (q.isLoading) return <OrbSkeleton />;
@@ -243,26 +304,31 @@ export function Orb({ compact = false }: OrbProps = {}) {
     );
   }
 
+  // Particles are an animated flourish along edges. With zero edges they
+  // cost nothing but also do nothing; we still gate them so the lib does
+  // not allocate per-frame particle bookkeeping it never uses. With many
+  // edges they remain on; weight controls density and speed.
+  const particlesEnabled = edgeCount > 0;
+
   return (
     <div
       ref={containerRef}
       className="relative h-full w-full overflow-hidden"
       onMouseMove={onMouseMove}
+      onWheel={markInteracted}
+      onMouseDown={markInteracted}
+      onTouchStart={markInteracted}
     >
       {size.w > 0 && size.h > 0 && (
         // The lib's NodeType generic is loose (`{ id?, x?, y? }`) so the
         // accessor callbacks would not type-check against our richer
         // ForceNode. Casts are localized to this prop set.
-        <ForceGraph2D
-          ref={fgRef as never}
+        <OrbCanvas
+          ref={fgRef}
           graphData={graphData as unknown as { nodes: object[]; links: object[] }}
           width={size.w}
           height={size.h}
-          onEngineStop={(() => {
-            if (fgRef.current) {
-              fgRef.current.zoomToFit(600, compact ? 24 : 40);
-            }
-          }) as never}
+          onEngineStop={frame as never}
           backgroundColor="rgba(0,0,0,0)"
           nodeRelSize={1}
           nodeId="id"
@@ -297,9 +363,12 @@ export function Orb({ compact = false }: OrbProps = {}) {
           /* Animated particles flowing along each edge. Density and speed
            * scale with weight so the eye follows the most active pathways.
            * Source-to-target direction comes from the cross-reference graph;
-           * particles visually convey "this insight points to that one." */
+           * particles visually convey "this insight points to that one."
+           * Disabled when there are no edges so the lib does not allocate
+           * per-frame bookkeeping for an empty edge set. */
           linkDirectionalParticles={
             ((l: object) => {
+              if (!particlesEnabled) return 0;
               const w = (l as ForceLink).weight ?? 0.5;
               return Math.max(1, Math.round(w * 4));
             }) as never
@@ -320,17 +389,20 @@ export function Orb({ compact = false }: OrbProps = {}) {
             ((l: object) =>
               edgeHeatColor(((l as ForceLink).weight ?? 0.5) * 1.0)) as never
           }
-          /* Long but finite cooldown so the orb keeps gentle drift without
-           * tripping force-graph internals that reject Infinity. d3-force
-           * tick is cheap relative to canvas redraw, so this costs ~nothing. */
-          cooldownTicks={100000}
-          d3AlphaDecay={0.005}
-          d3VelocityDecay={0.18}
-          warmupTicks={20}
+          /* Cooldown short enough that the layout settles, long enough that
+           * the warm-up ticks spread nodes from the origin before we frame
+           * them. force-graph internally caps to a finite number, so we keep
+           * this modest. */
+          cooldownTicks={200}
+          warmupTicks={40}
+          d3AlphaDecay={0.025}
+          d3VelocityDecay={0.3}
           onNodeClick={((n: object) => onNodeClick(n as ForceNode)) as never}
           onNodeHover={((n: object | null) => onNodeHover(n as ForceNode | null)) as never}
           enableNodeDrag={!compact}
           enablePointerInteraction={true}
+          minZoom={0.3}
+          maxZoom={6}
         />
       )}
 

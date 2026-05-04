@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { sessionDetail, focusSession } from "@/lib/daemon-client";
+import { sessionDetail } from "@/lib/daemon-client";
 import { projectFromSlug, relTime } from "@/lib/session-helpers";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
@@ -15,22 +14,10 @@ export function SessionDetail({ sessionId }: { sessionId: string }) {
     refetchInterval: 5_000,
     retry: false,
   });
-
-  /* Stream Deck behavior: tapping a tile = focusing the VSCode window for
-   * that session. The hardware deck does it via window-tree walk; the
-   * dashboard analog is POST /sessions/:id/focus which the bridge picks
-   * up and brings the matching window forward. Fire once per
-   * sessionId-visit so the user lands on the detail page AND the host
-   * machine's window comes to the front simultaneously. */
-  const focusedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (focusedRef.current === sessionId) return;
-    focusedRef.current = sessionId;
-    focusSession(sessionId).catch(() => {
-      /* Bridge may not be installed; non-fatal. The send-prompt path
-       * still works, and the focus failure is silent on purpose. */
-    });
-  }, [sessionId]);
+  /* Auto-focus on mount removed: it stole the OS focus on every page
+   * visit, and a multi-tab dashboard visitor would see their VSCode
+   * window flash repeatedly. Focus stays an explicit user action via
+   * the Stream Deck rail tile or the focus button in SendPromptForm. */
 
   if (q.isLoading) {
     return (
