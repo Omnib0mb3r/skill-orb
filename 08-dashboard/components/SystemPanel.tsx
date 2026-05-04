@@ -8,6 +8,7 @@ import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
 import { LogTail } from "./LogTail";
 import { DiagnosticsPanel } from "./DiagnosticsPanel";
+import { BackfillPanel } from "./BackfillPanel";
 
 function fmtBytes(bytes: number): string {
   if (!bytes) return "0";
@@ -208,6 +209,11 @@ export function SystemPanel() {
       {/* Brain diagnostics spans full width, between vitals and log tail */}
       <div className="col-span-3">
         <DiagnosticsPanel />
+      </div>
+
+      {/* One-time backfill of historical Claude transcripts */}
+      <div className="col-span-3">
+        <BackfillPanel />
       </div>
 
       {/* Daemon log tail spans full width */}

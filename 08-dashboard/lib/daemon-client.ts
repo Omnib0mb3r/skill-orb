@@ -174,6 +174,46 @@ export interface DiagnosticsResponse {
 }
 export const diagnostics = () => request<DiagnosticsResponse>("/dashboard/diagnostics");
 
+// ── backfill (admin) ────────────────────────────────────────────
+export interface BackfillVerification {
+  ok: boolean;
+  query_preview: string;
+  top_score: number;
+  threshold: number;
+  top_hit_preview: string;
+  generated_at: string;
+}
+export interface BackfillRunStatus {
+  mode: "raw" | "wiki";
+  running: boolean;
+  cancel_requested: boolean;
+  started_at: string | null;
+  completed_at: string | null;
+  files_total: number;
+  files_done: number;
+  files_skipped: number;
+  bytes_processed: number;
+  chunks_or_pages: number;
+  errors: number;
+  last_error: string | null;
+  current_file: string | null;
+  verification: BackfillVerification | null;
+}
+export interface BackfillStatusResponse {
+  ok: boolean;
+  raw: BackfillRunStatus;
+  wiki: BackfillRunStatus;
+}
+export const backfillStatus = () =>
+  request<BackfillStatusResponse>("/admin/backfill/status");
+export const backfillStart = (mode: "raw" | "wiki", reset = false) =>
+  request<{ ok: boolean; started?: boolean; already_running?: boolean }>(
+    `/admin/backfill/${mode}`,
+    { method: "POST", body: { reset } },
+  );
+export const backfillCancel = (mode: "raw" | "wiki") =>
+  request<{ ok: boolean }>(`/admin/backfill/${mode}/cancel`, { method: "POST" });
+
 // ── services ────────────────────────────────────────────────────
 export interface ServiceStatus {
   id: string;

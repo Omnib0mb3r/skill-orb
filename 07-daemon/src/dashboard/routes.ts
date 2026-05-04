@@ -23,6 +23,13 @@ import { setPhase, type SessionPhase } from './session-phase.js';
 import { lintQueueStatus } from '../wiki/lint-queue.js';
 import { providerStatus } from '../llm/index.js';
 import { embedderStats } from '../embedder/index.js';
+import {
+  runBackfillRaw,
+  runBackfillWiki,
+  getBackfillStatus,
+  requestBackfillCancel,
+  resetBackfill,
+} from '../wiki/backfill.js';
 import { getDailyBrief } from './daily-brief.js';
 import { searchAll } from './search-all.js';
 import {
@@ -476,6 +483,54 @@ export async function registerDashboardRoutes(
       return { ok: false, error: 'doc not found' };
     }
     return { ok: true, doc };
+  });
+
+  // ── Admin: one-time backfill of historical Claude transcripts ───
+  /* These endpoints are gated behind authMiddleware (registered above on
+   * preHandler). They kick off long-running in-process work and return
+   * immediately; clients poll /admin/backfill/status for progress. Single
+   * -flight per mode; calling start while one is running is a no-op. */
+  app.get('/admin/backfill/status', async () => ({
+    ok: true,
+    ...getBackfillStatus(),
+  }));
+
+  app.post('/admin/backfill/raw', async (req, reply) => {
+    const body = (req.body ?? {}) as { reset?: boolean };
+    if (body.reset) resetBackfill('raw');
+    const before = getBackfillStatus().raw;
+    if (before.running) {
+      return { ok: true, already_running: true, status: before };
+    }
+    void runBackfillRaw(store, log).catch((err) =>
+      log(`[backfill-raw] uncaught: ${(err as Error).message}`),
+    );
+    reply.code(202);
+    return { ok: true, started: true };
+  });
+
+  app.post('/admin/backfill/wiki', async (req, reply) => {
+    const body = (req.body ?? {}) as { reset?: boolean };
+    if (body.reset) resetBackfill('wiki');
+    const before = getBackfillStatus().wiki;
+    if (before.running) {
+      return { ok: true, already_running: true, status: before };
+    }
+    void runBackfillWiki(store, log).catch((err) =>
+      log(`[backfill-wiki] uncaught: ${(err as Error).message}`),
+    );
+    reply.code(202);
+    return { ok: true, started: true };
+  });
+
+  app.post('/admin/backfill/:mode/cancel', async (req, reply) => {
+    const mode = (req.params as { mode: string }).mode;
+    if (mode !== 'raw' && mode !== 'wiki') {
+      reply.code(400);
+      return { ok: false, error: 'mode must be raw or wiki' };
+    }
+    requestBackfillCancel(mode);
+    return { ok: true };
   });
 
   // Use the notification event bus to suppress unused-import lint

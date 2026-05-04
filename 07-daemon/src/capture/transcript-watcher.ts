@@ -157,7 +157,14 @@ async function processFile(
   file: string,
   store?: Store,
   log?: (msg: string) => void,
+  options: { fromOffset?: number } = {},
 ): Promise<ProcessResult> {
+  // Allow callers (backfill) to override the persisted offset and force a
+  // re-read from a specific byte. Default behavior reads incrementally.
+  if (options.fromOffset !== undefined) {
+    loadOffsets();
+    offsets[file] = options.fromOffset;
+  }
   const tail = await readTail(file);
   if (!tail) return { chunks: 0, bytes: 0 };
 
@@ -292,6 +299,24 @@ function detectKind(text: string, role: string): string {
   if (role === 'user') return 'user-prose';
   if (role === 'assistant') return 'assistant-prose';
   return 'meta';
+}
+
+/** Public re-export so backfill can drive the same parse + embed pipeline
+ * the live watcher uses, without duplicating extract / scrub / embed code. */
+export async function ingestTranscriptFile(
+  file: string,
+  store: Store,
+  log: (msg: string) => void = () => undefined,
+  options: { fromOffset?: number } = {},
+): Promise<ProcessResult> {
+  return processFile(file.replace(/\\/g, '/'), store, log, options);
+}
+
+/** Drop the persisted offset for a file so a future call re-reads it whole. */
+export function resetTranscriptOffset(file: string): void {
+  loadOffsets();
+  delete offsets[file.replace(/\\/g, '/')];
+  saveOffsets();
 }
 
 export interface TranscriptWatcher {
