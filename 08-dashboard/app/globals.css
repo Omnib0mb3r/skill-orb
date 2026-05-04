@@ -227,6 +227,21 @@ html, body {
 .text-nano  { font-family: var(--font-mono); font-size: var(--fs-11); letter-spacing: var(--ls-loose); text-transform: uppercase; }
 .text-micro { font-family: var(--font-sans); font-size: var(--fs-12); }
 
+/* sr-only — visually hidden but kept in the accessibility tree.
+ * Tailwind v4 doesn't ship this utility by default the way v3 did; defining
+ * locally so file inputs in upload modals stay keyboard-reachable. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
 /* Reduced-motion override. Audited 2026-05-03 against every @keyframes in
  * this file (breathe, shimmer, slidein, ingest) plus animate-pulse from
  * Tailwind. The universal selector covers every CSS animation and transition

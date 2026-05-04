@@ -59,6 +59,10 @@ export function UploadModal({ onClose, onUploaded }: Props) {
           </button>
         </div>
 
+        {/* The native input is the keyboard-accessible affordance. The
+         * surrounding div is a visual + drag target only; keyboard users
+         * tab to the input directly (it sits visually-hidden but still in
+         * the tab tree). */}
         <div
           onDragOver={(e) => {
             e.preventDefault();
@@ -67,7 +71,16 @@ export function UploadModal({ onClose, onUploaded }: Props) {
           onDragLeave={() => setDragActive(false)}
           onDrop={onDrop}
           onClick={() => inputRef.current?.click()}
-          className={`rounded-card border-2 border-dashed p-6 text-center cursor-pointer transition ${
+          role="button"
+          tabIndex={0}
+          aria-label="Choose a file or drop one here to upload"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              inputRef.current?.click();
+            }
+          }}
+          className={`rounded-card border-2 border-dashed p-6 text-center cursor-pointer transition focus:outline-none focus:ring-1 focus:ring-brand/60 ${
             dragActive ? "border-brand bg-brand/5" : "border-border1 bg-surface2"
           }`}
         >
@@ -90,7 +103,11 @@ export function UploadModal({ onClose, onUploaded }: Props) {
           <input
             ref={inputRef}
             type="file"
-            className="hidden"
+            aria-label="File to upload"
+            /* sr-only keeps it in the tab tree so keyboard users land on a
+             * real native file picker; clicking the surrounding card also
+             * triggers it. The visual affordance is the dropzone above. */
+            className="sr-only"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
         </div>
