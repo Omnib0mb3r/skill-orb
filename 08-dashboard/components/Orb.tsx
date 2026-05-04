@@ -618,49 +618,78 @@ export function Orb({ compact = false }: OrbProps = {}) {
             ((raw: object, ctx: CanvasRenderingContext2D, scale: number) =>
               drawNode(raw as ForceNode, ctx, scale)) as never
           }
-          linkColor={
-            ((l: object) => {
-              const link = l as ForceLink;
-              const src = link.source;
-              const tgt = link.target;
-              const hit = hovered && (
-                (typeof src === "object" && (src as ForceNode).id === hovered.id) ||
-                (typeof tgt === "object" && (tgt as ForceNode).id === hovered.id)
-              );
-              if (hit) return COLOR_EDGE_HOVER;
+          /* Custom edge renderer (mode: replace) so we control line
+           * width relative to zoom. The lib's default linkWidth is in
+           * graph units, which means zooming in 3x makes a 2px line a
+           * 6px line on screen — the "highlighter swipe" look the user
+           * called out. We divide by globalScale so the on-screen width
+           * stays constant at every zoom level. */
+          linkCanvasObjectMode={(() => "replace") as never}
+          linkCanvasObject={
+            ((raw: object, ctx: CanvasRenderingContext2D, globalScale: number) => {
+              const link = raw as ForceLink & {
+                source: ForceNode;
+                target: ForceNode;
+              };
+              if (
+                typeof link.source !== "object" ||
+                typeof link.target !== "object"
+              ) return;
+              const sx = link.source.x ?? 0;
+              const sy = link.source.y ?? 0;
+              const tx = link.target.x ?? 0;
+              const ty = link.target.y ?? 0;
+
               const w = link.weight ?? 0.5;
+              const srcId = link.source.id;
+              const tgtId = link.target.id;
+              const isHovered =
+                hovered != null &&
+                (srcId === hovered.id || tgtId === hovered.id);
+
+              // Curve via quadratic with a control point offset
+              // perpendicular to the chord. Same per-edge phase the
+              // linkCurvature accessor would use; replicating here so
+              // we own the geometry instead of guessing __controlPoints.
+              const phase = strHash(`${srcId}~${tgtId}`);
+              const sign = phase > 0.5 ? 1 : -1;
+              const curvature = sign * (0.05 + (1 - w) * 0.18);
+              const dx = tx - sx;
+              const dy = ty - sy;
+              const cx = (sx + tx) / 2 + -dy * curvature;
+              const cy = (sy + ty) / 2 + dx * curvature;
+
+              // Color: heat gradient with subtle alpha breathing.
               const base = edgeHeatColor(w);
-              // Subtle alpha breathing, phase-offset by edge endpoints so
-              // adjacent edges don't pulse in lockstep. The base rgba()
-              // already encodes alpha; multiply that channel by the ebb.
-              const srcId = typeof src === "object" ? (src as ForceNode).id : String(src);
-              const tgtId = typeof tgt === "object" ? (tgt as ForceNode).id : String(tgt);
-              const phase = strHash(`${srcId}->${tgtId}`);
-              const ebb = edgeBreathe(phase);
               const m = base.match(/^rgba\((\d+), (\d+), (\d+), ([0-9.]+)\)$/);
-              if (!m) return base;
-              const a = Math.max(0, Math.min(1, Number(m[4]) * ebb));
-              return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${a.toFixed(3)})`;
+              const ebb = edgeBreathe(strHash(`${srcId}->${tgtId}`));
+              const r = m ? m[1] : "150";
+              const g = m ? m[2] : "150";
+              const b = m ? m[3] : "200";
+              const baseAlpha = m ? Number(m[4]) : 0.5;
+              const stroke = isHovered
+                ? "rgba(240, 245, 255, 0.85)"
+                : `rgba(${r}, ${g}, ${b}, ${(baseAlpha * ebb).toFixed(3)})`;
+
+              // Width in screen pixels, divided back into graph units
+              // so the canvas transform doesn't blow it up. Cold edges
+              // 0.8 screen-px, hot edges 2.4 screen-px.
+              const screenPx = isHovered
+                ? 2.0
+                : 0.8 + Math.max(0, Math.min(1, w)) * 1.6;
+              ctx.lineWidth = screenPx / Math.max(0.0001, globalScale);
+              ctx.strokeStyle = stroke;
+              ctx.lineCap = "round";
+              ctx.beginPath();
+              ctx.moveTo(sx, sy);
+              ctx.quadraticCurveTo(cx, cy, tx, ty);
+              ctx.stroke();
             }) as never
           }
-          linkWidth={
-            ((l: object) => {
-              const w = (l as ForceLink).weight ?? 0.5;
-              // Cold edges 0.8px hairlines, hot edges 2.2px. The
-              // additive bloom underlay (linkCanvasObject) provides
-              // the warmth on top connections; main line stays thin
-              // so the graph reads as a network.
-              return 0.8 + Math.max(0, Math.min(1, w)) * 1.4;
-            }) as never
-          }
-          /* Curved edges (cubic bezier sag) instead of straight lines.
-           * Gives the orb the organic "branches reaching" feel of the
-           * v1 Three.js renderer. Curvature varies per-edge by hash so
-           * parallel edges between the same two nodes don't overlap.
-           * Magnitude scales with weight so hot edges stay closer to
-           * straight (legible primary connections); cold edges sag
-           * more, reading as secondary structure.
-           */
+          /* linkCurvature is also passed so the lib computes
+           * intersection points correctly for particle flow + arrow
+           * placement, even though our linkCanvasObject draws the
+           * actual stroke. */
           linkCurvature={
             ((l: object) => {
               const link = l as ForceLink;
