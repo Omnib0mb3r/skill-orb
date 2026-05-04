@@ -52,10 +52,44 @@ interface RawCursorFile {
   last_run_at: string | null;
 }
 
+/* Wiki cursor entry. Three shapes:
+ *   'done'                        - succeeded; never reprocessed
+ *   { attempts, last_error }      - transient failure (validation, parse,
+ *                                   transient ollama hiccup). Retried on
+ *                                   the next start until attempts hits
+ *                                   WIKI_MAX_ATTEMPTS, then abandoned.
+ *   'failed' (legacy string)      - written by the older single-shot
+ *                                   policy; treated as attempts=1 on load
+ *                                   so an old failure gets one retry. */
+type WikiFileStatus =
+  | 'done'
+  | 'failed'
+  | { attempts: number; last_error: string };
+
 interface WikiCursorFile {
-  /** Map of jsonl absolute path -> 'done' or 'failed'. */
-  files: Record<string, 'done' | 'failed'>;
+  files: Record<string, WikiFileStatus>;
   last_run_at: string | null;
+}
+
+const WIKI_MAX_ATTEMPTS = Number(process.env.DEVNEURAL_BACKFILL_WIKI_MAX_ATTEMPTS ?? 3);
+
+function isWikiDone(status: WikiFileStatus | undefined): boolean {
+  return status === 'done';
+}
+
+function shouldSkipWiki(status: WikiFileStatus | undefined): boolean {
+  if (status === 'done') return true;
+  if (typeof status === 'object' && status.attempts >= WIKI_MAX_ATTEMPTS) return true;
+  return false;
+}
+
+function bumpFailure(prev: WikiFileStatus | undefined, error: string): WikiFileStatus {
+  if (prev === 'done') return 'done';
+  if (prev === 'failed' || prev === undefined) {
+    // Legacy string 'failed' counts as one prior attempt.
+    return { attempts: (prev === 'failed' ? 1 : 0) + 1, last_error: error };
+  }
+  return { attempts: prev.attempts + 1, last_error: error };
 }
 
 export type BackfillMode = 'raw' | 'wiki';
@@ -147,7 +181,7 @@ function reconstructFromCursor(): Record<BackfillMode, BackfillRunStatus> {
         (v) => v === 'done',
       ).length;
       out.wiki.errors = Object.values(wikiCursor.files).filter(
-        (v) => v === 'failed',
+        (v) => v === 'failed' || (typeof v === 'object' && v.attempts >= WIKI_MAX_ATTEMPTS),
       ).length;
       out.wiki.completed_at = wikiCursor.last_run_at;
       out.wiki.started_at = wikiCursor.last_run_at;
@@ -543,8 +577,14 @@ export async function runBackfillWiki(
         break;
       }
       status.wiki.current_file = file;
-      if (cursor.files[file] === 'done') {
+      const prev = cursor.files[file];
+      if (shouldSkipWiki(prev)) {
         status.wiki.files_skipped += 1;
+        if (isWikiDone(prev)) {
+          // already-done; quiet
+        } else {
+          // capped retries; surface in errors total but don't retry
+        }
         continue;
       }
       try {
@@ -626,11 +666,21 @@ export async function runBackfillWiki(
           `[backfill-wiki] ${path.basename(file)} -> ${ingested} blobs, ${status.wiki.chunks_or_pages} pages so far`,
         );
       } catch (err) {
-        status.wiki.errors += 1;
-        status.wiki.last_error = (err as Error).message;
-        log(`[backfill-wiki] ${file} failed: ${status.wiki.last_error}`);
-        cursor.files[file] = 'failed';
+        const msg = (err as Error).message;
+        const next = bumpFailure(prev, msg);
+        cursor.files[file] = next;
         saveWikiCursor(cursor);
+        status.wiki.errors += 1;
+        status.wiki.last_error = msg;
+        if (typeof next === 'object' && next.attempts < WIKI_MAX_ATTEMPTS) {
+          log(
+            `[backfill-wiki] ${file} attempt ${next.attempts}/${WIKI_MAX_ATTEMPTS} failed: ${msg} (will retry next start)`,
+          );
+        } else {
+          log(
+            `[backfill-wiki] ${file} permanently abandoned after ${WIKI_MAX_ATTEMPTS} attempts: ${msg}`,
+          );
+        }
       }
     }
 

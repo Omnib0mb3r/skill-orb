@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { searchAll, type SearchHit } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
 
@@ -25,7 +26,38 @@ const SOURCE_COLORS: Record<SearchHit["source"], string> = {
   reference_chunk: "var(--c-promoted)",
 };
 
+/* Pull the most useful preview string out of a hit. raw_chunks store
+ * `text_preview` on the metadata record; wiki_pages and reference_chunks
+ * use the top-level preview the daemon returns. Falls back to title. */
+function hitPreview(r: SearchHit): string {
+  const meta = r.metadata ?? {};
+  const candidates = [
+    r.preview,
+    typeof meta.text_preview === "string" ? meta.text_preview : "",
+    typeof meta.summary === "string" ? meta.summary : "",
+    r.title ?? "",
+  ];
+  return candidates.find((c) => c.trim().length > 0) ?? "";
+}
+
+/* Resolve where clicking a hit should send the user. Transcript hits
+ * deep-link to /sessions/detail with a query param so the session view
+ * can highlight + jump between matches. Wiki and reference hits stay
+ * inline on /wiki for now. */
+function hitTarget(r: SearchHit, query: string): string | null {
+  if (r.source === "raw_chunk") {
+    const meta = r.metadata ?? {};
+    const sid = typeof meta.session_id === "string" ? meta.session_id : null;
+    if (!sid) return null;
+    const params = new URLSearchParams({ id: sid, q: query });
+    if (r.id) params.set("hit", r.id);
+    return `/sessions/detail?${params.toString()}`;
+  }
+  return null;
+}
+
 export function WikiSearch() {
+  const router = useRouter();
   const [q, setQ] = useState("");
   const [filters, setFilters] = useState<Set<CollectionId>>(
     new Set(COLLECTIONS.map((c) => c.id)),
@@ -55,6 +87,11 @@ export function WikiSearch() {
       else next.add(id);
       return next.size === 0 ? new Set([id]) : next;
     });
+  }
+
+  function openHit(r: SearchHit): void {
+    const target = hitTarget(r, q.trim());
+    if (target) router.push(target);
   }
 
   return (
@@ -110,32 +147,60 @@ export function WikiSearch() {
       )}
 
       <ul className="space-y-2">
-        {results.map((r, i) => (
-          <li
-            key={i}
-            className="rounded-card bg-surface1 hairline lift p-4 cursor-pointer"
-          >
-            <div className="flex items-center gap-2 mb-1.5">
-              <span
-                className="text-nano px-1.5 py-0.5 rounded-pill"
-                style={{ background: `${SOURCE_COLORS[r.source]}20`, color: SOURCE_COLORS[r.source] }}
-              >
-                {SOURCE_LABELS[r.source]}
-              </span>
-              {r.title && (
-                <span className="font-emphasized text-sm text-txt1 truncate">
-                  {r.title}
+        {results.map((r, i) => {
+          const target = hitTarget(r, q.trim());
+          const preview = hitPreview(r);
+          const clickable = target != null;
+          const handle = clickable ? () => openHit(r) : undefined;
+          return (
+            <li
+              key={i}
+              onClick={handle}
+              onKeyDown={
+                clickable
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openHit(r);
+                      }
+                    }
+                  : undefined
+              }
+              role={clickable ? "button" : undefined}
+              tabIndex={clickable ? 0 : undefined}
+              className={`rounded-card bg-surface1 hairline lift p-4 ${
+                clickable ? "cursor-pointer hover:ring-1 hover:ring-brand/40" : ""
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <span
+                  className="text-nano px-1.5 py-0.5 rounded-pill"
+                  style={{ background: `${SOURCE_COLORS[r.source]}20`, color: SOURCE_COLORS[r.source] }}
+                >
+                  {SOURCE_LABELS[r.source]}
                 </span>
+                {r.title && (
+                  <span className="font-emphasized text-sm text-txt1 truncate">
+                    {r.title}
+                  </span>
+                )}
+                {clickable && (
+                  <span className="text-nano text-txt3 ml-1">
+                    open session →
+                  </span>
+                )}
+                <span className="ml-auto text-nano text-txt3">
+                  score {r.score.toFixed(2)}
+                </span>
+              </div>
+              {preview && (
+                <p className="text-xs text-txt2 line-clamp-3 font-mono whitespace-pre-wrap">
+                  {preview}
+                </p>
               )}
-              <span className="ml-auto text-nano text-txt3">
-                score {r.score.toFixed(2)}
-              </span>
-            </div>
-            <p className="text-xs text-txt2 line-clamp-3 font-mono whitespace-pre-wrap">
-              {r.preview}
-            </p>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

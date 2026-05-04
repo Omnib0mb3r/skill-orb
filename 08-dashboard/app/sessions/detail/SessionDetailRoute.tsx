@@ -3,10 +3,12 @@
 import { useSearchParams } from "next/navigation";
 import { SessionDetail } from "@/components/SessionDetail";
 import { SendPromptForm } from "@/components/SendPromptForm";
+import { RelatedReferences } from "@/components/RelatedReferences";
 
 export function SessionDetailRoute() {
   const params = useSearchParams();
   const id = params.get("id") ?? "";
+  const q = params.get("q") ?? "";
 
   if (!id) {
     return (
@@ -18,11 +20,12 @@ export function SessionDetailRoute() {
 
   return (
     <div className="px-6 py-5 grid grid-cols-3 gap-5">
-      <div className="col-span-2">
-        <SessionDetail sessionId={id} />
+      <div className="col-span-2 space-y-5">
+        <SessionDetail sessionId={id} query={q} />
       </div>
-      <div className="col-span-1">
+      <div className="col-span-1 space-y-5">
         <SendPromptForm sessionId={id} />
+        {q && <RelatedReferences query={q} />}
       </div>
     </div>
   );

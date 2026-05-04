@@ -291,6 +291,12 @@ export interface SearchHit {
   url?: string;
   doc_id?: string;
   page_id?: string;
+  /** Full metadata from the underlying vector store record. For
+   * raw_chunk this carries session_id, project_id, role, kind, and
+   * text_preview - enough to deep-link from the Wiki search row to
+   * /sessions/detail with the original transcript turn highlighted. */
+  metadata?: Record<string, unknown>;
+  id?: string;
 }
 export const searchAll = (
   q: string,

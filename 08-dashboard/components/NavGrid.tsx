@@ -25,6 +25,16 @@ export interface NavGridProps {
   onClose: () => void;
 }
 
+type KeyIcon =
+  | "Mic"
+  | "X"
+  | "ArrowUp"
+  | "ArrowDown"
+  | "ArrowLeft"
+  | "ArrowRight"
+  | "CornerDownLeft"
+  | "Delete";
+
 interface KeyDef {
   /** Daemon key name; null = local-only (back / spacer). */
   key: NavKey | null;
@@ -33,8 +43,10 @@ interface KeyDef {
   tone: "red" | "orange" | "yellow" | "green" | "blue" | "slate" | "light" | "warn" | "empty";
   /** Optional aria-label override. */
   aria?: string;
-  /** Lucide icon name when label isn't a glyph. */
-  icon?: "Mic" | "X";
+  /** Lucide icon when the tile renders a glyph instead of text. Used
+   * for arrows + enter + backspace because not every font in the
+   * dashboard's stack carries those Unicode glyphs. */
+  icon?: KeyIcon;
 }
 
 const TONE: Record<KeyDef["tone"], string> = {
@@ -57,17 +69,17 @@ const KEYS: KeyDef[] = [
   { key: "4", label: "4", tone: "green"  },
   { key: "5", label: "5", tone: "blue"   },
   // Row 1: spacers, up, backspace, exit-nav
-  { key: null,        label: "",  tone: "empty" },
-  { key: null,        label: "",  tone: "empty" },
-  { key: "up",        label: "↑", tone: "slate", aria: "Up" },
-  { key: "backspace", label: "⌫", tone: "light", aria: "Backspace" },
-  { key: null,        label: "",  tone: "warn",  aria: "Exit nav mode", icon: "X" },
+  { key: null,        label: "", tone: "empty" },
+  { key: null,        label: "", tone: "empty" },
+  { key: "up",        label: "", tone: "slate", aria: "Up",        icon: "ArrowUp" },
+  { key: "backspace", label: "", tone: "light", aria: "Backspace", icon: "Delete" },
+  { key: null,        label: "", tone: "warn",  aria: "Exit nav mode", icon: "X" },
   // Row 2: mic, arrows, enter
-  { key: "mic",   label: "",  tone: "light", aria: "Dictation (Win+H)", icon: "Mic" },
-  { key: "left",  label: "←", tone: "slate", aria: "Left" },
-  { key: "down",  label: "↓", tone: "slate", aria: "Down" },
-  { key: "right", label: "→", tone: "slate", aria: "Right" },
-  { key: "enter", label: "↵", tone: "light", aria: "Enter" },
+  { key: "mic",   label: "", tone: "light", aria: "Dictation (Win+H)", icon: "Mic" },
+  { key: "left",  label: "", tone: "slate", aria: "Left",  icon: "ArrowLeft" },
+  { key: "down",  label: "", tone: "slate", aria: "Down",  icon: "ArrowDown" },
+  { key: "right", label: "", tone: "slate", aria: "Right", icon: "ArrowRight" },
+  { key: "enter", label: "", tone: "light", aria: "Enter", icon: "CornerDownLeft" },
 ];
 
 export function NavGrid({ sessionId, projectLabel, onClose }: NavGridProps) {
@@ -110,10 +122,8 @@ export function NavGrid({ sessionId, projectLabel, onClose }: NavGridProps) {
                 isEmpty ? "opacity-40 pointer-events-none" : "hover:brightness-110"
               } ${isExit ? "ring-1 ring-err/40" : ""}`}
             >
-              {def.icon === "Mic" ? (
-                <Icon name="Mic" size={16} />
-              ) : def.icon === "X" ? (
-                <Icon name="X" size={16} />
+              {def.icon ? (
+                <Icon name={def.icon} size={18} />
               ) : (
                 <span>{def.label}</span>
               )}
