@@ -88,10 +88,10 @@
 - [x] `audio.ts` and `video.ts` implementations shipped, fall back gracefully when binaries are missing
 - [x] `process.ts` kind detection extended for mp3/wav/m4a/ogg/flac/mp4/mov/mkv/webm/avi/wmv
 - [x] Missing-binary case parks the upload as `queued` and emits a warn-level notification (does not fail the upload)
-- [ ] `whisper.cpp` cloned + built on `OTLCDEV` per `docs/install/AUDIO-VIDEO.md`
-- [ ] `Gyan.FFmpeg` installed on `OTLCDEV`
-- [ ] `DEVNEURAL_WHISPER_BIN` set to the actual binary path (or whisper-cli on PATH)
-- [ ] Test: upload an mp3 to `/upload`, see "transcript extracted: N chars" in `daemon.log`
+- [x] `whisper.cpp` cloned + built on `OTLCDEV`. Binary at `C:/dev/whisper.cpp/Release/whisper-cli.exe`, `ggml-base.en.bin` model alongside in `models/`. `audio.ts` fallback list updated to include the `Release/` sibling pattern (older prebuilt zips don't drop into `build/bin/Release/`).
+- [x] `Gyan.FFmpeg` installed on `OTLCDEV` via winget; `ffmpeg.exe` resolves on PATH.
+- [ ] `DEVNEURAL_WHISPER_BIN` env var: not strictly required now that the fallback list covers the actual install path. Set if you ever move the binary.
+- [ ] Test: upload an mp3 to `/upload`, see "transcript extracted: N chars" in `daemon.log` (run after next daemon restart so the new fallback path is loaded).
 
 ## J. PWA
 

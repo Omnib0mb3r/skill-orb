@@ -30,10 +30,15 @@ export interface AudioExtractOpts {
 }
 
 const FALLBACK_BINS = [
+  // Per docs/install/AUDIO-VIDEO.md the recommended cmake build lands
+  // here. Older / unzipped prebuilt drops the binary in a Release/
+  // sibling at the repo root, which we also handle as a fallback.
   'C:/dev/whisper.cpp/build/bin/Release/whisper-cli.exe',
   'C:/dev/whisper.cpp/build/bin/whisper-cli.exe',
   'C:/dev/whisper.cpp/build/bin/Release/main.exe',
   'C:/dev/whisper.cpp/build/bin/main.exe',
+  'C:/dev/whisper.cpp/Release/whisper-cli.exe',
+  'C:/dev/whisper.cpp/Release/main.exe',
   'C:/dev/whisper.cpp/main.exe',
   'C:/dev/whisper.cpp/whisper-cli.exe',
 ];
