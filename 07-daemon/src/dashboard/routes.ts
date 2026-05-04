@@ -32,6 +32,7 @@ import {
   requestBackfillCancel,
   resetBackfill,
 } from '../wiki/backfill.js';
+import { repairWikiCrossRefs } from '../wiki/repair.js';
 import { getDailyBrief } from './daily-brief.js';
 import { searchAll } from './search-all.js';
 import {
@@ -541,6 +542,15 @@ export async function registerDashboardRoutes(
     );
     reply.code(202);
     return { ok: true, started: true };
+  });
+
+  /* One-shot cleanup of existing wiki pages on disk. Re-renders every
+   * page through the current schema so historical qwen3 ./.md.md drift
+   * gets normalised to ./id.md. Idempotent. Safe to run while a wiki
+   * backfill is in flight. */
+  app.post('/admin/repair/wiki-cross-refs', async () => {
+    const r = repairWikiCrossRefs(log);
+    return { ok: true, ...r };
   });
 
   app.post('/admin/backfill/:mode/cancel', async (req, reply) => {
