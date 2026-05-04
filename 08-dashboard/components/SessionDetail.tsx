@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { sessionDetail } from "@/lib/daemon-client";
+import { sessionDetail, focusSession } from "@/lib/daemon-client";
 import { projectFromSlug, relTime } from "@/lib/session-helpers";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
@@ -11,7 +13,24 @@ export function SessionDetail({ sessionId }: { sessionId: string }) {
     queryKey: ["session", sessionId],
     queryFn: () => sessionDetail(sessionId),
     refetchInterval: 5_000,
+    retry: false,
   });
+
+  /* Stream Deck behavior: tapping a tile = focusing the VSCode window for
+   * that session. The hardware deck does it via window-tree walk; the
+   * dashboard analog is POST /sessions/:id/focus which the bridge picks
+   * up and brings the matching window forward. Fire once per
+   * sessionId-visit so the user lands on the detail page AND the host
+   * machine's window comes to the front simultaneously. */
+  const focusedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (focusedRef.current === sessionId) return;
+    focusedRef.current = sessionId;
+    focusSession(sessionId).catch(() => {
+      /* Bridge may not be installed; non-fatal. The send-prompt path
+       * still works, and the focus failure is silent on purpose. */
+    });
+  }, [sessionId]);
 
   if (q.isLoading) {
     return (
@@ -22,10 +41,32 @@ export function SessionDetail({ sessionId }: { sessionId: string }) {
       </div>
     );
   }
-  if (!q.data?.ok) {
+  if (q.isError || !q.data?.ok) {
+    /* Common case: tile pointed at a session whose Claude process ended
+     * between rail render and click. Daemon's listSessions only sees
+     * jsonl files on disk, so a finished session 404s here. Tell the
+     * user that instead of "session not found or daemon unreachable"
+     * which suggests something is broken. */
     return (
-      <div className="rounded-panel bg-surface1 hairline p-6 text-sm text-err">
-        Session not found or daemon unreachable.
+      <div className="rounded-panel bg-surface1 hairline p-6 space-y-3">
+        <div className="flex items-center gap-2 text-amber-400">
+          <Icon name="AlertCircle" size={18} />
+          <h3 className="font-display text-md font-emphasized">Session ended</h3>
+        </div>
+        <p className="text-sm text-txt3">
+          The Claude session{" "}
+          <code className="font-mono text-txt2">{sessionId.slice(0, 8)}</code>{" "}
+          is no longer running. The transcript file may have been rotated, or
+          the process exited between when the rail rendered and when you
+          tapped. Pick a live tile from the rail, or open a new session in
+          VS Code on OTLCDEV.
+        </p>
+        <Link
+          href="/sessions"
+          className="inline-flex items-center gap-1.5 text-xs text-brandSoft hover:underline"
+        >
+          <Icon name="ArrowLeft" size={14} /> See all sessions
+        </Link>
       </div>
     );
   }
