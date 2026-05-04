@@ -31,7 +31,7 @@ export function CommandPalette() {
     mutationFn: (text: string) => searchAll(text, { top_k: 8 }),
   });
 
-  // Cmd-K / Ctrl-K toggle
+  // Cmd-K / Ctrl-K toggle, plus listen for the global TopBar search trigger
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -41,8 +41,15 @@ export function CommandPalette() {
         setOpen(false);
       }
     }
+    function onOpen() {
+      setOpen(true);
+    }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("open-cmdk", onOpen as EventListener);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("open-cmdk", onOpen as EventListener);
+    };
   }, [open]);
 
   // focus on open
@@ -99,6 +106,29 @@ export function CommandPalette() {
 
   const searchHits = (searchM.data?.results ?? []).slice(0, 6);
 
+  function openHit(hit: { source: string; url?: string; doc_id?: string; page_id?: string }): void {
+    /* Pick the best route per hit source:
+     *  - hits with an explicit url take precedence
+     *  - wiki_page → /wiki?page=<id> so the wiki tab can scroll/highlight
+     *  - reference_chunk → /wiki?ref=<doc_id> (reference docs live in the
+     *    wiki tab today; no dedicated /reference route yet)
+     *  - raw_chunk has no stable navigable target, so we fall back to
+     *    /wiki and pre-fill the search query */
+    if (hit.url) {
+      router.push(hit.url);
+      return;
+    }
+    if (hit.source === "wiki_page" && hit.page_id) {
+      router.push(`/wiki?page=${encodeURIComponent(hit.page_id)}`);
+      return;
+    }
+    if (hit.source === "reference_chunk" && hit.doc_id) {
+      router.push(`/wiki?ref=${encodeURIComponent(hit.doc_id)}`);
+      return;
+    }
+    router.push(`/wiki?q=${encodeURIComponent(q.trim())}`);
+  }
+
   function executeActive() {
     if (active < items.length) {
       items[active].run();
@@ -107,8 +137,7 @@ export function CommandPalette() {
       const idx = active - items.length;
       const hit = searchHits[idx];
       if (hit) {
-        // Take user to /wiki and (TODO) open the result. For now go to wiki.
-        router.push("/wiki");
+        openHit(hit);
         setOpen(false);
       }
     }
@@ -198,7 +227,7 @@ export function CommandPalette() {
                     type="button"
                     onMouseEnter={() => setActive(idx)}
                     onClick={() => {
-                      router.push("/wiki");
+                      openHit(h);
                       setOpen(false);
                     }}
                     className={`w-full flex flex-col gap-0.5 px-4 py-2 text-left ${

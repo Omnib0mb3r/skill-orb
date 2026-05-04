@@ -20,6 +20,9 @@ import {
   queueSessionFocus,
 } from './sessions.js';
 import { setPhase, type SessionPhase } from './session-phase.js';
+import { lintQueueStatus } from '../wiki/lint-queue.js';
+import { providerStatus } from '../llm/index.js';
+import { embedderStats } from '../embedder/index.js';
 import { getDailyBrief } from './daily-brief.js';
 import { searchAll } from './search-all.js';
 import {
@@ -52,7 +55,7 @@ export async function registerDashboardRoutes(
   store: Store,
   log: (msg: string) => void = () => undefined,
 ): Promise<void> {
-  const referenceStore = await ReferenceStore.open();
+  const referenceStore = await ReferenceStore.open(log);
   // Auth middleware on every request before route handlers
   app.addHook('preHandler', (req, reply, done) => {
     authMiddleware(req, reply, done);
@@ -81,6 +84,38 @@ export async function registerDashboardRoutes(
 
   app.get('/dashboard/system-metrics', async () => {
     return getSystemMetrics();
+  });
+
+  /* Consolidated diagnostics: store sizes, lint queue, provider, embedder
+   * stats, active session counts. Polled by the System tab (~8s) so we
+   * surface the brain's actual state, not just host vitals. Cheap: every
+   * field is in-memory or a single fs.statSync. */
+  app.get('/dashboard/diagnostics', async () => {
+    const sessions = listSessions();
+    const active = sessions.filter((s) => s.active);
+    const byPhase: Record<string, number> = {
+      thinking: 0, tool: 0, permission: 0, idle: 0, unknown: 0,
+    };
+    for (const s of active) {
+      byPhase[s.phase] = (byPhase[s.phase] ?? 0) + 1;
+    }
+    return {
+      ok: true,
+      store: {
+        raw_chunks: store.rawChunks.stats(),
+        wiki_pages: store.wikiPages.stats(),
+        reference_chunks: referenceStore.chunks.stats(),
+      },
+      lint_queue: lintQueueStatus(),
+      llm: providerStatus(),
+      embedder: embedderStats(),
+      sessions: {
+        total: sessions.length,
+        active: active.length,
+        by_phase: byPhase,
+      },
+      generated_at: new Date().toISOString(),
+    };
   });
 
   /* Daemon log tail. Reads the last ~64KB of daemon.log and returns the

@@ -14,8 +14,15 @@
  *   <dir>/<name>.meta.jsonl  one JSON line per vector with metadata
  *   <dir>/<name>.head.json   header: dim, count, version
  *
- * On open we mmap the .vec file (or just read it once) and load the
- * jsonl metadata into memory.
+ * Durability:
+ *   - flush() writes .vec and .head.json atomically (.tmp + fsync + rename).
+ *     Daemon kill mid-flush leaves either the previous good copy or the
+ *     fully-written new copy, never a half file.
+ *   - add() appends to .meta.jsonl synchronously for between-flush durability.
+ *     Last line may be partial after a kill; loader tolerates that.
+ *   - On load mismatch (vectors != metadata) we truncate to the shorter side
+ *     and log a warning instead of throwing, so the daemon recovers without
+ *     manual quarantine. The discarded surplus is reset by the next flush.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -46,12 +53,16 @@ interface CollectionHeader {
   name: string;
 }
 
+type LogFn = (msg: string) => void;
+const noopLog: LogFn = () => undefined;
+
 export class VectorStore<M = Record<string, unknown>> {
   private vectors: Float32Array[] = [];
   private metadata: M[] = [];
   private ids: string[] = [];
   private idToIndex = new Map<string, number>();
   private dirty = false;
+  private log: LogFn = noopLog;
 
   private constructor(
     private readonly dir: string,
@@ -63,9 +74,11 @@ export class VectorStore<M = Record<string, unknown>> {
     dir: string,
     name: string,
     dim: number,
+    log: LogFn = noopLog,
   ): Promise<VectorStore<M>> {
     ensureDir(dir);
     const store = new VectorStore<M>(dir, name, dim);
+    store.log = log;
     await store.load();
     return store;
   }
@@ -84,11 +97,21 @@ export class VectorStore<M = Record<string, unknown>> {
     const head = this.headFile();
     if (!fs.existsSync(head)) {
       this.writeHeader(0);
+      this.log(`[vector-store] ${this.name} initialized empty (dim=${this.dim})`);
       return;
     }
-    const parsed = JSON.parse(
-      fs.readFileSync(head, 'utf-8'),
-    ) as CollectionHeader;
+
+    let parsed: CollectionHeader;
+    try {
+      parsed = JSON.parse(fs.readFileSync(head, 'utf-8')) as CollectionHeader;
+    } catch (err) {
+      this.log(
+        `[vector-store] ${this.name} header unreadable (${(err as Error).message}); reinitializing`,
+      );
+      this.writeHeader(0);
+      return;
+    }
+
     if (parsed.dim !== this.dim) {
       throw new Error(
         `vector store ${this.name} dim ${parsed.dim} does not match expected ${this.dim}`,
@@ -98,7 +121,7 @@ export class VectorStore<M = Record<string, unknown>> {
     if (fs.existsSync(this.vecFile())) {
       const buf = fs.readFileSync(this.vecFile());
       const dim = this.dim;
-      const total = buf.length / 4 / dim;
+      const total = Math.floor(buf.length / 4 / dim);
       for (let i = 0; i < total; i++) {
         const slice = new Float32Array(
           buf.buffer,
@@ -117,21 +140,42 @@ export class VectorStore<M = Record<string, unknown>> {
       for (const line of lines) {
         try {
           const parsedLine = JSON.parse(line) as { id: string; m: M };
+          if (typeof parsedLine?.id !== 'string') continue;
           const idx = this.ids.length;
           this.ids.push(parsedLine.id);
           this.idToIndex.set(parsedLine.id, idx);
           this.metadata.push(parsedLine.m);
         } catch {
-          /* skip bad line */
+          /* skip bad/partial line — common after kill mid-append */
         }
       }
     }
 
     if (this.metadata.length !== this.vectors.length) {
-      throw new Error(
-        `vector store ${this.name} corrupt: ${this.vectors.length} vectors, ${this.metadata.length} metadata`,
+      const target = Math.min(this.metadata.length, this.vectors.length);
+      this.log(
+        `[vector-store] ${this.name} mismatch: ${this.vectors.length} vectors, ${this.metadata.length} metadata; truncating to ${target} and rewriting on next flush`,
       );
+      // Truncate both to the shorter side; mark dirty so the next flush
+      // produces a consistent, atomic rewrite. Index/ids must be rebuilt to
+      // match the truncated metadata.
+      this.vectors.length = target;
+      this.metadata.length = target;
+      this.ids.length = target;
+      this.idToIndex.clear();
+      for (let i = 0; i < target; i++) {
+        const id = this.ids[i];
+        if (id) this.idToIndex.set(id, i);
+      }
+      this.dirty = true;
+      // Trigger a synchronous rewrite of the meta sidecar so we never
+      // re-encounter this same surplus on the next start.
+      this.rewriteMetaSync();
     }
+
+    this.log(
+      `[vector-store] ${this.name} loaded: ${this.vectors.length} vectors`,
+    );
   }
 
   private writeHeader(count: number): void {
@@ -141,7 +185,20 @@ export class VectorStore<M = Record<string, unknown>> {
       count,
       name: this.name,
     };
-    fs.writeFileSync(this.headFile(), JSON.stringify(header), 'utf-8');
+    writeFileAtomicSync(this.headFile(), JSON.stringify(header), 'utf-8');
+  }
+
+  /** Synchronously rewrite the .meta.jsonl sidecar from in-memory state.
+   * Used during recovery to re-truncate after a mismatch repair. */
+  private rewriteMetaSync(): void {
+    const lines: string[] = [];
+    for (let i = 0; i < this.ids.length; i++) {
+      const id = this.ids[i];
+      if (!id) continue;
+      lines.push(JSON.stringify({ id, m: this.metadata[i] }));
+    }
+    const body = lines.length ? lines.join('\n') + '\n' : '';
+    writeFileAtomicSync(this.metaFile(), body, 'utf-8');
   }
 
   async add(record: VectorRecord<M>): Promise<void> {
@@ -168,7 +225,9 @@ export class VectorStore<M = Record<string, unknown>> {
     }
     this.dirty = true;
 
-    // Append to metaFile for durability; rewrite vec file on flush.
+    // Append to metaFile for durability between flushes; rewrite atomically
+    // on flush. A kill mid-append may leave a partial trailing line, which
+    // the loader tolerates by skipping unparseable lines.
     fs.appendFileSync(
       this.metaFile(),
       JSON.stringify({ id: record.id, m: record.metadata }) + '\n',
@@ -177,9 +236,10 @@ export class VectorStore<M = Record<string, unknown>> {
   }
 
   /**
-   * Persist the in-memory vectors to .vec and rewrite the header.
-   * Call on shutdown or periodically. Metadata is already durable
-   * (append-only jsonl).
+   * Persist the in-memory vectors to .vec and rewrite the header
+   * atomically. Also rewrites .meta.jsonl atomically so the sidecar
+   * stays in lockstep with the binary blob (no orphan tail lines).
+   * Call on shutdown or periodically.
    */
   async flush(): Promise<void> {
     if (!this.dirty && fs.existsSync(this.vecFile())) return;
@@ -190,13 +250,51 @@ export class VectorStore<M = Record<string, unknown>> {
       if (!src) continue;
       Buffer.from(src.buffer, src.byteOffset, dim * 4).copy(buf, i * dim * 4);
     }
-    fs.writeFileSync(this.vecFile(), buf);
+    const t0 = Date.now();
+    writeFileAtomicSync(this.vecFile(), buf);
+    this.rewriteMetaSync();
     this.writeHeader(this.vectors.length);
     this.dirty = false;
+    this.log(
+      `[vector-store] ${this.name} flushed ${this.vectors.length} vectors (${buf.length} bytes) in ${Date.now() - t0}ms`,
+    );
   }
 
   size(): number {
     return this.vectors.length;
+  }
+
+  /** Diagnostic snapshot for /system. */
+  stats(): {
+    name: string;
+    dim: number;
+    count: number;
+    dirty: boolean;
+    vec_bytes: number;
+    meta_bytes: number;
+  } {
+    let vec = 0;
+    let meta = 0;
+    try {
+      vec = fs.existsSync(this.vecFile()) ? fs.statSync(this.vecFile()).size : 0;
+    } catch {
+      vec = 0;
+    }
+    try {
+      meta = fs.existsSync(this.metaFile())
+        ? fs.statSync(this.metaFile()).size
+        : 0;
+    } catch {
+      meta = 0;
+    }
+    return {
+      name: this.name,
+      dim: this.dim,
+      count: this.vectors.length,
+      dirty: this.dirty,
+      vec_bytes: vec,
+      meta_bytes: meta,
+    };
   }
 
   search(
@@ -252,4 +350,32 @@ export class VectorStore<M = Record<string, unknown>> {
       yield { id: this.ids[i] ?? '', metadata: this.metadata[i] as M };
     }
   }
+}
+
+/** Atomic write: tmp file in the same dir + fsync + rename. Same dir is
+ * required so rename stays a single atomic syscall on Windows + POSIX. */
+function writeFileAtomicSync(
+  target: string,
+  data: string | Buffer,
+  encoding?: BufferEncoding,
+): void {
+  const dir = path.posix.dirname(target);
+  const base = path.posix.basename(target);
+  const tmp = path.posix.join(dir, `.${base}.${process.pid}.${Date.now()}.tmp`);
+  const fd = fs.openSync(tmp, 'w');
+  try {
+    if (typeof data === 'string') {
+      fs.writeSync(fd, data, 0, encoding ?? 'utf-8');
+    } else {
+      fs.writeSync(fd, data, 0, data.length, 0);
+    }
+    try {
+      fs.fsyncSync(fd);
+    } catch {
+      /* fsync best-effort; some filesystems on Windows reject fsync on tmp */
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tmp, target);
 }

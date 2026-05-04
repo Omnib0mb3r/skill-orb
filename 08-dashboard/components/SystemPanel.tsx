@@ -7,6 +7,7 @@ import { systemMetrics, services as servicesClient } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
 import { LogTail } from "./LogTail";
+import { DiagnosticsPanel } from "./DiagnosticsPanel";
 
 function fmtBytes(bytes: number): string {
   if (!bytes) return "0";
@@ -202,6 +203,11 @@ export function SystemPanel() {
             ))}
           </ul>
         </section>
+      </div>
+
+      {/* Brain diagnostics spans full width, between vitals and log tail */}
+      <div className="col-span-3">
+        <DiagnosticsPanel />
       </div>
 
       {/* Daemon log tail spans full width */}

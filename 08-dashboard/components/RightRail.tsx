@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   reminders as remindersClient,
@@ -9,8 +10,12 @@ import {
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
 
+type ActivityFilter = "all" | "info" | "warn" | "alert";
+const FILTER_CYCLE: ActivityFilter[] = ["all", "info", "warn", "alert"];
+
 export function RightRail() {
   const qc = useQueryClient();
+  const [filter, setFilter] = useState<ActivityFilter>("all");
   const remQ = useQuery({
     queryKey: ["reminders"],
     queryFn: remindersClient,
@@ -30,7 +35,16 @@ export function RightRail() {
   const openReminders = (remQ.data?.reminders ?? []).filter(
     (r) => !r.completed_at && !r.archived_at,
   );
-  const events = (notQ.data?.notifications ?? []).filter((n) => !n.dismissed_at).slice(0, 12);
+  const allEvents = (notQ.data?.notifications ?? []).filter((n) => !n.dismissed_at);
+  const events = (filter === "all"
+    ? allEvents
+    : allEvents.filter((n) => n.severity === filter)
+  ).slice(0, 12);
+
+  function cycleFilter(): void {
+    const idx = FILTER_CYCLE.indexOf(filter);
+    setFilter(FILTER_CYCLE[(idx + 1) % FILTER_CYCLE.length] ?? "all");
+  }
 
   return (
     <aside className="w-80 flex-shrink-0 flex flex-col gap-4 p-4 hairline-soft border-l border-border2 overflow-y-auto">
@@ -82,16 +96,21 @@ export function RightRail() {
             <h2 className="font-display text-sm font-emphasized">Live activity</h2>
           </div>
           <button
+            type="button"
+            onClick={cycleFilter}
             className="text-[11px] font-mono text-txt3 hover:text-txt1 flex items-center gap-1"
-            aria-label="Filter activity"
+            aria-label={`Filter activity (current: ${filter}). Click to cycle.`}
+            title="Click to cycle: all → info → warn → alert"
           >
-            <Icon name="Filter" size={12} /> all
+            <Icon name="Filter" size={12} /> {filter}
           </button>
         </div>
         <ul className="divide-y divide-border2">
           {events.length === 0 && (
             <li className="px-4 py-3 text-xs text-txt3 feed-item">
-              Nothing moving right now.
+              {filter === "all"
+                ? "Nothing moving right now."
+                : `No ${filter} events recently.`}
             </li>
           )}
           {events.map((n) => {

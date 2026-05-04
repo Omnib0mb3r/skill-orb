@@ -45,13 +45,14 @@ export class ReferenceStore {
     this.migrate();
   }
 
-  static async open(): Promise<ReferenceStore> {
+  static async open(log: (msg: string) => void = () => undefined): Promise<ReferenceStore> {
     const dim = getEmbedDim();
     const collectionsDir = path.posix.join(DATA_ROOT, 'chroma', 'collections');
     const chunks = await VectorStore.open<ReferenceChunkMetadata>(
       path.posix.join(collectionsDir, 'reference_chunks'),
       'reference_chunks',
       dim,
+      log,
     );
     const db = new Database(path.posix.join(DATA_ROOT, 'index.db'));
     db.pragma('journal_mode = WAL');

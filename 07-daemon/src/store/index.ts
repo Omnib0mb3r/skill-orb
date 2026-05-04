@@ -32,20 +32,23 @@ export class Store {
     public readonly db: IndexDb,
   ) {}
 
-  static async open(): Promise<Store> {
+  static async open(log: (msg: string) => void = () => undefined): Promise<Store> {
     const collectionsDir = path.posix.join(DATA_ROOT, 'chroma', 'collections');
     const dim = getEmbedDim();
     const rawChunks = await VectorStore.open<RawChunkMetadata>(
       path.posix.join(collectionsDir, 'raw_chunks'),
       'raw_chunks',
       dim,
+      log,
     );
     const wikiPages = await VectorStore.open<WikiPageMetadata>(
       path.posix.join(collectionsDir, 'wiki_pages'),
       'wiki_pages',
       dim,
+      log,
     );
     const db = new IndexDb();
+    log(`[store] opened: raw_chunks=${rawChunks.size()} wiki_pages=${wikiPages.size()} dim=${dim}`);
     return new Store(rawChunks, wikiPages, db);
   }
 

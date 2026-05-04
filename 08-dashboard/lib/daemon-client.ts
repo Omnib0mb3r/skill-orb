@@ -124,6 +124,56 @@ export const logTail = (n = 200, filter = "") =>
     `/dashboard/log-tail?n=${n}${filter ? `&filter=${encodeURIComponent(filter)}` : ""}`,
   );
 
+export interface CollectionStats {
+  name: string;
+  dim: number;
+  count: number;
+  dirty: boolean;
+  vec_bytes: number;
+  meta_bytes: number;
+}
+export interface DiagnosticsResponse {
+  ok: boolean;
+  store: {
+    raw_chunks: CollectionStats;
+    wiki_pages: CollectionStats;
+    reference_chunks: CollectionStats;
+  };
+  lint_queue: {
+    ready: boolean;
+    running: boolean;
+    pending: boolean;
+    last_run_at: string | null;
+    debounce_ms: number;
+    pending_reasons: string[];
+  };
+  llm: {
+    name: string;
+    configured: boolean;
+    hint: string;
+    models: { ingest: string; lint: string; reconcile: string; selfQuery: string };
+  } | null;
+  embedder: {
+    model: string;
+    dim: number;
+    warmed_at: string | null;
+    warm_ms: number | null;
+    embed_calls: number;
+    embed_items: number;
+    total_embed_ms: number;
+    last_batch_size: number;
+    last_batch_ms: number;
+    last_error: string | null;
+  };
+  sessions: {
+    total: number;
+    active: number;
+    by_phase: Record<string, number>;
+  };
+  generated_at: string;
+}
+export const diagnostics = () => request<DiagnosticsResponse>("/dashboard/diagnostics");
+
 // ── services ────────────────────────────────────────────────────
 export interface ServiceStatus {
   id: string;

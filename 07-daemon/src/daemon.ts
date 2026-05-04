@@ -17,7 +17,7 @@ import { startTranscriptWatcher } from './capture/transcript-watcher.js';
 import { startFsWatcher } from './capture/fs-watcher.js';
 import { startGitWatcher } from './capture/git-watcher.js';
 import { Store } from './store/index.js';
-import { embedOne, warmUp, getEmbedDim, getModelId } from './embedder/index.js';
+import { embedOne, warmUp, getEmbedDim, getModelId, setEmbedderLogger, embedderStats } from './embedder/index.js';
 import { ensureWiki } from './wiki/scaffolding.js';
 import { runSeed, hasSeeded } from './corpus/seed.js';
 import { runIngest } from './wiki/ingest.js';
@@ -60,8 +60,9 @@ async function main(): Promise<void> {
   writePid(process.pid);
   logger(`daemon starting; pid=${process.pid}`);
 
+  setEmbedderLogger(logger);
   logger('opening store...');
-  const store = await Store.open();
+  const store = await Store.open(logger);
   logger(
     `store open: raw_chunks=${store.rawChunks.size()} wiki_pages=${store.wikiPages.size()} embedder=${getModelId()} dim=${getEmbedDim()}`,
   );
@@ -174,6 +175,39 @@ async function main(): Promise<void> {
     });
   }
 
+  /* Per-request observability. Logs slow requests (>500ms) and any 5xx
+   * with method/path/status/duration so we can correlate dashboard
+   * misbehavior to specific endpoints in the /system log tail. Hot
+   * polling endpoints (system-metrics, sessions, health) are excluded
+   * from the slow-request threshold to avoid log spam. */
+  const SILENT_PATHS = new Set([
+    '/health',
+    '/dashboard/health',
+    '/dashboard/system-metrics',
+    '/dashboard/diagnostics',
+    '/dashboard/log-tail',
+    '/services',
+    '/sessions',
+    '/notifications',
+    '/reminders',
+  ]);
+  const reqStart = new WeakMap<object, number>();
+  app.addHook('onRequest', (req, _reply, done) => {
+    reqStart.set(req as unknown as object, Date.now());
+    done();
+  });
+  app.addHook('onResponse', (req, reply, done) => {
+    const t0 = reqStart.get(req as unknown as object);
+    const ms = t0 ? Date.now() - t0 : 0;
+    const status = reply.statusCode;
+    const url = (req.url ?? '').split('?')[0] ?? '';
+    const isSilent = SILENT_PATHS.has(url) || url.startsWith('/_next/') || url.startsWith('/auth/');
+    if (status >= 500 || (!isSilent && ms > 500)) {
+      logger(`[http] ${req.method} ${url} -> ${status} in ${ms}ms`);
+    }
+    done();
+  });
+
   await registerDashboardRoutes(app, store, logger);
   app.get('/health', async () => ({
     ok: true,
@@ -184,6 +218,7 @@ async function main(): Promise<void> {
     wiki_pages: store.wikiPages.size(),
     llm: providerStatus(),
     lint_queue: lintQueueStatus(),
+    embedder: embedderStats(),
   }));
 
   app.get('/projects', async () => {

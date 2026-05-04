@@ -1,8 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { dashboardHealth, notifications as notificationsClient } from "@/lib/daemon-client";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  dashboardHealth,
+  notifications as notificationsClient,
+  dismissNotification,
+} from "@/lib/daemon-client";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
 
@@ -16,7 +21,20 @@ const TABS = [
   { href: "/orb",       label: "Orb",       icon: "Orbit" as const },
 ];
 
+/* TopBar previously had a non-functioning notifications icon, settings
+ * icon, and search input. They now all do real work:
+ *   - Search input click/focus dispatches `open-cmdk`, which the
+ *     CommandPalette listens for. Single source of truth for fuzzy
+ *     navigation + search; avoids two parallel search UIs.
+ *   - Notifications opens an inline dropdown with the most recent
+ *     unread events and a dismiss button per row. "See all" links to
+ *     /reminders for the full list.
+ *   - Settings is a Link to /system, which holds the diagnostic /
+ *     configuration surface (provider info, embedder, lint queue,
+ *     log tail). No separate /settings page needed yet. */
+
 export function TopBar({ activeTab }: { activeTab: string }) {
+  const qc = useQueryClient();
   const health = useQuery({
     queryKey: ["dashboard-health"],
     queryFn: dashboardHealth,
@@ -27,11 +45,42 @@ export function TopBar({ activeTab }: { activeTab: string }) {
     queryFn: () => notificationsClient(20),
     refetchInterval: 10_000,
   });
+  const dismissM = useMutation({
+    mutationFn: (id: string) => dismissNotification(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+  });
 
   const unread = health.data?.unread_notifications ?? 0;
   const rollup = health.data?.rollup ?? "ok";
   const rollupLabel =
     rollup === "ok" ? "all systems online" : rollup === "warn" ? "degraded" : "failure";
+
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!notifOpen) return;
+    function onClickOutside(e: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
+      }
+    }
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === "Escape") setNotifOpen(false);
+    }
+    window.addEventListener("mousedown", onClickOutside);
+    window.addEventListener("keydown", onEsc);
+    return () => {
+      window.removeEventListener("mousedown", onClickOutside);
+      window.removeEventListener("keydown", onEsc);
+    };
+  }, [notifOpen]);
+
+  function openCmdK() {
+    window.dispatchEvent(new CustomEvent("open-cmdk"));
+  }
+
+  const recent = (notifs.data?.notifications ?? []).filter((n) => !n.dismissed_at).slice(0, 8);
 
   return (
     <header className="flex flex-col">
@@ -49,42 +98,117 @@ export function TopBar({ activeTab }: { activeTab: string }) {
         </div>
 
         <div className="flex-1 max-w-2xl mx-4">
-          <div className="group flex items-center gap-2.5 h-9 px-3 rounded-card bg-surface1 hairline focus-within:ring-1 focus-within:ring-brand/60 transition">
+          <button
+            type="button"
+            onClick={openCmdK}
+            className="group w-full flex items-center gap-2.5 h-9 px-3 rounded-card bg-surface1 hairline focus-within:ring-1 focus-within:ring-brand/60 transition text-left"
+            aria-label="Open command palette"
+          >
             <Icon name="Search" className="text-txt3" size={16} />
-            <label htmlFor="global-search" className="sr-only">
-              Search wiki, sessions, projects, reference docs
-            </label>
-            <input
-              id="global-search"
-              name="global-search"
-              type="search"
-              placeholder="Search wiki, sessions, projects, reference docs..."
-              className="bg-transparent flex-1 text-sm placeholder:text-txt3 outline-none text-txt1"
-            />
+            <span className="flex-1 text-sm text-txt3">
+              Search wiki, sessions, projects, reference docs…
+            </span>
             <kbd className="hidden md:inline-flex items-center gap-1 px-1.5 h-5 rounded border border-border1 bg-surface2 text-[11px] font-mono text-txt2">
               ⌘ K
             </kbd>
-          </div>
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            aria-label={`Notifications (${unread} unread)`}
-            className="lift relative w-9 h-9 rounded-card hairline grid place-items-center text-txt2 hover:text-txt1"
-          >
-            <Icon name="Bell" />
-            {unread > 0 && (
-              <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-pill bg-brand text-[9px] font-mono text-base grid place-items-center">
-                {unread > 9 ? "9+" : unread}
-              </span>
+          {/* Notifications dropdown */}
+          <div className="relative" ref={notifRef}>
+            <button
+              type="button"
+              onClick={() => setNotifOpen((v) => !v)}
+              aria-label={`Notifications (${unread} unread)`}
+              aria-expanded={notifOpen}
+              className="lift relative w-9 h-9 rounded-card hairline grid place-items-center text-txt2 hover:text-txt1"
+            >
+              <Icon name="Bell" />
+              {unread > 0 && (
+                <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-pill bg-brand text-[9px] font-mono text-base grid place-items-center">
+                  {unread > 9 ? "9+" : unread}
+                </span>
+              )}
+            </button>
+            {notifOpen && (
+              <div className="absolute right-0 top-11 w-80 rounded-panel bg-surface1 hairline shadow-lg z-40 overflow-hidden">
+                <div className="px-4 py-3 border-b border-border1 flex items-center justify-between">
+                  <span className="text-nano text-txt3 uppercase tracking-wider">
+                    Recent notifications
+                  </span>
+                  <Link
+                    href="/reminders"
+                    onClick={() => setNotifOpen(false)}
+                    className="text-[11px] font-mono text-txt3 hover:text-txt1"
+                  >
+                    see all
+                  </Link>
+                </div>
+                <ul className="max-h-96 overflow-y-auto divide-y divide-border2">
+                  {recent.length === 0 && (
+                    <li className="px-4 py-6 text-xs text-txt3 text-center">
+                      Nothing new.
+                    </li>
+                  )}
+                  {recent.map((n) => {
+                    const dot =
+                      n.severity === "alert"
+                        ? "fail"
+                        : n.severity === "warn"
+                          ? "warn"
+                          : "ai";
+                    return (
+                      <li
+                        key={n.id}
+                        className="px-4 py-2.5 flex items-start gap-2.5"
+                      >
+                        <span className="mt-1">
+                          <StatusDot status={dot} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs text-txt1 truncate">
+                            {n.title}
+                          </div>
+                          {n.body && (
+                            <div className="text-[11px] font-mono text-txt3 mt-0.5 line-clamp-2">
+                              {n.body}
+                            </div>
+                          )}
+                          <div className="text-nano text-txt3 mt-1">
+                            {new Date(n.ts).toLocaleString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => dismissM.mutate(n.id)}
+                          disabled={dismissM.isPending}
+                          className="text-txt3 hover:text-txt1 shrink-0"
+                          aria-label={`Dismiss ${n.title}`}
+                        >
+                          <Icon name="X" size={14} />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             )}
-          </button>
-          <button
-            aria-label="Settings"
+          </div>
+
+          <Link
+            href="/system"
+            aria-label="Settings and diagnostics"
             className="lift w-9 h-9 rounded-card hairline grid place-items-center text-txt2 hover:text-txt1"
           >
             <Icon name="Settings" />
-          </button>
+          </Link>
+
           <div
             className={`flex items-center gap-1.5 h-9 px-3 rounded-pill hairline shimmer-pill text-[11px] font-mono ${
               rollup === "ok" ? "text-ok" : rollup === "warn" ? "text-warn" : "text-err"
@@ -93,7 +217,6 @@ export function TopBar({ activeTab }: { activeTab: string }) {
             <StatusDot status={rollup === "fail" ? "fail" : rollup} pulse={rollup === "ok"} />
             {rollupLabel}
           </div>
-          {notifs.data ? null : null /* keep query alive for badge prefetch */}
         </div>
       </div>
 
