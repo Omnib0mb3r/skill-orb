@@ -92,6 +92,63 @@ export async function registerDashboardRoutes(
 
   app.get('/dashboard/daily-brief', async () => getDailyBrief());
 
+  /* Live reinforcement-log tail. Returns the last N events from
+   * reinforcement.log.jsonl in newest-first order so the dashboard
+   * can render injection / hit / no-hit / raw-hit / raw-hit-ingest /
+   * correction events as they happen. Polled every few seconds by the
+   * ReinforcementPanel. Reads bytes from the tail of the file rather
+   * than slurping the whole thing so a long-lived install with megabytes
+   * of history stays cheap. */
+  app.get('/dashboard/reinforcement', async (req) => {
+    const fsLib = await import('node:fs');
+    const pathLib = await import('node:path');
+    const { DATA_ROOT } = await import('../paths.js');
+    const file = pathLib.posix.join(DATA_ROOT, 'reinforcement.log.jsonl');
+    const limit = Math.min(
+      Number((req.query as { limit?: string }).limit ?? 50),
+      500,
+    );
+    if (!fsLib.existsSync(file)) {
+      return { ok: true, events: [], total_bytes: 0 };
+    }
+    let stat: import('node:fs').Stats;
+    try {
+      stat = fsLib.statSync(file);
+    } catch {
+      return { ok: true, events: [], total_bytes: 0 };
+    }
+    const tailBytes = Math.min(stat.size, 64 * 1024);
+    const fd = fsLib.openSync(file, 'r');
+    let text = '';
+    try {
+      const buf = Buffer.alloc(tailBytes);
+      fsLib.readSync(fd, buf, 0, tailBytes, stat.size - tailBytes);
+      text = buf.toString('utf-8');
+    } finally {
+      fsLib.closeSync(fd);
+    }
+    if (stat.size > tailBytes) {
+      const nl = text.indexOf('\n');
+      if (nl >= 0) text = text.slice(nl + 1);
+    }
+    const events: Array<Record<string, unknown>> = [];
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        events.push(JSON.parse(trimmed) as Record<string, unknown>);
+      } catch {
+        /* skip malformed line */
+      }
+    }
+    events.reverse();
+    return {
+      ok: true,
+      events: events.slice(0, limit),
+      total_bytes: stat.size,
+    };
+  });
+
   app.get('/dashboard/system-metrics', async () => {
     return getSystemMetrics();
   });

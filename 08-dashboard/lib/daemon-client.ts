@@ -103,6 +103,41 @@ export interface DailyBriefResponse {
 export const dailyBrief = () =>
   request<DailyBriefResponse>("/dashboard/daily-brief");
 
+/* Reinforcement event shape. Server writes JSON-per-line; we render
+ * whichever fields are present per kind. */
+export interface ReinforcementEvent {
+  ts: string;
+  kind:
+    | "injection"
+    | "hit"
+    | "no-hit"
+    | "promote"
+    | "correction"
+    | "raw-hit"
+    | "raw-no-hit"
+    | "raw-correction"
+    | "raw-hit-ingest"
+    | "decay-archive"
+    | "archive";
+  session?: string;
+  page?: string;
+  chunk?: string;
+  project?: string;
+  source?: "wiki" | "raw";
+  cosine?: number;
+  weight?: number;
+  pages_created?: number;
+  pages_updated?: number;
+  skipped_reason?: string;
+}
+export interface ReinforcementResponse {
+  ok: boolean;
+  events: ReinforcementEvent[];
+  total_bytes: number;
+}
+export const reinforcement = (limit = 50) =>
+  request<ReinforcementResponse>(`/dashboard/reinforcement?limit=${limit}`);
+
 export interface SystemMetrics {
   cpu: { usage_percent: number; cores: number; load_avg?: number[] };
   memory: { total_bytes: number; used_bytes: number; used_percent: number };

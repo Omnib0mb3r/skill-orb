@@ -119,6 +119,16 @@ export function recordInjection(
     injectedAt: Date.now(),
     summary,
   });
+  // Also write a visible "injection" event so the dashboard can surface
+  // what the curator decided to send. Without this, the only way to
+  // know an injection fired was to read the daemon log or wait for the
+  // hit/correction outcome — opaque to the user.
+  appendReinforcementLog({
+    kind: 'injection',
+    session: sessionId,
+    page: pageId,
+    source: 'wiki',
+  });
 }
 
 export function recordRawInjection(
@@ -136,6 +146,13 @@ export function recordRawInjection(
     summary: rawText,
     projectId,
     rawText,
+  });
+  appendReinforcementLog({
+    kind: 'injection',
+    session: sessionId,
+    chunk: chunkId,
+    project: projectId,
+    source: 'raw',
   });
 }
 

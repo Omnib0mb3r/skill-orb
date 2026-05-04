@@ -4,6 +4,7 @@ import { DailyBrief } from "@/components/DailyBrief";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { ProjectsGrid } from "@/components/ProjectsGrid";
 import { Orb } from "@/components/Orb";
+import { ReinforcementPanel } from "@/components/ReinforcementPanel";
 import { Icon } from "@/components/Icon";
 
 export default function HomePage() {
@@ -35,7 +36,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Orb mini panel — embedded force graph */}
+          {/* Orb mini panel embedded force graph */}
           <div className="rounded-panel bg-surface1 hairline overflow-hidden">
             <div className="px-5 py-3 border-b border-border1 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -54,6 +55,8 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        <ReinforcementPanel />
       </div>
     </AppShell>
   );
