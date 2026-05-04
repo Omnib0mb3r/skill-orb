@@ -141,36 +141,31 @@ export function Orb({ compact = false }: OrbProps = {}) {
       const r = el.getBoundingClientRect();
       const w = Math.floor(r.width);
       const h = Math.floor(r.height);
+      if (w === 0 || h === 0) return;
       setSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
     };
-    /* Multi-stage measurement.
-     *
-     * On the home tab the orb panel is inside a CSS grid that doesn't
-     * lay out until after the first paint. ResizeObserver fires once on
-     * observe(), but at that moment the parent grid has often not
-     * resolved column widths yet, so we read 0x0 and gate the canvas off.
-     * Then nothing changes (stable layout, no resize event) and the orb
-     * never mounts until the user navigates away + back, which forces a
-     * fresh layout pass.
-     *
-     * Defense in depth: measure now, on the next animation frame, on
-     * the load event (covers webfont/JS chunks finishing), AND keep
-     * the ResizeObserver for live resizes.
-     */
-    measure();
-    const raf1 = requestAnimationFrame(measure);
-    const raf2 = requestAnimationFrame(() => {
-      requestAnimationFrame(measure);
-    });
-    const t = setTimeout(measure, 120);
+    /* Layout-after-paint measurement is unreliable when the orb is
+     * embedded in a CSS grid: ResizeObserver fires once at observe
+     * time, sometimes before the grid has resolved column widths. We
+     * poll clientWidth on every animation frame for the first 3
+     * seconds, then back off to ResizeObserver only. That guarantees
+     * we catch the moment layout resolves regardless of timing. */
+    let stop = false;
+    const start = performance.now();
+    const loop = () => {
+      if (stop) return;
+      measure();
+      if (performance.now() - start < 3000) {
+        requestAnimationFrame(loop);
+      }
+    };
+    requestAnimationFrame(loop);
     const onLoad = () => measure();
     window.addEventListener("load", onLoad);
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-      clearTimeout(t);
+      stop = true;
       window.removeEventListener("load", onLoad);
       ro.disconnect();
     };
@@ -658,6 +653,70 @@ export function Orb({ compact = false }: OrbProps = {}) {
               // breathing-glow halos around nodes. Cold edges 1.2px,
               // hot edges 4.2px.
               return 1.2 + Math.max(0, Math.min(1, w)) * 3;
+            }) as never
+          }
+          /* Curved edges (cubic bezier sag) instead of straight lines.
+           * Gives the orb the organic "branches reaching" feel of the
+           * v1 Three.js renderer. Curvature varies per-edge by hash so
+           * parallel edges between the same two nodes don't overlap.
+           * Magnitude scales with weight so hot edges stay closer to
+           * straight (legible primary connections); cold edges sag
+           * more, reading as secondary structure.
+           */
+          linkCurvature={
+            ((l: object) => {
+              const link = l as ForceLink;
+              const w = link.weight ?? 0.5;
+              const srcId = typeof link.source === "object" ? (link.source as ForceNode).id : String(link.source);
+              const tgtId = typeof link.target === "object" ? (link.target as ForceNode).id : String(link.target);
+              const phase = strHash(`${srcId}~${tgtId}`);
+              const sign = phase > 0.5 ? 1 : -1;
+              const mag = 0.05 + (1 - w) * 0.18;
+              return sign * mag;
+            }) as never
+          }
+          /* Soft additive glow under each edge so hot edges visibly
+           * bloom into the background. Two passes per edge: a wide,
+           * blurred halo (this prop) plus the sharp main line that
+           * linkColor + linkWidth render on top. */
+          linkCanvasObjectMode={(() => "before") as never}
+          linkCanvasObject={
+            ((raw: object, ctx: CanvasRenderingContext2D) => {
+              const link = raw as ForceLink & {
+                source: ForceNode;
+                target: ForceNode;
+                __controlPoints?: number[];
+              };
+              if (
+                typeof link.source !== "object" ||
+                typeof link.target !== "object"
+              ) return;
+              const sx = link.source.x ?? 0;
+              const sy = link.source.y ?? 0;
+              const tx = link.target.x ?? 0;
+              const ty = link.target.y ?? 0;
+              const w = link.weight ?? 0.5;
+              if (w < 0.4) return; // only bloom on warmer edges
+              const base = edgeHeatColor(w);
+              const m = base.match(/^rgba\((\d+), (\d+), (\d+), ([0-9.]+)\)$/);
+              if (!m) return;
+              const haloAlpha = Math.min(0.35, w * 0.4);
+              ctx.save();
+              ctx.globalCompositeOperation = "lighter";
+              ctx.strokeStyle = `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${haloAlpha.toFixed(3)})`;
+              ctx.lineWidth = (1.2 + w * 3) * 4;
+              ctx.lineCap = "round";
+              ctx.beginPath();
+              if (link.__controlPoints && link.__controlPoints.length >= 2) {
+                const cp = link.__controlPoints;
+                ctx.moveTo(sx, sy);
+                ctx.quadraticCurveTo(cp[0]!, cp[1]!, tx, ty);
+              } else {
+                ctx.moveTo(sx, sy);
+                ctx.lineTo(tx, ty);
+              }
+              ctx.stroke();
+              ctx.restore();
             }) as never
           }
           /* Animated particles flowing along each edge. Density and speed
