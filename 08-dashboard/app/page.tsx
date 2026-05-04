@@ -1,6 +1,10 @@
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { DailyBrief } from "@/components/DailyBrief";
 import { InstallPrompt } from "@/components/InstallPrompt";
+import { ProjectsGrid } from "@/components/ProjectsGrid";
+import { Orb } from "@/components/Orb";
+import { Icon } from "@/components/Icon";
 
 export default function HomePage() {
   return (
@@ -10,19 +14,44 @@ export default function HomePage() {
           <InstallPrompt />
         </div>
         <DailyBrief />
-        {/* Project status grid + Orb panel land here in 3.4.4. Stubbed for now. */}
+
         <section className="grid grid-cols-2 gap-5">
-          <div className="rounded-panel bg-surface1 hairline p-6 min-h-[220px]">
-            <div className="text-nano text-txt3 mb-2">Projects</div>
-            <p className="text-txt3 text-xs">
-              Project status grid wires up in Phase 3.4.4.
-            </p>
+          {/* Projects mini panel — compact grid of registered projects */}
+          <div className="rounded-panel bg-surface1 hairline overflow-hidden">
+            <div className="px-5 py-3 border-b border-border1 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Icon name="FolderGit2" className="text-brandSoft" size={16} />
+                <h2 className="font-display text-sm font-emphasized">Projects</h2>
+              </div>
+              <Link
+                href="/projects"
+                className="text-nano text-txt3 hover:text-txt1"
+              >
+                view all
+              </Link>
+            </div>
+            <div className="p-4">
+              <ProjectsGrid compact />
+            </div>
           </div>
-          <div className="rounded-panel bg-surface1 hairline p-6 min-h-[220px]">
-            <div className="text-nano text-txt3 mb-2">Orb</div>
-            <p className="text-txt3 text-xs">
-              Orb visualization launches in Phase 4.
-            </p>
+
+          {/* Orb mini panel — embedded force graph */}
+          <div className="rounded-panel bg-surface1 hairline overflow-hidden">
+            <div className="px-5 py-3 border-b border-border1 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Icon name="Orbit" className="text-brandSoft" size={16} />
+                <h2 className="font-display text-sm font-emphasized">Orb</h2>
+              </div>
+              <Link
+                href="/orb"
+                className="text-nano text-txt3 hover:text-txt1"
+              >
+                expand
+              </Link>
+            </div>
+            <div className="h-[280px]">
+              <Orb compact />
+            </div>
           </div>
         </section>
       </div>

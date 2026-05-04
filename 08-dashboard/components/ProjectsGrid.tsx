@@ -17,7 +17,15 @@ function relTimeIso(ts: string | undefined): string {
   return `${Math.round(diffS / 86400)}d`;
 }
 
-export function ProjectsGrid() {
+interface Props {
+  /** When set, render fewer rows in a tighter grid for embedding inside the
+   * home view. Otherwise full grid for the /projects route. */
+  compact?: boolean;
+  /** Cap how many projects to show in compact mode. */
+  limit?: number;
+}
+
+export function ProjectsGrid({ compact = false, limit }: Props = {}) {
   const projQ = useQuery({
     queryKey: ["projects"],
     queryFn: projectsClient,
@@ -29,39 +37,51 @@ export function ProjectsGrid() {
     refetchInterval: 5_000,
   });
 
-  const list = projQ.data?.projects ?? [];
+  const all = projQ.data?.projects ?? [];
   const sessByProject = sessionsByProject(sessQ.data?.sessions ?? []);
+  // Compact: most-recently-active first, capped.
+  const cap = limit ?? (compact ? 6 : Infinity);
+  const list = compact
+    ? [...all]
+        .sort((a, b) => Date.parse(b.last_seen) - Date.parse(a.last_seen))
+        .slice(0, cap)
+    : all;
+
+  const cols = compact ? "grid-cols-2" : "grid-cols-3";
 
   if (projQ.isLoading) {
     return (
-      <div className="grid grid-cols-3 gap-4">
+      <div className={`grid ${cols} gap-3`}>
         {[0, 1, 2, 3].map((i) => (
           <div
             key={i}
-            className="h-28 rounded-card bg-surface1 hairline animate-pulse"
+            className="h-20 rounded-card bg-surface1 hairline animate-pulse"
           />
         ))}
       </div>
     );
   }
 
-  if (list.length === 0) {
+  if (all.length === 0) {
     return (
-      <div className="rounded-panel bg-surface1 hairline p-10 text-center">
-        <Icon name="FolderPlus" className="text-brandSoft mx-auto mb-3" size={32} />
-        <h3 className="font-display text-md font-emphasized mb-1">
-          No projects registered yet.
-        </h3>
+      <div className={compact ? "py-3 text-center" : "rounded-panel bg-surface1 hairline p-10 text-center"}>
+        {!compact && <Icon name="FolderPlus" className="text-brandSoft mx-auto mb-3" size={32} />}
+        {!compact && (
+          <h3 className="font-display text-md font-emphasized mb-1">
+            No projects registered yet.
+          </h3>
+        )}
         <p className="text-txt3 text-sm">
-          Hit &ldquo;new project&rdquo; above, or run a Claude session in any
-          DevNeural-aware repo on OTLCDEV — it auto-registers.
+          {compact
+            ? "No projects yet. Run a Claude session in any DevNeural-aware repo to auto-register."
+            : "Hit \"new project\" above, or run a Claude session in any DevNeural-aware repo on OTLCDEV; it auto-registers."}
         </p>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-3 gap-4">
+    <div className={`grid ${cols} gap-3`}>
       {list.map((p) => {
         // Match by both id and name since session slugs decode to varying forms.
         const liveSessions = sessByProject.get(p.name) ?? sessByProject.get(p.id) ?? 0;

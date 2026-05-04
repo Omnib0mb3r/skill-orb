@@ -56,7 +56,13 @@ function nodeRadius(weight: number): number {
   return 2.5 + Math.max(0, Math.min(1, weight)) * 6;
 }
 
-export function Orb() {
+interface OrbProps {
+  /** Embedded mode for the home view: hides legend, smaller hover tooltip,
+   * disables drag so the parent card doesn't lock interaction. */
+  compact?: boolean;
+}
+
+export function Orb({ compact = false }: OrbProps = {}) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -211,7 +217,7 @@ export function Orb() {
           cooldownTicks={120}
           onNodeClick={((n: object) => onNodeClick(n as ForceNode)) as never}
           onNodeHover={((n: object | null) => onNodeHover(n as ForceNode | null)) as never}
-          enableNodeDrag={true}
+          enableNodeDrag={!compact}
           enablePointerInteraction={true}
         />
       )}
@@ -237,7 +243,7 @@ export function Orb() {
         </div>
       )}
 
-      <Legend />
+      {!compact && <Legend />}
     </div>
   );
 }
