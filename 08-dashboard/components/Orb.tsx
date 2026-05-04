@@ -615,52 +615,103 @@ export function Orb({ compact = false }: OrbProps = {}) {
             ((raw: object, ctx: CanvasRenderingContext2D, scale: number) =>
               drawNode(raw as ForceNode, ctx, scale)) as never
           }
-          /* Lib-native edge rendering. Earlier I rolled a custom
-           * linkCanvasObject so I could keep on-screen line widths
-           * stable across zoom levels (no highlighter look). But
-           * particles render along the lib's internal bezier path,
-           * not my custom one, so they detached from the curves the
-           * user could see. Going back to lib-native means particles
-           * follow the same curve their edge does.
+          /* Custom edge + particle renderer. Two passes per edge in
+           * the same canvas-object closure so the visible curve and
+           * the moving dots are computed from one bezier:
+           *   1. Stroke a quadratic bezier with screen-stable width
+           *      (linewidth divided by globalScale so the deep-zoom
+           *      "highlighter" look never returns).
+           *   2. Walk N particles along that bezier with time-based
+           *      progress; draw small dots whose size also stays
+           *      constant in screen-px regardless of zoom.
            *
-           * To avoid the highlighter problem at deep zoom, we keep the
-           * base widths very small. force-graph treats linkWidth as
-           * graph units, so a 1px line becomes 4px at zoom=4 (the
-           * cap). 0.6 + w*1.4 keeps the worst case at ~8 screen-px
-           * which still reads as a line, not a slab. */
-          linkColor={
-            ((l: object) => {
-              const link = l as ForceLink;
-              const src = link.source;
-              const tgt = link.target;
-              const hit = hovered && (
-                (typeof src === "object" && (src as ForceNode).id === hovered.id) ||
-                (typeof tgt === "object" && (tgt as ForceNode).id === hovered.id)
-              );
-              if (hit) return COLOR_EDGE_HOVER;
+           * The lib's built-in particles (linkDirectionalParticles)
+           * render along the lib's internal bezier path, which won't
+           * match a custom-drawn curve. Owning both the line and the
+           * particles in this single closure is the only way to
+           * keep them in lockstep at every zoom + curvature value. */
+          linkCanvasObjectMode={(() => "replace") as never}
+          linkCanvasObject={
+            ((raw: object, ctx: CanvasRenderingContext2D, globalScale: number) => {
+              const link = raw as ForceLink & {
+                source: ForceNode;
+                target: ForceNode;
+              };
+              if (
+                typeof link.source !== "object" ||
+                typeof link.target !== "object"
+              ) return;
+              const sx = link.source.x ?? 0;
+              const sy = link.source.y ?? 0;
+              const tx = link.target.x ?? 0;
+              const ty = link.target.y ?? 0;
               const w = link.weight ?? 0.5;
+              const srcId = link.source.id;
+              const tgtId = link.target.id;
+              const isHovered =
+                hovered != null &&
+                (srcId === hovered.id || tgtId === hovered.id);
+
+              // Bezier control point. Same formula used in
+              // linkCurvature accessor so DOM/lib reads consistent.
+              const phase = strHash(`${srcId}~${tgtId}`);
+              const sign = phase > 0.5 ? 1 : -1;
+              const curvature = sign * (0.05 + (1 - w) * 0.18);
+              const dx = tx - sx;
+              const dy = ty - sy;
+              const cx = (sx + tx) / 2 + -dy * curvature;
+              const cy = (sy + ty) / 2 + dx * curvature;
+
+              // Heat color with subtle alpha breathing.
               const base = edgeHeatColor(w);
-              const srcId = typeof src === "object" ? (src as ForceNode).id : String(src);
-              const tgtId = typeof tgt === "object" ? (tgt as ForceNode).id : String(tgt);
-              const phase = strHash(`${srcId}->${tgtId}`);
-              const ebb = edgeBreathe(phase);
               const m = base.match(/^rgba\((\d+), (\d+), (\d+), ([0-9.]+)\)$/);
-              if (!m) return base;
-              const a = Math.max(0, Math.min(1, Number(m[4]) * ebb));
-              return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${a.toFixed(3)})`;
+              const ebb = edgeBreathe(strHash(`${srcId}->${tgtId}`));
+              const r = m ? m[1] : "150";
+              const g = m ? m[2] : "150";
+              const b = m ? m[3] : "200";
+              const baseAlpha = m ? Number(m[4]) : 0.5;
+              const stroke = isHovered
+                ? "rgba(240, 245, 255, 0.85)"
+                : `rgba(${r}, ${g}, ${b}, ${(baseAlpha * ebb).toFixed(3)})`;
+
+              // 1) Stroke the curve with screen-stable width.
+              const screenPx = isHovered
+                ? 2.0
+                : 0.8 + Math.max(0, Math.min(1, w)) * 1.6;
+              ctx.lineWidth = screenPx / Math.max(0.0001, globalScale);
+              ctx.strokeStyle = stroke;
+              ctx.lineCap = "round";
+              ctx.beginPath();
+              ctx.moveTo(sx, sy);
+              ctx.quadraticCurveTo(cx, cy, tx, ty);
+              ctx.stroke();
+
+              // 2) Particles flowing along the bezier. Density and
+              // speed scale with weight so hot pathways look most
+              // active. Per-particle phase offset (i / count) so they
+              // space out along the curve. Period = secsPerLap; each
+              // particle's progress t = ((now / period) + offset) % 1.
+              const particleCount = Math.max(1, Math.round(w * 4));
+              const secsPerLap = 4.5 - w * 2.5; // hot edges 2s, cold 4.5s
+              const tNow = (Date.now() / 1000) / secsPerLap;
+              const dotR = (1.4 + w * 1.6) / Math.max(0.0001, globalScale);
+              ctx.fillStyle = stroke;
+              for (let i = 0; i < particleCount; i++) {
+                const offset = i / particleCount;
+                const t = (tNow + offset) % 1;
+                // Quadratic bezier: P = (1-t)^2 S + 2(1-t)t C + t^2 T.
+                const u = 1 - t;
+                const px = u * u * sx + 2 * u * t * cx + t * t * tx;
+                const py = u * u * sy + 2 * u * t * cy + t * t * ty;
+                ctx.beginPath();
+                ctx.arc(px, py, dotR, 0, Math.PI * 2, false);
+                ctx.fill();
+              }
             }) as never
           }
-          linkWidth={
-            ((l: object) => {
-              const w = (l as ForceLink).weight ?? 0.5;
-              return 0.6 + Math.max(0, Math.min(1, w)) * 1.4;
-            }) as never
-          }
-          /* Curvature drives BOTH the lib's edge stroke and its
-           * particle flow path. Identical accessor the canvas-object
-           * version used, kept so visual + particle alignment is
-           * automatic instead of a formula match between two
-           * separate code paths. */
+          /* linkCurvature still passed so the lib's hit-testing
+           * (hover, click) treats edges as the same curve we're
+           * drawing. Particle path is now ours, not the lib's. */
           linkCurvature={
             ((l: object) => {
               const link = l as ForceLink;
@@ -673,19 +724,11 @@ export function Orb({ compact = false }: OrbProps = {}) {
               return sign * mag;
             }) as never
           }
-          /* Animated particles flowing along each edge. Density and speed
-           * scale with weight so the eye follows the most active pathways.
-           * Source-to-target direction comes from the cross-reference graph;
-           * particles visually convey "this insight points to that one."
-           * Disabled when there are no edges so the lib does not allocate
-           * per-frame bookkeeping for an empty edge set. */
-          linkDirectionalParticles={
-            ((l: object) => {
-              if (!particlesEnabled) return 0;
-              const w = (l as ForceLink).weight ?? 0.5;
-              return Math.max(1, Math.round(w * 4));
-            }) as never
-          }
+          /* Lib-native particles disabled: we render them ourselves
+           * inside linkCanvasObject so they walk our exact bezier
+           * curve. particlesEnabled gate stays so a fresh wiki with
+           * zero edges doesn't pay for per-frame bookkeeping. */
+          linkDirectionalParticles={0 as never}
           linkDirectionalParticleSpeed={
             ((l: object) => {
               const w = (l as ForceLink).weight ?? 0.5;
@@ -702,14 +745,19 @@ export function Orb({ compact = false }: OrbProps = {}) {
             ((l: object) =>
               edgeHeatColor(((l as ForceLink).weight ?? 0.5) * 1.0)) as never
           }
-          /* Longer cooldown gives gravity + isolation forces time to
-           * gather stragglers before the engine stops; at 250 ticks
-           * lonely nodes were still cooling outside the cluster. */
-          cooldownTicks={500}
-          cooldownTime={8000}
-          warmupTicks={80}
-          d3AlphaDecay={0.018}
-          d3VelocityDecay={0.4}
+          /* Engine stays barely-warm forever so the render loop keeps
+           * painting and our custom particles in linkCanvasObject
+           * actually animate. Earlier, finite cooldown stopped the
+           * engine which froze our particle dots. The cluster doesn't
+           * drift because global gravity + strong center force +
+           * isolation pull keep nodes anchored even with a long-tail
+           * alpha. d3VelocityDecay=0.55 prevents kinetic accumulation
+           * so node positions don't visibly creep. */
+          cooldownTicks={Infinity}
+          cooldownTime={Infinity}
+          warmupTicks={120}
+          d3AlphaDecay={0.0008}
+          d3VelocityDecay={0.55}
           onNodeClick={((n: object) => onNodeClick(n as ForceNode)) as never}
           onNodeHover={((n: object | null) => onNodeHover(n as ForceNode | null)) as never}
           enableNodeDrag={!compact}
