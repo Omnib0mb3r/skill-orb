@@ -300,12 +300,13 @@ export function Orb({ compact = false }: OrbProps = {}) {
         }
       }
 
-      // Custom force: extra pull on edgeless nodes toward origin so
-      // they don't drift to the canvas perimeter. Strength bumped to
-      // 0.18 (from 0.06) because lonely nodes were still escaping the
-      // gathered cluster. Nodes carry mutable x/y/vx/vy on the d3-force
-      // simulation; we read connected-id set from the latest graphData
-      // on each call so a refetch doesn't require a re-tune.
+      // Custom forces:
+      //   isolation-pull: extra origin pull on edgeless nodes so they
+      //     don't drift to the canvas perimeter.
+      //   global-gravity: small origin pull on EVERY node so the whole
+      //     cluster stays compact regardless of edge topology. Without
+      //     it, weakly-connected outliers (one thin edge to the cluster)
+      //     still escape because link force can't beat charge at distance.
       type ForceNodeWithVel = ForceNode & { vx?: number; vy?: number };
       const isolationPull = (alpha: number): void => {
         const nodes = (graphDataRef.current.nodes as ForceNodeWithVel[]) ?? [];
@@ -314,11 +315,20 @@ export function Orb({ compact = false }: OrbProps = {}) {
         for (const n of nodes) {
           if (connected.has(n.id)) continue;
           if (typeof n.x !== "number" || typeof n.y !== "number") continue;
-          n.vx = (n.vx ?? 0) + -n.x * 0.18 * alpha;
-          n.vy = (n.vy ?? 0) + -n.y * 0.18 * alpha;
+          n.vx = (n.vx ?? 0) + -n.x * 0.22 * alpha;
+          n.vy = (n.vy ?? 0) + -n.y * 0.22 * alpha;
+        }
+      };
+      const globalGravity = (alpha: number): void => {
+        const nodes = (graphDataRef.current.nodes as ForceNodeWithVel[]) ?? [];
+        for (const n of nodes) {
+          if (typeof n.x !== "number" || typeof n.y !== "number") continue;
+          n.vx = (n.vx ?? 0) + -n.x * 0.04 * alpha;
+          n.vy = (n.vy ?? 0) + -n.y * 0.04 * alpha;
         }
       };
       fg.d3Force("isolation-pull", isolationPull as unknown);
+      fg.d3Force("global-gravity", globalGravity as unknown);
     } catch {
       // Force methods are best-effort. If the lib's API ever changes shape
       // the layout still runs with defaults; the orb just frames less tightly.
@@ -387,8 +397,10 @@ export function Orb({ compact = false }: OrbProps = {}) {
       const zoomX = size.w / w;
       const zoomY = size.h / h;
       // Cap the zoom so a tiny graph (3 nodes huddled together) doesn't
-      // blow up to fill the viewport with comically-large blobs.
-      const targetZoom = Math.min(zoomX, zoomY, 3);
+      // blow up to fill the viewport. Cap raised to 4 so wide viewports
+      // at 1920x1080 still see a usefully-large cluster instead of a
+      // small huddle in the middle of empty canvas.
+      const targetZoom = Math.min(zoomX, zoomY, 4);
 
       fg.centerAt(cx, cy, 600);
       fg.zoom(targetZoom, 600);
@@ -716,17 +728,13 @@ export function Orb({ compact = false }: OrbProps = {}) {
             ((l: object) =>
               edgeHeatColor(((l as ForceLink).weight ?? 0.5) * 1.0)) as never
           }
-          /* Finite cooldown so the cluster actually settles. Earlier I
-           * tried Infinity to keep breathe animations running, but the
-           * simulation never reached equilibrium and the cluster drifted
-           * away from center forever. Layout stops at ~3s; particles +
-           * edge-color animations keep redrawing without forcing live
-           * physics, because force-graph re-renders when ANY of its
-           * accessor outputs would change. */
-          cooldownTicks={250}
-          cooldownTime={5000}
-          warmupTicks={60}
-          d3AlphaDecay={0.025}
+          /* Longer cooldown gives gravity + isolation forces time to
+           * gather stragglers before the engine stops; at 250 ticks
+           * lonely nodes were still cooling outside the cluster. */
+          cooldownTicks={500}
+          cooldownTime={8000}
+          warmupTicks={80}
+          d3AlphaDecay={0.018}
           d3VelocityDecay={0.4}
           onNodeClick={((n: object) => onNodeClick(n as ForceNode)) as never}
           onNodeHover={((n: object | null) => onNodeHover(n as ForceNode | null)) as never}
