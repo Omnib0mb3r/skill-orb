@@ -4,5 +4,5 @@ dist/
 *.tsbuildinfo
 .env
 .env.local
-07-daemon/scripts/silent-shim/bin/
-07-daemon/scripts/silent-shim/obj/
+scripts/silent-shim/bin/
+scripts/silent-shim/obj/
