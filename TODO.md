@@ -33,5 +33,5 @@ Captured 2026-05-04. Living list. Tick when shipped.
 
 - [ ] Audit and prune `~/.claude/settings.json.*.bak.*` backup files. Keep one canonical recovery point, drop the rest.
 - [ ] `silence-all-hooks.ps1` cmd-/c logic is broken (re-runs trash settings). Either redesign with a multi-arg shim that preserves stdin pipethrough, or delete the script. Do not re-run as-is.
-- [ ] Bridge no longer carries focus or key inject (those moved to StreamDeck.App). Audit `09-bridge` to remove now-dead `focusWindow` + `injectKey` code paths. Bridge keeps prompt text delivery (`terminal.sendText`).
-- [ ] deck-hook.sh double-escapes backslashes in cwd JSON output. Works because of segment-walk fallback in ResolveVSCodeWindowSmart, but the escape itself is wrong and worth fixing at the source.
+- [x] Bridge `focusWindow` + `injectKey` + nav PS helpers removed (commit `aee3053`). Bridge is now text-only.
+- [x] deck-hook.sh double-escape bug fixed at source (stream-deck commit `605688b`). Segment-walk in C# is still useful as a fallback when Claude is launched from a workspace subdirectory.
