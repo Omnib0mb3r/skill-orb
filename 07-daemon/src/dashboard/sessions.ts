@@ -297,7 +297,15 @@ export function queueSessionPrompt(
   return { ok: true, queued_at };
 }
 
-export function queueSessionFocus(sessionId: string): { ok: true } {
+export function queueSessionFocus(
+  sessionId: string,
+):
+  | { ok: true }
+  | { ok: false; error: string; bridge: BridgeStatus } {
+  const status = bridgeStatus();
+  if (!status.alive) {
+    return { ok: false, error: 'bridge offline', bridge: status };
+  }
   ensureDir(BRIDGE_DIR);
   const file = path.posix.join(BRIDGE_DIR, `${sessionId}.in`);
   fs.appendFileSync(
@@ -334,7 +342,20 @@ export function isNavKey(value: unknown): value is NavKey {
 export function queueSessionKey(
   sessionId: string,
   key: NavKey,
-): { ok: true; queued_at: string } {
+):
+  | { ok: true; queued_at: string }
+  | { ok: false; error: string; bridge: BridgeStatus } {
+  const status = bridgeStatus();
+  if (!status.alive) {
+    return {
+      ok: false,
+      error:
+        status.last_seen_ms === null
+          ? 'bridge offline: no heartbeat ever recorded'
+          : `bridge offline: last heartbeat ${Math.round((status.age_ms ?? 0) / 1000)}s ago`,
+      bridge: status,
+    };
+  }
   ensureDir(BRIDGE_DIR);
   const file = path.posix.join(BRIDGE_DIR, `${sessionId}.in`);
   const queued_at = new Date().toISOString();
