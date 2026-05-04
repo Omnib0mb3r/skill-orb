@@ -110,6 +110,63 @@ async function main(): Promise<void> {
       files: 1,
     },
   });
+
+  /* SPA-vs-API collision guard.
+   *
+   * Several daemon API routes share paths with dashboard SPA routes: the
+   * dashboard renders /sessions, /projects, /reminders, while the API
+   * also exposes GET /sessions, GET /projects, GET /reminders that
+   * return JSON. Without this hook a browser hard-load (or PWA shortcut,
+   * or refresh) on any of those URLs hits the API handler first and
+   * returns JSON, which the page can't render.
+   *
+   * Routes without an API collision (/system, /orb, /wiki, etc) have a
+   * different problem: @fastify/static does not auto-resolve
+   * "/system" -> "system.html" without an `extensions: ['html']` option,
+   * so they would 404 and fall through to the SPA fallback that serves
+   * index.html (Home content) for every unknown path.
+   *
+   * One hook fixes both: when a browser asks for HTML on a path that has
+   * a matching <route>.html in 08-dashboard/out, send that file and
+   * short-circuit before any other handler runs. Non-HTML clients (curl,
+   * fetch, the dashboard's own JSON calls) keep hitting the API.
+   *
+   * Identifying browser nav: GET method, Accept includes text/html, URL
+   * has no file extension, and the corresponding .html exists. */
+  const dashboardOutEarly = (() => {
+    try {
+      const here = path.dirname(fileURLToPath(import.meta.url));
+      return path.resolve(here, '..', '..', '08-dashboard', 'out');
+    } catch {
+      return null;
+    }
+  })();
+  if (dashboardOutEarly && fs.existsSync(dashboardOutEarly)) {
+    app.addHook('onRequest', (req, reply, done) => {
+      if (req.method !== 'GET') return done();
+      const accept = (req.headers.accept ?? '').toLowerCase();
+      if (!accept.includes('text/html')) return done();
+      const rawUrl = req.url ?? '/';
+      const pathOnly = (rawUrl.split('?')[0] ?? '/').replace(/\/+$/, '') || '/';
+      // Skip Next chunks, service worker, manifest, icon files, anything
+      // with an extension. The browser will request HTML for / and for
+      // SPA routes; everything else we let through to fastify-static.
+      if (pathOnly === '/' || pathOnly.includes('.')) return done();
+      if (pathOnly.startsWith('/_next/')) return done();
+      if (pathOnly.startsWith('/auth/')) return done();
+      const target = path.resolve(dashboardOutEarly, '.' + pathOnly + '.html');
+      // Defence-in-depth: ensure the resolved path stays under out/.
+      if (!target.startsWith(dashboardOutEarly)) return done();
+      if (!fs.existsSync(target)) return done();
+      try {
+        const html = fs.readFileSync(target, 'utf-8');
+        reply.type('text/html').send(html);
+      } catch {
+        return done();
+      }
+    });
+  }
+
   await registerDashboardRoutes(app, store, logger);
   app.get('/health', async () => ({
     ok: true,
@@ -376,22 +433,38 @@ async function main(): Promise<void> {
         prefix: '/',
         index: ['index.html'],
       });
-      // SPA fallback for client-side routes that have no matching .html on disk.
-      // Static export emits one .html per route (out/orb.html, out/sessions.html,
-      // etc.), so most paths resolve directly. The fallback only handles a small
-      // residual set: query-string variations of /sessions/detail, refreshes
-      // mid-route, etc.
+      // SPA fallback. The onRequest hook above already serves <route>.html
+      // for HTML browser navigations, so this only catches a small
+      // residual set: GET requests that escaped the hook (no Accept
+      // header, or non-HTML Accept) and don't match any other route.
+      // Prefer a matching <route>.html if one exists on disk; only fall
+      // back to index.html for genuinely unknown paths.
       app.setNotFoundHandler((req, reply) => {
         if (req.method !== 'GET') {
           reply.code(404).send({ ok: false, error: 'not found' });
           return;
         }
         const url = (req.url ?? '/').split('?')[0] ?? '/';
-        if (!url.includes('.')) {
-          reply.type('text/html').sendFile('index.html');
+        if (url.includes('.')) {
+          reply.code(404).send({ ok: false, error: 'not found' });
           return;
         }
-        reply.code(404).send({ ok: false, error: 'not found' });
+        const cleaned = url.replace(/\/+$/, '') || '/';
+        if (cleaned !== '/') {
+          const candidate = path.resolve(dashboardOut, '.' + cleaned + '.html');
+          if (
+            candidate.startsWith(dashboardOut) &&
+            fs.existsSync(candidate)
+          ) {
+            try {
+              reply.type('text/html').send(fs.readFileSync(candidate, 'utf-8'));
+              return;
+            } catch {
+              /* fall through to index.html */
+            }
+          }
+        }
+        reply.type('text/html').sendFile('index.html');
       });
       logger(`dashboard static serve enabled from ${dashboardOut}`);
     } else {
