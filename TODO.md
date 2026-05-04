@@ -7,11 +7,11 @@ Captured 2026-05-04. Living list. Tick when shipped.
 - [-] Android push notification end-to-end test. Dropped per user.
 - [x] PWA install prompt UX. Scaffold already implemented; only token mismatch fixed.
 - [x] System panel sparklines. Already shipped (SparkAreaChart, 60-sample buffer, both metrics).
-- [ ] Axe a11y sweep on every dashboard route. Lighthouse passes 95/100/223ms; manual axe pass deferred.
+- [x] Axe a11y sweep across home, sessions, wiki, projects, system, reminders, orb. Zero violations after adding sr-only h1 to /orb.
 - [x] `prefers-reduced-motion` audit. Existing global rule in `globals.css:253-255` already pins durations to 0ms. Orb particle pause via `cooldownTicks` finite when `prefers-reduced-motion: reduce` is a future-pass enhancement.
 - [-] Tailwind arbitrary class cleanup (`text-[11px]` -> `text-nano`). Skipped: `text-nano` utility forces uppercase/tracked-out display, would change visual semantics for user-readable labels.
-- [ ] Scanned PDF OCR fallback. `07-daemon/src/reference/pdf.ts` warns on image-only PDFs; rasterize-then-OCR (pdf2pic + tesseract) deferred.
-- [ ] Off-site git remote for wiki repo (`C:\dev\data\skill-connections\wiki\`). Investigation done: create `Omnib0mb3r/devneural-wiki` private GitHub repo, add as remote, schedule a daemon-side push every 5 minutes. Manual review of `wiki/pending/` before first push recommended (secret-scrub already runs upstream so risk low).
+- [x] Scanned PDF OCR fallback. `pdf.ts` now rasterizes + OCRs via pdf-to-png-converter + tesseract.js when text density looks scanned. Bounded by page count + time.
+- [x] Off-site git remote for wiki repo. `Omnib0mb3r/devneural-wiki` (private) created and pushed. Daemon-side scheduled push every 5 min via `wiki/push.ts`.
 
 ## Validation
 
