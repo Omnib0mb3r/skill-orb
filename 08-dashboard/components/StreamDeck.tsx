@@ -1,11 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { sessions as sessionsClient, type SessionSummary } from "@/lib/daemon-client";
 import { projectFromSlug, relTime } from "@/lib/session-helpers";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
+
+/* Hide sessions whose last activity was older than this. The on-disk
+ * session-state directory accumulates jsonl files indefinitely, so
+ * without a cutoff the rail fills with months of dead sessions. Active
+ * sessions (10-minute threshold per the daemon) are always shown
+ * regardless of this cutoff. */
+const STALE_HIDE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function StreamDeck() {
   const q = useQuery({
@@ -13,10 +21,14 @@ export function StreamDeck() {
     queryFn: sessionsClient,
     refetchInterval: 5_000,
   });
+  const [showStale, setShowStale] = useState(false);
 
   const all: SessionSummary[] = q.data?.sessions ?? [];
+  const now = Date.now();
+  const fresh = all.filter((s) => s.active || now - s.last_modified_ms < STALE_HIDE_MS);
+  const staleCount = all.length - fresh.length;
   // Sort: active first, then by recency.
-  const visible = [...all].sort((a, b) => {
+  const visible = [...(showStale ? all : fresh)].sort((a, b) => {
     if (a.active !== b.active) return a.active ? -1 : 1;
     return b.last_modified_ms - a.last_modified_ms;
   });
@@ -78,6 +90,18 @@ export function StreamDeck() {
       <button className="mt-1 lift p-3 rounded-card bg-surface1 hairline border-dashed text-txt2 hover:text-txt1 flex items-center justify-center gap-2 text-sm font-medium">
         <Icon name="Plus" size={16} /> new session
       </button>
+
+      {staleCount > 0 && (
+        <button
+          onClick={() => setShowStale((v) => !v)}
+          className="text-nano text-txt3 hover:text-txt1 mt-1 px-2 py-1 text-left"
+          aria-expanded={showStale}
+        >
+          {showStale
+            ? `Hide ${staleCount} stale session${staleCount === 1 ? "" : "s"}`
+            : `Show ${staleCount} stale session${staleCount === 1 ? "" : "s"} (older than 7 days)`}
+        </button>
+      )}
     </aside>
   );
 }

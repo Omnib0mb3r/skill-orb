@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { sessions as sessionsClient, type SessionSummary } from "@/lib/daemon-client";
 import { projectFromSlug, relTime } from "@/lib/session-helpers";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
+
+const STALE_HIDE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function SessionsTable() {
   const q = useQuery({
@@ -13,9 +16,13 @@ export function SessionsTable() {
     queryFn: sessionsClient,
     refetchInterval: 5_000,
   });
+  const [showStale, setShowStale] = useState(false);
 
   const list: SessionSummary[] = q.data?.sessions ?? [];
-  const visible = [...list].sort((a, b) => {
+  const now = Date.now();
+  const fresh = list.filter((s) => s.active || now - s.last_modified_ms < STALE_HIDE_MS);
+  const staleCount = list.length - fresh.length;
+  const visible = [...(showStale ? list : fresh)].sort((a, b) => {
     if (a.active !== b.active) return a.active ? -1 : 1;
     return b.last_modified_ms - a.last_modified_ms;
   });
@@ -27,9 +34,20 @@ export function SessionsTable() {
           <Icon name="Terminal" className="text-brandSoft" size={16} />
           <h2 className="font-display text-sm font-emphasized">Sessions on OTLCDEV</h2>
         </div>
-        <span className="text-nano text-txt3">
-          {visible.filter((s) => s.active).length} active · {visible.length} total
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-nano text-txt3">
+            {visible.filter((s) => s.active).length} active · {visible.length} shown
+          </span>
+          {staleCount > 0 && (
+            <button
+              onClick={() => setShowStale((v) => !v)}
+              className="text-nano text-txt3 hover:text-txt1"
+              aria-expanded={showStale}
+            >
+              {showStale ? `Hide ${staleCount} stale` : `+${staleCount} stale`}
+            </button>
+          )}
+        </div>
       </div>
 
       {q.isLoading && (
