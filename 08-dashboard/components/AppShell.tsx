@@ -14,17 +14,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const segments = pathname.split("/").filter(Boolean);
   const activeTab = segments.length === 0 ? "/" : `/${segments[0]}`;
 
+  // Layout is constrained to exactly one viewport (100dvh handles mobile
+   // URL-bar shifts) so the VitalsRibbon stays pinned to the visible bottom
+   // edge regardless of how far the main panel scrolls. The middle row is
+   // flex-1 + min-h-0 so its children own the scroll, not the page.
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-[100dvh] flex flex-col overflow-hidden">
       <TopBar activeTab={activeTab} />
       <div className="flex-1 flex min-h-0">
         {/* StreamDeck: hidden below md, visible md+ */}
-        <div className="hidden md:flex">
+        <div className="hidden md:flex min-h-0">
           <StreamDeck />
         </div>
         <main className="flex-1 min-w-0 overflow-y-auto pb-14 md:pb-0">{children}</main>
         {/* RightRail: hidden below xl, visible xl+ */}
-        <div className="hidden xl:flex">
+        <div className="hidden xl:flex min-h-0">
           <RightRail />
         </div>
       </div>
