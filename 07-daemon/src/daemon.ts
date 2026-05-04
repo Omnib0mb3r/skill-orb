@@ -26,6 +26,7 @@ import { curate, updateSummary, updateGlossary, updateCurrentTask } from './cura
 import { decayInactivePages } from './reinforcement/index.js';
 import { runLint } from './wiki/lint.js';
 import { initLintQueue, lintQueueStatus } from './wiki/lint-queue.js';
+import { runAutoIngest, startAutoIngestInterval } from './wiki/auto-ingest.js';
 import { generateWhatsNew } from './wiki/whats-new.js';
 import { registerDashboardRoutes } from './dashboard/routes.js';
 import fastifyCookie from '@fastify/cookie';
@@ -496,7 +497,16 @@ async function main(): Promise<void> {
   const coalescer = new SignalCoalescer(
     async () => {
       await store.flush();
-      logger('signal pass: store flushed; ingest comes in P3');
+      try {
+        const result = await runAutoIngest(store, logger);
+        if (result.ingests_triggered > 0) {
+          logger(
+            `[auto-ingest] signal pass: scanned=${result.projects_scanned} triggered=${result.ingests_triggered} created=${result.pages_created} updated=${result.pages_updated}`,
+          );
+        }
+      } catch (err) {
+        logger(`[auto-ingest] signal pass failed: ${(err as Error).message}`);
+      }
     },
     logger,
   );
@@ -504,6 +514,16 @@ async function main(): Promise<void> {
   const transcripts = startTranscriptWatcher({ log: logger, store });
   const fsWatcher = startFsWatcher({ log: logger });
   const gitWatcher = startGitWatcher({ log: logger });
+
+  /* Periodic auto-ingest tick. Catches activity that didn't produce a
+   * hook signal (background work, idle sessions that left chunks in the
+   * transcript). Default 5 min; tunable via env. The brain stays current
+   * even when hook delivery is interrupted. */
+  startAutoIngestInterval(
+    store,
+    logger,
+    Number(process.env.DEVNEURAL_AUTO_INGEST_INTERVAL_MS ?? 5 * 60 * 1000),
+  );
 
   process.on('SIGUSR1', () => {
     coalescer.trigger('SIGUSR1');
