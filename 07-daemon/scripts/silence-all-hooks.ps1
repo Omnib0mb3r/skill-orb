@@ -1,19 +1,27 @@
 <#
 .SYNOPSIS
   Wrap every hook entry in ~/.claude/settings.json so child processes run
-  invisibly (no flashing console windows).
+  invisibly (no flashing console windows) and still pipe stdin through.
 
 .DESCRIPTION
-  Walks every hook event and wraps each entry's command in a WScript shim
-  (wscript.exe + a generic VBS that takes the full command as one argument
-  and runs it with WindowStyle = 0). Result: zero visible windows on
-  Pre/Post tool use, prompt submit, session start/end, etc.
+  Walks every hook event and rewrites each entry's command to run via
+  silent-shim.exe. The shim is a tiny native console app that hides the
+  child's window (CreateNoWindow=true) and pipes the parent's stdin to
+  the child, which is what every Claude Code hook needs (the JSON
+  payload arrives on stdin).
 
-  Detects entries that are already wrapped (wscript or cmd /c start /min)
-  and skips them. .sh files get a bash.exe prefix automatically.
+  Earlier iterations of this script tried wscript+VBS (silent but
+  dropped stdin -> hooks no-op'd) and `cmd /c` (piped stdin but cmd
+  echoed it as garbage in additional-context). silent-shim.exe avoids
+  both pitfalls.
 
-  Backs up settings.json to settings.json.silence.bak.<timestamp> before
-  changing anything.
+  Detects entries that are already wrapped via silent-shim and skips
+  them. Existing wscript and cmd-based wraps are unwrapped first so
+  they get re-wrapped with the working shim. .sh files get a bash.exe
+  prefix automatically.
+
+  Backs up settings.json to settings.json.silence.bak.<timestamp>
+  before writing.
 
   Caveat: upstream installers (caveman, gsd, stream-deck, deep-project)
   may overwrite their entries on update; re-run this script if flashes
@@ -33,23 +41,19 @@ if (-not (Test-Path -LiteralPath $settingsPath)) {
     throw "settings.json not found at $settingsPath"
 }
 
-# Generic shim path: one VBS that takes the full command as a single arg
-# and runs it hidden. Lives next to DevNeural's other hook artifacts.
-$shimPath = "C:\dev\Projects\DevNeural\07-daemon\dist\capture\hooks\silent-shim.vbs"
-$shimDir = Split-Path -Parent $shimPath
-if (-not (Test-Path -LiteralPath $shimDir)) {
-    New-Item -ItemType Directory -Path $shimDir -Force | Out-Null
+# Resolve the shim. Prefer the published single-file build; fall back
+# to the bin/ Release output. Either is the same exe.
+$shimCandidates = @(
+    "C:\dev\Projects\DevNeural\07-daemon\scripts\silent-shim\bin\silent-shim.exe",
+    "C:\dev\Projects\DevNeural\07-daemon\scripts\silent-shim\bin\Release\net8.0\win-x64\silent-shim.exe"
+)
+$shimPath = $null
+foreach ($c in $shimCandidates) {
+    if (Test-Path -LiteralPath $c) { $shimPath = $c; break }
 }
-$shimContent = @'
-Option Explicit
-Dim sh
-Set sh = CreateObject("WScript.Shell")
-If WScript.Arguments.Count > 0 Then
-  sh.Run WScript.Arguments(0), 0, False
-End If
-Set sh = Nothing
-'@
-[System.IO.File]::WriteAllText($shimPath, $shimContent, [System.Text.UTF8Encoding]::new($false))
+if (-not $shimPath) {
+    throw "silent-shim.exe not built. Run: dotnet publish -c Release -r win-x64 in 07-daemon/scripts/silent-shim"
+}
 
 # Tolerate BOM that PS5.1 may have written previously.
 $rawBytes = [System.IO.File]::ReadAllBytes($settingsPath)
@@ -72,37 +76,44 @@ if (-not $settings.hooks) {
 $bashCmd = Get-Command bash.exe -ErrorAction SilentlyContinue
 $bashExe = if ($bashCmd) { $bashCmd.Source } else { "C:\Program Files\Git\bin\bash.exe" }
 
+function Strip-OldWrap {
+    param([string]$cmd)
+    # cmd /c wscript.exe "<vbs>" "<inner>"  ->  inner (with "" decoded)
+    if ($cmd -match '^\s*cmd(\.exe)?\s+/c\s+wscript(\.exe)?\s+"[^"]+"\s+"(.*)"\s*$') {
+        return ($matches[3] -replace '""', '"')
+    }
+    # wscript.exe "<vbs>" "<inner>"  ->  inner (with "" decoded)
+    if ($cmd -match '^\s*wscript(\.exe)?\s+"[^"]+"\s+"(.*)"\s*$') {
+        return ($matches[2] -replace '""', '"')
+    }
+    return $cmd
+}
+
 function Get-WrappedCommand {
     param([string]$original)
 
-    # Already wrapped? skip.
-    # Bare wscript.exe start fails on Claude Code's hook runner because
-    # the runner invokes commands through a bash shell that treats the
-    # .exe as a script source ("cannot execute binary file"). Prefix
-    # with `cmd /c` so the first token is cmd.exe, which bash exec's
-    # cleanly, and let cmd run wscript inside its own context.
-    if ($original -match '^\s*cmd(\.exe)?\s+/c\s+wscript(\.exe)?\b') { return $original }
+    # Already wrapped via silent-shim? leave alone.
+    if ($original -match [regex]::Escape($shimPath) + '\s+"') { return $original }
+    # cmd /c start /min — pre-existing pattern from other tools, leave alone.
     if ($original -match '^\s*cmd(\.exe)?\s+/c\s+start\s+/min') { return $original }
-    if ($original -match '^\s*wscript(\.exe)?\b') {
-        # Previously-wrapped entries that lack the cmd /c prefix get
-        # rewritten so they survive Claude Code's bash-based exec path.
-        $rest = $original -replace '^\s*wscript(\.exe)?\s+', ''
-        return "cmd /c wscript.exe $rest"
-    }
+
+    # Strip old wscript / cmd-/c-wscript wraps so we can re-wrap cleanly.
+    $inner = Strip-OldWrap $original
 
     # .sh path? prefix with bash.
-    $inner = $original
-    if ($original -match '^\s*"?([^"]+\.sh)"?(\s+(.*))?$') {
+    if ($inner -match '^\s*"?([^"]+\.sh)"?(\s+(.*))?$') {
         $shPath = $matches[1]
         $shArgs = $matches[3]
-        $inner = "`"$bashExe`" `"$shPath`""
-        if ($shArgs) { $inner = "$inner $shArgs" }
+        $built = "`"$bashExe`" `"$shPath`""
+        if ($shArgs) { $built = "$built $shArgs" }
+        $inner = $built
     }
 
-    # Escape inner quotes for the wscript argument: each " becomes "" in the
-    # wrapped command, and the whole thing is wrapped in outer quotes.
+    # silent-shim.exe takes the full inner command as a single arg.
+    # Escape embedded double-quotes by doubling them (cmd-style); shim
+    # parses the first quoted token as the exe and the rest as args.
     $escaped = $inner -replace '"', '""'
-    return "cmd /c wscript.exe `"$shimPath`" `"$escaped`""
+    return "`"$shimPath`" `"$escaped`""
 }
 
 $totalWrapped = 0
