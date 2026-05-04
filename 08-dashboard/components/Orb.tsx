@@ -113,10 +113,10 @@ function isRecentlyPromoted(node: GraphNode): boolean {
 }
 
 function nodeRadius(weight: number): number {
-  // Bigger across the board so the dashboard orb reads at a glance
-  // instead of looking like loose constellation dots. Hot pages scale
-  // up further so the eye finds them first.
-  return 4.5 + Math.max(0, Math.min(1, weight)) * 9;
+  // Tuned against linkWidth (1.2 + w*3) so the cluster reads as a
+  // network, not a field of disks connected by hairlines. Smaller base
+  // so labels have somewhere to land without overlapping the dot.
+  return 3 + Math.max(0, Math.min(1, weight)) * 7;
 }
 
 interface OrbProps {
@@ -132,6 +132,7 @@ export function Orb({ compact = false }: OrbProps = {}) {
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const [hovered, setHovered] = useState<ForceNode | null>(null);
   const [pointer, setPointer] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [showLabels, setShowLabels] = useState(false);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -183,20 +184,33 @@ export function Orb({ compact = false }: OrbProps = {}) {
 
   const graphData = useMemo(() => {
     const rawEdges = q.data?.edges ?? [];
-    const maxW = rawEdges.reduce(
-      (m, e) => Math.max(m, typeof e.weight === "number" ? e.weight : 0),
-      0,
-    );
-    const norm = (w: number | undefined): number => {
-      if (typeof w !== "number") return 0.5;
-      if (maxW <= 0) return 0;
-      return w / maxW;
-    };
+    /* Heat is RANK-relative, not absolute. With absolute weights, all
+     * edges hover near the mean and the orb looks uniformly warm. With
+     * rank: edge at the top of the sorted list maps to 1.0, bottom
+     * maps to 0.0, ties share the same fractional rank. So if one
+     * cluster heats up (more cross-refs incoming), edges around it get
+     * rank-displaced and the rest visibly cool. */
+    const sortedByWeight = [...rawEdges]
+      .map((e, i) => ({ i, w: typeof e.weight === "number" ? e.weight : 0 }))
+      .sort((a, b) => a.w - b.w);
+    const rankOf = new Map<number, number>();
+    for (let i = 0; i < sortedByWeight.length; i++) {
+      const entry = sortedByWeight[i];
+      if (!entry) continue;
+      // Tie-handling: same weight gets average rank position.
+      let lo = i;
+      let hi = i;
+      while (lo > 0 && sortedByWeight[lo - 1]?.w === entry.w) lo -= 1;
+      while (hi < sortedByWeight.length - 1 && sortedByWeight[hi + 1]?.w === entry.w) hi += 1;
+      const avgRank = (lo + hi) / 2;
+      const denom = Math.max(1, sortedByWeight.length - 1);
+      rankOf.set(entry.i, avgRank / denom);
+    }
     const nodes: ForceNode[] = (q.data?.nodes ?? []).map((n) => ({ ...n }));
-    const links: ForceLink[] = rawEdges.map((e) => ({
+    const links: ForceLink[] = rawEdges.map((e, idx) => ({
       source: e.source,
       target: e.target,
-      weight: norm(e.weight),
+      weight: rankOf.get(idx) ?? 0.5,
       ...(e.kind ? { kind: e.kind } : {}),
     }));
     return { nodes, links };
@@ -229,6 +243,17 @@ export function Orb({ compact = false }: OrbProps = {}) {
     },
     [router],
   );
+
+  /* Refs the canvas-callback closures read at every frame. Reading
+   * useState directly inside drawNode would close over the value at
+   * the time the callback was minted (drawNode is wrapped in
+   * useCallback with empty deps so canvas keeps a stable reference).
+   * Refs always reflect the latest value without forcing the canvas
+   * to re-mount. */
+  const hoveredIdRef = useRef<string | null>(null);
+  const showLabelsRef = useRef<boolean>(false);
+  useEffect(() => { hoveredIdRef.current = hovered?.id ?? null; }, [hovered]);
+  useEffect(() => { showLabelsRef.current = showLabels; }, [showLabels]);
 
   const onNodeHover = useCallback((n: ForceNode | null) => {
     setHovered(n ?? null);
@@ -490,14 +515,27 @@ export function Orb({ compact = false }: OrbProps = {}) {
         ctx.stroke();
       }
 
-      if (globalScale >= 1.4) {
-        const fontSize = Math.max(8, 10 / globalScale * 1.2);
-        ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
+      // Labels draw under three conditions: explicit toggle, hover, or
+      // very deep zoom. We never auto-paint at moderate zooms because
+      // every node would emit text simultaneously and they'd all
+      // overlap. Font scales inversely with zoom so it stays roughly
+      // the same on-screen size.
+      const isHovered = hoveredIdRef.current === raw.id;
+      const labelOn = showLabelsRef.current || isHovered || globalScale >= 2.6;
+      if (labelOn) {
+        const fontSize = Math.max(8, (isHovered ? 12 : 10) / globalScale * 1.3);
+        ctx.font = `${isHovered ? "600 " : ""}${fontSize}px Inter, system-ui, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        ctx.fillStyle = COLOR_LABEL;
+        // Hovered label gets a backing pill so it always reads.
         const label = raw.title.length > 60 ? raw.title.slice(0, 57) + "..." : raw.title;
-        ctx.fillText(label, x, y + r + 2);
+        if (isHovered) {
+          const w = ctx.measureText(label).width;
+          ctx.fillStyle = "rgba(15, 17, 22, 0.85)";
+          ctx.fillRect(x - w / 2 - 4, y + r + 1, w + 8, fontSize + 4);
+        }
+        ctx.fillStyle = COLOR_LABEL;
+        ctx.fillText(label, x, y + r + 3);
       }
     },
     [],
@@ -558,15 +596,17 @@ export function Orb({ compact = false }: OrbProps = {}) {
       onMouseDown={markInteracted}
       onTouchStart={markInteracted}
     >
-      {size.w > 0 && size.h > 0 && (
-        // The lib's NodeType generic is loose (`{ id?, x?, y? }`) so the
-        // accessor callbacks would not type-check against our richer
-        // ForceNode. Casts are localized to this prop set.
+      {(
+        // Always render once the container has been measured, even with
+        // tiny dimensions. Falls back to a sensible default until
+        // ResizeObserver catches up; without this, on the home tab the
+        // dynamic canvas sometimes never mounts because the embed grid
+        // resolves its width AFTER our useEffect schedule fires.
         <OrbCanvas
           ref={fgRef}
           graphData={graphData as unknown as { nodes: object[]; links: object[] }}
-          width={size.w}
-          height={size.h}
+          width={size.w || 320}
+          height={size.h || 280}
           onEngineStop={frame as never}
           backgroundColor="rgba(0,0,0,0)"
           nodeRelSize={1}
@@ -607,8 +647,10 @@ export function Orb({ compact = false }: OrbProps = {}) {
           linkWidth={
             ((l: object) => {
               const w = (l as ForceLink).weight ?? 0.5;
-              // Cold edges 0.6px hairlines, hot edges scale up to 2.4px.
-              return 0.6 + Math.max(0, Math.min(1, w)) * 1.8;
+              // Thicker overall so the network reads through the
+              // breathing-glow halos around nodes. Cold edges 1.2px,
+              // hot edges 4.2px.
+              return 1.2 + Math.max(0, Math.min(1, w)) * 3;
             }) as never
           }
           /* Animated particles flowing along each edge. Density and speed
@@ -659,6 +701,40 @@ export function Orb({ compact = false }: OrbProps = {}) {
           minZoom={0.3}
           maxZoom={6}
         />
+      )}
+
+      {/* Floating overlay controls. Top-right so they don't overlap
+       * the legend at bottom-left. Compact mode hides them so the
+       * embedded home-tab orb stays uncluttered. */}
+      {!compact && (
+        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-pill bg-surface1/85 hairline px-2 py-1 backdrop-blur-sm">
+          <button
+            type="button"
+            onClick={() => setShowLabels((v) => !v)}
+            aria-pressed={showLabels}
+            aria-label={showLabels ? "Hide all labels" : "Show all labels"}
+            title={showLabels ? "Hide all labels" : "Show all labels"}
+            className={`text-nano font-mono px-2 py-0.5 rounded-pill transition ${
+              showLabels
+                ? "bg-brand/20 text-brandSoft ring-1 ring-brand/40"
+                : "text-txt3 hover:text-txt1"
+            }`}
+          >
+            labels
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              userInteractedRef.current = false;
+              frame();
+            }}
+            aria-label="Re-center the orb"
+            title="Re-center"
+            className="text-nano font-mono px-2 py-0.5 rounded-pill text-txt3 hover:text-txt1"
+          >
+            recenter
+          </button>
+        </div>
       )}
 
       {hovered && (
