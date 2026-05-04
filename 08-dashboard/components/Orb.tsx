@@ -183,11 +183,6 @@ export function Orb({ compact = false }: OrbProps = {}) {
 
   const graphData = useMemo(() => {
     const rawEdges = q.data?.edges ?? [];
-    // Normalize edge weights against the max in this snapshot. With only
-    // a handful of pages early on, even the "hottest" edge has low absolute
-    // weight; relative normalization keeps the heat gradient meaningful at
-    // every wiki size. Falls back to absolute if the daemon ever omits
-    // weight (older deploy).
     const maxW = rawEdges.reduce(
       (m, e) => Math.max(m, typeof e.weight === "number" ? e.weight : 0),
       0,
@@ -207,6 +202,26 @@ export function Orb({ compact = false }: OrbProps = {}) {
     return { nodes, links };
   }, [q.data]);
 
+  /* Refs that the custom isolation-pull d3-force reads at every tick.
+   * Reading state directly inside the closure would capture stale data
+   * after a refetch; refs always reflect the latest graph. */
+  const graphDataRef = useRef<{ nodes: ForceNode[]; links: ForceLink[] }>({
+    nodes: [],
+    links: [],
+  });
+  const connectedIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    graphDataRef.current = graphData;
+    const ids = new Set<string>();
+    for (const l of graphData.links) {
+      const sId = typeof l.source === "object" ? (l.source as ForceNode).id : String(l.source);
+      const tId = typeof l.target === "object" ? (l.target as ForceNode).id : String(l.target);
+      ids.add(sId);
+      ids.add(tId);
+    }
+    connectedIdsRef.current = ids;
+  }, [graphData]);
+
   const onNodeClick = useCallback(
     (n: ForceNode) => {
       if (!n.id) return;
@@ -219,33 +234,76 @@ export function Orb({ compact = false }: OrbProps = {}) {
     setHovered(n ?? null);
   }, []);
 
-  /* Tune d3-force so the layout looks good in every regime, especially the
-   * early-life "lots of nodes, no edges" case where d3's defaults push
-   * everything to the canvas perimeter.
+  /* Tune d3-force so isolated nodes don't drift to the canvas perimeter
+   * and connected clusters bind tightly enough to read as clusters.
    *
-   * - charge: weaker repulsion than default (-30) so nodes don't fly apart.
-   * - center: keeps the cluster anchored at (0,0) which we then frame.
-   * - link: a soft default distance; once edges populate, the force-graph
-   *   default link strength still applies. */
+   * Default d3-force gives every node the same charge repulsion. With no
+   * counter-pull, nodes without edges settle wherever charge balances
+   * with the global center force - which is far away when charge is
+   * stronger than center, exactly the case the user reported (zoom way
+   * out to find a lone node). Two layers fix that:
+   *
+   *   1. Tighter base forces. Lower charge, shorter link distance,
+   *      stronger global center pull so the whole graph wants to be
+   *      compact.
+   *
+   *   2. Custom 'isolation-pull' force at every tick. Per-node check:
+   *      if the node has no incident edges, pull it toward the origin
+   *      with extra strength scaled by current alpha. Connected nodes
+   *      ignore this force entirely so link/charge balance still drives
+   *      cluster layout.
+   *
+   * Link strength gets a weight bonus so important edges (high page
+   * weight) shorten faster than weak ones, making cluster topology
+   * legible. */
   const tuneForces = useCallback(() => {
     const fg = fgRef.current;
     if (!fg) return;
     try {
       const charge = fg.d3Force("charge") as { strength?: (s: number) => unknown } | undefined;
       if (charge && typeof charge.strength === "function") {
-        // Weaker repulsion + stronger center keeps the cluster compact so
-        // the orb fills its panel instead of leaking edgeless nodes to
-        // the canvas perimeter.
-        charge.strength(-35);
+        charge.strength(-22);
       }
       const center = fg.d3Force("center") as { strength?: (s: number) => unknown } | undefined;
       if (center && typeof center.strength === "function") {
-        center.strength(0.18);
+        center.strength(0.22);
       }
-      const link = fg.d3Force("link") as { distance?: (d: number) => unknown } | undefined;
-      if (link && typeof link.distance === "function") {
-        link.distance(28);
+      const link = fg.d3Force("link") as {
+        distance?: (d: ((l: { weight?: number }) => number) | number) => unknown;
+        strength?: (s: ((l: { weight?: number }) => number) | number) => unknown;
+      } | undefined;
+      if (link) {
+        if (typeof link.distance === "function") {
+          // Weighted edges contract more; weak edges get a longer rest
+          // length so weak co-mentions don't pull unrelated clusters
+          // together.
+          link.distance(((l: { weight?: number }) => 22 + (1 - (l.weight ?? 0.5)) * 18) as never);
+        }
+        if (typeof link.strength === "function") {
+          link.strength(((l: { weight?: number }) => 0.4 + (l.weight ?? 0.5) * 0.5) as never);
+        }
       }
+
+      // Custom force: extra pull on edgeless nodes toward origin. d3-force
+      // calls this every tick with the current alpha; nodes carry mutable
+      // x/y/vx/vy. We read connected-id set from the latest graphData on
+      // each call so the force tracks data refetches without a re-tune.
+      type ForceNodeWithVel = ForceNode & { vx?: number; vy?: number };
+      const isolationPull = (alpha: number): void => {
+        const nodes = (graphDataRef.current.nodes as ForceNodeWithVel[]) ?? [];
+        const connected = connectedIdsRef.current;
+        if (nodes.length === 0) return;
+        for (const n of nodes) {
+          if (connected.has(n.id)) continue;
+          if (typeof n.x !== "number" || typeof n.y !== "number") continue;
+          // Pull toward origin; stronger when far. 0.06 chosen by feel:
+          // strong enough to gather strays in 2-3s, weak enough that a
+          // user-dragged node doesn't snap back instantly.
+          n.vx = (n.vx ?? 0) + -n.x * 0.06 * alpha;
+          n.vy = (n.vy ?? 0) + -n.y * 0.06 * alpha;
+        }
+      };
+      fg.d3Force("isolation-pull", isolationPull as unknown);
     } catch {
       // Force methods are best-effort. If the lib's API ever changes shape
       // the layout still runs with defaults; the orb just frames less tightly.
@@ -327,25 +385,47 @@ export function Orb({ compact = false }: OrbProps = {}) {
   const nodeCount = q.data?.nodes.length ?? 0;
   const edgeCount = q.data?.edges.length ?? 0;
 
-  // Re-tune forces and re-frame whenever the data set or container size
-  // changes. With cooldownTicks=Infinity the simulation never reaches a
-  // truly settled state, so we sample at a few delays then stop.
-  // Staggered timers cover the warm window: 350ms after the warmup ticks
-  // spread the cluster, 1200ms once links contract, 2500ms after long-
-  // tail drift. Reset the user-interaction flag on data/size change so
-  // a refetch reframes even after the user previously zoomed.
+  // Tune + frame logic. Two problems to handle:
+  //
+  //   1. fgRef.current is null until the dynamic-imported OrbCanvas
+  //      finishes loading. Fixed timers fire before the canvas ref is
+  //      attached on slow first-paint, so the orb appears empty until
+  //      navigation forces a remount.
+  //
+  //   2. With cooldownTicks=Infinity the engine never fires onEngineStop,
+  //      so we can't rely on it to know when to frame.
+  //
+  // Solution: a ready-poll that runs every 80ms until fgRef.current
+  // exists, then fires tune + a few staggered frames. Cancellable on
+  // unmount + on data/size change so we don't pile up timers.
   useEffect(() => {
     if (nodeCount === 0 || size.w === 0 || size.h === 0) return;
     userInteractedRef.current = false;
-    const t1 = setTimeout(tuneForces, 50);
-    const t2 = setTimeout(frame, 400);
-    const t3 = setTimeout(frame, 1500);
-    const t4 = setTimeout(frame, 3000);
+
+    let cancelled = false;
+    const timeouts: ReturnType<typeof setTimeout>[] = [];
+
+    const armOnReady = (): void => {
+      if (cancelled) return;
+      const fg = fgRef.current;
+      if (!fg) {
+        timeouts.push(setTimeout(armOnReady, 80));
+        return;
+      }
+      tuneForces();
+      // Schedule frames at staggered intervals once the ref is real.
+      // Layout settle window: warmup ticks spread by 400ms, links
+      // contract by 1500ms, long-tail drift by 3000ms.
+      timeouts.push(setTimeout(frame, 60));
+      timeouts.push(setTimeout(frame, 400));
+      timeouts.push(setTimeout(frame, 1500));
+      timeouts.push(setTimeout(frame, 3000));
+    };
+    armOnReady();
+
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-      clearTimeout(t4);
+      cancelled = true;
+      for (const t of timeouts) clearTimeout(t);
     };
   }, [nodeCount, edgeCount, size.w, size.h, tuneForces, frame]);
 
