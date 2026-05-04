@@ -26,12 +26,14 @@ interface SparkProps {
   label: string;
   data: SamplePoint[];
   category: "cpu" | "mem";
-  // Token-derived color, passed as a CSS var so the value tracks the dark/light
-  // theme without hard-coding hex. Tremor forwards the string straight to
-  // recharts which uses it as an SVG fill/stroke; SVG accepts var() and oklch().
-  colorVar: string;
+  /* Tremor's `colors` prop only accepts entries from its built-in palette
+   * (violet, emerald, etc) — passing CSS vars or oklch literals silently
+   * disables the line. Map our token intent to the closest palette match:
+   *   --c-accent (electric violet)  -> "violet"
+   *   --c-ok (green)                 -> "emerald" */
+  color: "violet" | "emerald";
 }
-function Spark({ label, data, category, colorVar }: SparkProps) {
+function Spark({ label, data, category, color }: SparkProps) {
   const last = data[data.length - 1]?.[category] ?? 0;
   return (
     <div>
@@ -43,7 +45,7 @@ function Spark({ label, data, category, colorVar }: SparkProps) {
         data={data}
         index="t"
         categories={[category]}
-        colors={[colorVar]}
+        colors={[color]}
         className="h-10 w-full"
         minValue={0}
         maxValue={100}
@@ -150,8 +152,8 @@ export function SystemPanel() {
           </div>
           {history.length > 1 && (
             <div className="px-5 pb-4 grid grid-cols-2 gap-5">
-              <Spark label="CPU trend" data={history} category="cpu" colorVar="var(--c-accent)" />
-              <Spark label="Memory trend" data={history} category="mem" colorVar="var(--c-ok)" />
+              <Spark label="CPU trend" data={history} category="cpu" color="violet" />
+              <Spark label="Memory trend" data={history} category="mem" color="emerald" />
             </div>
           )}
           <div className="px-5 py-3 border-t border-border2 flex items-center justify-between text-[11px] font-mono text-txt3">
