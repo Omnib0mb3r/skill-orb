@@ -31,11 +31,11 @@ const SOURCE_COLORS: Record<SearchHit["source"], string> = {
  * use the top-level preview the daemon returns. Falls back to title. */
 function hitPreview(r: SearchHit): string {
   const meta = r.metadata ?? {};
-  const candidates = [
-    r.preview,
+  const candidates: string[] = [
+    typeof r.preview === "string" ? r.preview : "",
     typeof meta.text_preview === "string" ? meta.text_preview : "",
     typeof meta.summary === "string" ? meta.summary : "",
-    r.title ?? "",
+    typeof r.title === "string" ? r.title : "",
   ];
   return candidates.find((c) => c.trim().length > 0) ?? "";
 }

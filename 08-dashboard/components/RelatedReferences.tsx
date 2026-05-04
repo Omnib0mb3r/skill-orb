@@ -19,20 +19,17 @@ interface Props {
 
 function refTitle(r: SearchHit): string {
   const meta = r.metadata ?? {};
-  return (
-    r.title ??
-    (typeof meta.filename === "string" ? meta.filename : "") ??
-    (typeof meta.doc_id === "string" ? meta.doc_id : "reference")
-  );
+  if (typeof r.title === "string" && r.title) return r.title;
+  if (typeof meta.filename === "string" && meta.filename) return meta.filename;
+  if (typeof meta.doc_id === "string" && meta.doc_id) return meta.doc_id;
+  return "reference";
 }
 
 function refPreview(r: SearchHit): string {
   const meta = r.metadata ?? {};
-  return (
-    r.preview ??
-    (typeof meta.text_preview === "string" ? meta.text_preview : "") ??
-    ""
-  );
+  if (typeof r.preview === "string" && r.preview) return r.preview;
+  if (typeof meta.text_preview === "string") return meta.text_preview;
+  return "";
 }
 
 export function RelatedReferences({ query }: Props) {
