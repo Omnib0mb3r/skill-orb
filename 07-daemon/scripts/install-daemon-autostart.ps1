@@ -56,12 +56,24 @@ $argList = @(
 
 $action = New-ScheduledTaskAction -Execute $pwsh -Argument $argList
 
-# At-logon trigger so the daemon comes up before the user opens any
-# specific app. Adds a 30s delay so we don't race networking + login
-# session warmup; daemon listens on 0.0.0.0 anyway, Tailscale picks
-# it up as soon as it's bound.
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User (whoami)
-$trigger.Delay = 'PT30S'
+# Three triggers stacked for resilience:
+#   AtLogOn   - covers fresh login + reboot
+#   AtStartup - covers full system boot before any user logs in
+#   Daily     - hourly repeating safety-net so a sleep/wake cycle, an
+#               OOM kill, or a manual stop is auto-recovered within an
+#               hour. start-daemon.ps1 is a no-op when the daemon is
+#               already alive (PID file singleton check), so the cost
+#               of re-firing is just a quick exit.
+$logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User (whoami)
+$logonTrigger.Delay = 'PT30S'
+
+$bootTrigger = New-ScheduledTaskTrigger -AtStartup
+$bootTrigger.Delay = 'PT60S'
+
+$now = Get-Date
+$safetyTrigger = New-ScheduledTaskTrigger -Once -At $now -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration ([System.TimeSpan]::MaxValue)
+
+$triggers = @($logonTrigger, $bootTrigger, $safetyTrigger)
 
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
@@ -84,9 +96,9 @@ Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction Silent
 try {
     Register-ScheduledTask `
         -TaskName $taskName `
-        -Description 'DevNeural daemon autostart. Launches node dist/daemon.js at logon so the dashboard is reachable from the phone without opening any specific app.' `
+        -Description 'DevNeural daemon autostart + watchdog. Launches node dist/daemon.js at logon, at boot, and every 5 minutes as a safety net (no-op when daemon is already alive). Keeps the dashboard reachable from the phone after sleep/wake or unexpected stops.' `
         -Action $action `
-        -Trigger $trigger `
+        -Trigger $triggers `
         -Settings $settings `
         -Principal $principal `
         -ErrorAction Stop | Out-Null

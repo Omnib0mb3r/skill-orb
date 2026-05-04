@@ -31,6 +31,22 @@ if (-not (Test-Path -LiteralPath $dist)) {
     throw "daemon.js not found at $dist. Run 'npm run build' in 07-daemon first."
 }
 
+# Cheap health probe before spawning. The autostart task fires every
+# 5 minutes as a safety net; if the daemon is already alive on
+# localhost:3747 we exit silently to avoid burning CPU on a no-op
+# Node startup. Daemon's own PID-file singleton check is the
+# authoritative guard, but skipping the spawn entirely is friendlier.
+$port = if ($env:DEVNEURAL_PORT) { [int]$env:DEVNEURAL_PORT } else { 3747 }
+try {
+    $existing = Invoke-WebRequest -Uri "http://localhost:$port/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+    if ($existing.StatusCode -eq 200) {
+        Write-Host "[start-daemon] already alive on :$port; skipping spawn"
+        return
+    }
+} catch {
+    # Not reachable; proceed with launch.
+}
+
 $node = (Get-Command node -ErrorAction SilentlyContinue)?.Source
 if (-not $node) {
     throw "node not on PATH. Install Node.js or set explicit path."
