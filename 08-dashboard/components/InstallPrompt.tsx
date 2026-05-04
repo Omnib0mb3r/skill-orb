@@ -87,7 +87,7 @@ export function InstallPrompt() {
           setMode("hidden");
         }
       }}
-      className="h-8 px-3 rounded-input bg-brand/10 hairline ring-1 ring-brand/30 text-brandSoft text-xs font-emphasized hover:bg-brand/15 flex items-center gap-2"
+      className="h-8 px-3 rounded-card bg-brand/10 hairline ring-1 ring-brand/30 text-brandSoft text-xs font-emphasized hover:bg-brand/15 flex items-center gap-2"
       aria-label="Install dashboard as app"
     >
       <Icon name="Download" size={14} /> install dashboard

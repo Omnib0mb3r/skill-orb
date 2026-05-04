@@ -45,10 +45,30 @@ export async function extractPdf(
   log: (msg: string) => void = () => undefined,
 ): Promise<PdfExtractResult> {
   const warnings: string[] = [];
-  const buffer = fs.readFileSync(filePath);
-  const mod = (await import('pdf-parse')) as unknown as {
+
+  let buffer: Buffer;
+  try {
+    buffer = fs.readFileSync(filePath);
+  } catch (err) {
+    return {
+      text: '',
+      page_count: 0,
+      warnings: [`pdf read failed: ${(err as Error).message}`],
+    };
+  }
+
+  let mod: {
     default: (data: Buffer) => Promise<{ text?: string; numpages?: number }>;
   };
+  try {
+    mod = (await import('pdf-parse')) as unknown as typeof mod;
+  } catch (err) {
+    return {
+      text: '',
+      page_count: 0,
+      warnings: [`pdf-parse import failed: ${(err as Error).message}`],
+    };
+  }
 
   let parsed: { text?: string; numpages?: number };
   try {
@@ -76,7 +96,20 @@ export async function extractPdf(
     `[pdf-ocr] fallback engaged for ${filePath} (text=${text.length}b across ${pageCount} pages, avg=${Math.round(avgCharsPerPage)})`,
   );
   try {
-    const ocr = await ocrPdf(buffer, pageCount, log);
+    // Whole-pipeline timeout. The per-page guard inside ocrPdf only
+    // covers the recognize loop; rasterization and worker startup
+    // sit outside it, so we wrap the entire promise in a hard
+    // deadline so a stuck pdf-to-png-converter or tesseract worker
+    // can't hold up the ingest queue forever.
+    const ocr = await Promise.race<OcrResult>([
+      ocrPdf(buffer, pageCount, log),
+      new Promise<OcrResult>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`ocr pipeline timeout after ${OCR_TIMEOUT_MS}ms`)),
+          OCR_TIMEOUT_MS,
+        ),
+      ),
+    ]);
     if (ocr.text.length > text.length) {
       return {
         text: ocr.text,

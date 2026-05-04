@@ -25,7 +25,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { embedOne } from '../embedder/index.js';
-import type { Store, WikiPageMetadata } from '../store/index.js';
+import type { Store } from '../store/index.js';
 import {
   parsePage,
   writePage,
@@ -335,6 +335,11 @@ export async function evaluateAssistantReply(
       page: p.pageId,
       cosine,
     });
+    // Drop the pending after the FIRST assistant turn so subsequent
+    // turns in the same session don't re-evaluate the same injection
+    // and emit a duplicate no-hit (or a stale false hit when the
+    // conversation later happens to mention the page).
+    pending.delete(sessionId);
     return;
   }
 
@@ -391,6 +396,9 @@ export async function evaluateAssistantReply(
     });
     void reindexPage(store, { ...page, frontmatter: fm });
   }
+  // Hit consumed: drop pending so the same injection can't be
+  // reinforced twice from later assistant turns in this session.
+  pending.delete(sessionId);
   commitWiki(`reinforce hit ${p.pageId}`);
 }
 

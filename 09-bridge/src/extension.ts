@@ -327,7 +327,13 @@ async function handleMessage(message: BridgeMessage): Promise<void> {
     return;
   }
 
-  const terminal = await findTargetTerminalAsync();
+  let terminal: vscode.Terminal | undefined;
+  try {
+    terminal = await findTargetTerminalAsync();
+  } catch (err) {
+    channel.appendLine(`[error] terminal resolution failed: ${(err as Error).message}`);
+    return;
+  }
   if (!terminal) {
     channel.appendLine(
       '[skip] no terminal in this window; another bridge instance is expected to handle it',
@@ -335,19 +341,23 @@ async function handleMessage(message: BridgeMessage): Promise<void> {
     noticeNoTerminal();
     return;
   }
-  channel.appendLine(
-    `[send] -> "${terminal.name}": ${message.text.slice(0, 80)}${
-      message.text.length > 80 ? '...' : ''
-    }`,
-  );
-  terminal.show(true);
-  // VS Code's sendText(_, true) appends '\n', but the Claude Code TUI on
-  // Windows wants '\r' to commit input. Without an explicit '\r' the
-  // text lands in the prompt buffer and waits for the user to hit
-  // Enter manually. Send text with no auto-newline, then a separate
-  // '\r' write so Claude treats it as a real Enter keypress.
-  terminal.sendText(message.text, false);
-  terminal.sendText('\r', false);
+  try {
+    channel.appendLine(
+      `[send] -> "${terminal.name}": ${message.text.slice(0, 80)}${
+        message.text.length > 80 ? '...' : ''
+      }`,
+    );
+    terminal.show(true);
+    // VS Code's sendText(_, true) appends '\n', but the Claude Code TUI on
+    // Windows wants '\r' to commit input. Without an explicit '\r' the
+    // text lands in the prompt buffer and waits for the user to hit
+    // Enter manually. Send text with no auto-newline, then a separate
+    // '\r' write so Claude treats it as a real Enter keypress.
+    terminal.sendText(message.text, false);
+    terminal.sendText('\r', false);
+  } catch (err) {
+    channel.appendLine(`[error] sendText failed: ${(err as Error).message}`);
+  }
 }
 
 /* Cache: session_id -> resolved cwd (or '' if unresolvable). Keyed by
@@ -450,6 +460,27 @@ function shouldHandleSession(sessionId: string): boolean {
   });
 }
 
+/* Per-file in-flight chain. tick() calls processFile every 750ms;
+ * without serialization a slow terminal lookup on one message could
+ * let a later tick read the same file again before the prior batch's
+ * handleMessage calls had run, and prompts could land out of order.
+ * We chain handleMessage promises against a single tail promise per
+ * file so deliveries stay strictly in queue order. */
+const inflightByFile = new Map<string, Promise<void>>();
+
+function enqueueDelivery(file: string, message: BridgeMessage): void {
+  const tail = inflightByFile.get(file) ?? Promise.resolve();
+  const next = tail
+    .catch(() => undefined)
+    .then(() => handleMessage(message))
+    .catch((err) => {
+      channel.appendLine(
+        `[deliver-error] ${(err as Error)?.message ?? String(err)}`,
+      );
+    });
+  inflightByFile.set(file, next);
+}
+
 function processFile(file: string): void {
   if (!isEnabled()) return;
   const sessionId = path.basename(file, '.in');
@@ -506,7 +537,7 @@ function processFile(file: string): void {
           );
           continue;
         }
-        void handleMessage(message);
+        enqueueDelivery(file, message);
       } catch (err) {
         channel.appendLine(
           `[parse-error] ${(err as Error).message}: ${trimmed.slice(0, 200)}`,

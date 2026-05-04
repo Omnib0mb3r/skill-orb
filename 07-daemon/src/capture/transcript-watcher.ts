@@ -253,23 +253,16 @@ async function processFile(
       }
     }
 
-    // Drive the dashboard's stream-deck tile phase from the transcript
-    // itself instead of relying on Claude Code hooks. Hooks are wrapped
-    // in wscript shims that drop stdin, so the hook-runner phase ping
-    // path bails on empty payload. Reading the transcript directly is
-    // hook-independent: every Claude turn appends a line and we know the
-    // session id from the file path. Mapping:
-    //   user record  -> 'thinking' (Claude is about to respond)
-    //   assistant w/ tool_use -> 'tool' (a tool call is mid-flight)
-    //   assistant text-only   -> 'idle' (turn settled)
-    // The 60s phase decay in session-phase.ts pulls everything back to
-    // idle if the transcript stops moving.
+    // Drive the dashboard's stream-deck tile phase from the transcript.
+    // Tool-use detection runs against the raw JSON line because
+    // extractText drops tool_use blocks and the scrubbed text rarely
+    // carries the marker. The dashboard's listSessions() also tails
+    // the same jsonl on every poll, so this is a "best-effort fast
+    // path" for sessions actively producing transcript activity.
     {
-      const recordKind = String(record.kind ?? '');
       const isToolUse =
-        recordKind === 'tool_use' ||
-        /"type"\s*:\s*"tool_use"/.test(scrubbed) ||
-        /tool_use_id/.test(scrubbed);
+        /"type"\s*:\s*"tool_use"/.test(trimmed) ||
+        /"tool_use_id"/.test(trimmed);
       if (role === 'user' || record.role === 'user') {
         setPhase(session, 'thinking');
       } else if (role === 'assistant' || record.role === 'assistant') {

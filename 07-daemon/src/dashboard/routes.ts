@@ -337,9 +337,11 @@ export async function registerDashboardRoutes(
     return { ok: true, ...bridgeStatus() };
   });
 
-  app.post('/sessions/:id/focus', async (req) => {
+  app.post('/sessions/:id/focus', async (req, reply) => {
     const id = (req.params as { id: string }).id;
-    return queueSessionFocus(id);
+    const r = queueSessionFocus(id);
+    if (!r.ok) reply.code(503);
+    return r;
   });
 
   /* Nav-mode key injection. The dashboard's Stream Deck rail enters Nav
@@ -357,7 +359,9 @@ export async function registerDashboardRoutes(
           'key must be one of: up, down, left, right, enter, backspace, 1-5, mic',
       };
     }
-    return queueSessionKey(id, body.key);
+    const r = queueSessionKey(id, body.key);
+    if (!r.ok) reply.code(503);
+    return r;
   });
 
   /* Phase ping. Hook-runner POSTs here on every Pre/Post/Prompt/Stop so

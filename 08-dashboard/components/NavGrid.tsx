@@ -13,11 +13,14 @@ import { Icon } from "./Icon";
  *   Row 1:  _     _     ↑     ⌫    ✕            - up + backspace + close
  *   Row 2:  🎤    ←    ↓     →    ↵            - mic + arrows + enter
  *
- * Each press POSTs /sessions/:id/key with a NavKey; daemon queues for
- * the bridge, bridge SendInputs into the matching VS Code window. Mic
- * fires Win+H (Windows 11 dictation overlay). Numbers + arrows + enter
- * + backspace map to their virtual-key codes. ✕ exits Nav mode locally
- * and never hits the daemon. */
+ * Each press POSTs /sessions/:id/key with a NavKey; the daemon writes
+ * to %LOCALAPPDATA%\stream-deck\virtual-input\<sessionId>.in and the
+ * StreamDeck.App tray watches that path and SendInputs into the
+ * matching VS Code window via the same code path as the physical
+ * deck. The bridge no longer participates in focus or key inject (it
+ * lacked the OS focus rights this tray app holds). Mic fires Win+H.
+ * Numbers + arrows + enter + backspace map to their virtual-key codes.
+ * ✕ exits Nav mode locally and never hits the daemon. */
 
 export interface NavGridProps {
   sessionId: string;

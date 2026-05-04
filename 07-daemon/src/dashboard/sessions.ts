@@ -315,6 +315,29 @@ const VIRTUAL_INPUT_DIR = (() => {
   );
 })();
 
+/* Liveness check for the StreamDeck.App. The app's app.log gets touched
+ * on every state-watcher fire and on every virtual-input dispatch, so a
+ * recently-modified mtime is a cheap heartbeat. We don't require a
+ * dedicated heartbeat file because the existing log already serves the
+ * same purpose. Falls back to "alive" when the log is missing rather
+ * than blocking dashboard actions on a fresh install. */
+const STREAMDECK_LOG = path.posix.join(
+  VIRTUAL_INPUT_DIR,
+  '..',
+  'app.log',
+);
+const STREAMDECK_STALE_MS = 60_000;
+
+function streamDeckAlive(): { alive: boolean; ageMs: number | null } {
+  try {
+    const stat = fs.statSync(STREAMDECK_LOG);
+    const age = Date.now() - stat.mtimeMs;
+    return { alive: age <= STREAMDECK_STALE_MS, ageMs: age };
+  } catch {
+    return { alive: true, ageMs: null };
+  }
+}
+
 export interface BridgeStatus {
   alive: boolean;
   last_seen_ms: number | null;
@@ -370,18 +393,12 @@ export function queueSessionPrompt(
   return { ok: true, queued_at };
 }
 
-export function queueSessionFocus(sessionId: string): { ok: true } {
-  // Route to the StreamDeck.App tray's virtual-input watcher; that
-  // process owns OS focus rights the bridge never could.
-  ensureDir(VIRTUAL_INPUT_DIR);
-  const file = path.posix.join(VIRTUAL_INPUT_DIR, `${sessionId}.in`);
-  fs.appendFileSync(
-    file,
-    JSON.stringify({ queued_at: new Date().toISOString(), action: 'focus' }) +
-      '\n',
-    'utf-8',
-  );
-  return { ok: true };
+export function queueSessionFocus(
+  sessionId: string,
+):
+  | { ok: true }
+  | { ok: false; error: string } {
+  return writeVirtualInput(sessionId, { action: 'focus' });
 }
 
 export type NavKey =
@@ -409,14 +426,49 @@ export function isNavKey(value: unknown): value is NavKey {
 export function queueSessionKey(
   sessionId: string,
   key: NavKey,
-): { ok: true; queued_at: string } {
-  ensureDir(VIRTUAL_INPUT_DIR);
-  const file = path.posix.join(VIRTUAL_INPUT_DIR, `${sessionId}.in`);
+):
+  | { ok: true; queued_at: string }
+  | { ok: false; error: string } {
+  const r = writeVirtualInput(sessionId, { action: 'key', key });
+  if (!r.ok) return r;
+  return { ok: true, queued_at: r.queued_at };
+}
+
+/* Shared writer for the StreamDeck.App's virtual-input inbox. Wraps
+ * the appendFileSync call in try/catch so a transient FS failure
+ * surfaces as { ok: false, error } instead of throwing through to
+ * the request handler. Also checks tray-app liveness so the dashboard
+ * can show a real "tray offline" toast instead of the previous
+ * always-success path that caused silent drops when the app wasn't
+ * running. */
+function writeVirtualInput(
+  sessionId: string,
+  payload: Record<string, unknown>,
+): { ok: true; queued_at: string } | { ok: false; error: string } {
+  const status = streamDeckAlive();
+  if (!status.alive) {
+    return {
+      ok: false,
+      error:
+        status.ageMs === null
+          ? 'streamdeck app offline: no app.log present'
+          : `streamdeck app offline: last log write ${Math.round(status.ageMs / 1000)}s ago`,
+    };
+  }
   const queued_at = new Date().toISOString();
-  fs.appendFileSync(
-    file,
-    JSON.stringify({ queued_at, action: 'key', key }) + '\n',
-    'utf-8',
-  );
-  return { ok: true, queued_at };
+  try {
+    ensureDir(VIRTUAL_INPUT_DIR);
+    const file = path.posix.join(VIRTUAL_INPUT_DIR, `${sessionId}.in`);
+    fs.appendFileSync(
+      file,
+      JSON.stringify({ queued_at, ...payload }) + '\n',
+      'utf-8',
+    );
+    return { ok: true, queued_at };
+  } catch (err) {
+    return {
+      ok: false,
+      error: `virtual-input write failed: ${(err as Error).message}`,
+    };
+  }
 }
