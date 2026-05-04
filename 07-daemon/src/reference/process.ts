@@ -98,7 +98,7 @@ export async function ingestUpload(
 
   try {
     if (kind === 'pdf') {
-      const r = await extractPdf(originalPath);
+      const r = await extractPdf(originalPath, log);
       text = r.text;
       pageCount = r.page_count;
       warnings.push(...r.warnings);

@@ -27,6 +27,7 @@ import { decayInactivePages } from './reinforcement/index.js';
 import { runLint } from './wiki/lint.js';
 import { initLintQueue, lintQueueStatus } from './wiki/lint-queue.js';
 import { runAutoIngest, startAutoIngestInterval } from './wiki/auto-ingest.js';
+import { startWikiPushInterval } from './wiki/push.js';
 import { runBackfillWiki, getBackfillStatus } from './wiki/backfill.js';
 import { generateWhatsNew } from './wiki/whats-new.js';
 import { registerDashboardRoutes } from './dashboard/routes.js';
@@ -585,6 +586,18 @@ async function main(): Promise<void> {
     store,
     logger,
     Number(process.env.DEVNEURAL_AUTO_INGEST_INTERVAL_MS ?? 5 * 60 * 1000),
+  );
+
+  /* Off-site wiki push. Wiki lives at DATA_ROOT/wiki and is committed
+   * locally on every lint/ingest cycle. Without an off-site mirror a
+   * disk failure loses every page. The OneDrive backup catches the
+   * data root daily but a real git remote gives us versioned history
+   * survival even between backups. Default 5 min; skipped when no
+   * remote is configured (so a dev clone without origin doesn't spam
+   * errors). */
+  startWikiPushInterval(
+    logger,
+    Number(process.env.DEVNEURAL_WIKI_PUSH_INTERVAL_MS ?? 5 * 60 * 1000),
   );
 
   process.on('SIGUSR1', () => {
