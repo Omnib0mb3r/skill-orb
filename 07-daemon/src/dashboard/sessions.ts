@@ -374,6 +374,30 @@ export function queueSessionPrompt(
 ):
   | { ok: true; queued_at: string }
   | { ok: false; error: string; bridge: BridgeStatus } {
+  return writeBridgePrompt(sessionId, text, true);
+}
+
+/* "Suggestion" path: the curator (or any other daemon-side voice that
+ * wants to nudge the user without claiming the prompt) drops text into
+ * Claude's input buffer WITHOUT auto-committing. User reviews, edits,
+ * then submits or discards. Same delivery channel as queueSessionPrompt
+ * but with commit:false so the bridge skips the trailing Enter. */
+export function queueSessionSuggestion(
+  sessionId: string,
+  text: string,
+):
+  | { ok: true; queued_at: string }
+  | { ok: false; error: string; bridge: BridgeStatus } {
+  return writeBridgePrompt(sessionId, text, false);
+}
+
+function writeBridgePrompt(
+  sessionId: string,
+  text: string,
+  commit: boolean,
+):
+  | { ok: true; queued_at: string }
+  | { ok: false; error: string; bridge: BridgeStatus } {
   const status = bridgeStatus();
   if (!status.alive) {
     return {
@@ -385,12 +409,20 @@ export function queueSessionPrompt(
       bridge: status,
     };
   }
-  ensureDir(BRIDGE_DIR);
-  const file = path.posix.join(BRIDGE_DIR, `${sessionId}.in`);
   const queued_at = new Date().toISOString();
-  const entry = JSON.stringify({ queued_at, text });
-  fs.appendFileSync(file, entry + '\n', 'utf-8');
-  return { ok: true, queued_at };
+  try {
+    ensureDir(BRIDGE_DIR);
+    const file = path.posix.join(BRIDGE_DIR, `${sessionId}.in`);
+    const entry = JSON.stringify({ queued_at, text, commit });
+    fs.appendFileSync(file, entry + '\n', 'utf-8');
+    return { ok: true, queued_at };
+  } catch (err) {
+    return {
+      ok: false,
+      error: `bridge write failed: ${(err as Error).message}`,
+      bridge: status,
+    };
+  }
 }
 
 export function queueSessionFocus(

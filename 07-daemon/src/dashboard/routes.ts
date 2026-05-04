@@ -17,6 +17,7 @@ import {
   listSessions,
   getSessionDetail,
   queueSessionPrompt,
+  queueSessionSuggestion,
   queueSessionFocus,
   queueSessionKey,
   isNavKey,
@@ -335,6 +336,27 @@ export async function registerDashboardRoutes(
 
   app.get('/dashboard/bridge-status', async () => {
     return { ok: true, ...bridgeStatus() };
+  });
+
+  /* Soft-prompt suggestion. Drops text into Claude's input buffer
+   * without hitting Enter; the user reviews and commits manually.
+   * Curator + reminder paths can use this to nudge the user without
+   * claiming the next prompt outright. */
+  app.post('/sessions/:id/suggest', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const body = req.body as { text?: string };
+    if (!body.text || typeof body.text !== 'string') {
+      reply.code(400);
+      return { ok: false, error: 'text required' };
+    }
+    const r = queueSessionSuggestion(id, body.text);
+    if (!r.ok) {
+      reply.code(503);
+      log(`[dashboard] suggestion rejected for session ${id}: ${r.error}`);
+      return r;
+    }
+    log(`[dashboard] suggestion queued for session ${id}`);
+    return r;
   });
 
   app.post('/sessions/:id/focus', async (req, reply) => {

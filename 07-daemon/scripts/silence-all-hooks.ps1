@@ -41,18 +41,21 @@ if (-not (Test-Path -LiteralPath $settingsPath)) {
     throw "settings.json not found at $settingsPath"
 }
 
-# Resolve the shim. Prefer the published single-file build; fall back
-# to the bin/ Release output. Either is the same exe.
+# Resolve the shim relative to this script's location so the wrapper
+# survives the repo being cloned anywhere. Override with
+# DEVNEURAL_SILENT_SHIM if you keep the binary somewhere else.
+$shimDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $shimCandidates = @(
-    "C:\dev\Projects\DevNeural\07-daemon\scripts\silent-shim\bin\silent-shim.exe",
-    "C:\dev\Projects\DevNeural\07-daemon\scripts\silent-shim\bin\Release\net8.0\win-x64\silent-shim.exe"
-)
+    $env:DEVNEURAL_SILENT_SHIM,
+    (Join-Path $shimDir 'silent-shim\bin\silent-shim.exe'),
+    (Join-Path $shimDir 'silent-shim\bin\Release\net8.0\win-x64\silent-shim.exe')
+) | Where-Object { $_ }
 $shimPath = $null
 foreach ($c in $shimCandidates) {
-    if (Test-Path -LiteralPath $c) { $shimPath = $c; break }
+    if (Test-Path -LiteralPath $c) { $shimPath = (Resolve-Path -LiteralPath $c).Path; break }
 }
 if (-not $shimPath) {
-    throw "silent-shim.exe not built. Run: dotnet publish -c Release -r win-x64 in 07-daemon/scripts/silent-shim"
+    throw "silent-shim.exe not built. Run: dotnet publish -c Release -r win-x64 in 07-daemon/scripts/silent-shim, or set DEVNEURAL_SILENT_SHIM to its location."
 }
 
 # Tolerate BOM that PS5.1 may have written previously.

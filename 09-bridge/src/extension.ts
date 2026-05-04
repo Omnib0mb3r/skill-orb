@@ -26,14 +26,24 @@ import { execFile } from 'node:child_process';
 
 const channel = vscode.window.createOutputChannel('DevNeural Bridge');
 
-/* Bridge messages from the daemon. The bridge is now responsible only
- * for delivering prompt text into the matching Claude terminal via
- * VS Code's terminal API. Focus and Nav-mode key inject moved to the
+/* Bridge messages from the daemon. The bridge is responsible only for
+ * delivering text into the matching Claude terminal via VS Code's
+ * terminal API. Focus and Nav-mode key inject moved to the
  * StreamDeck.App tray app, which holds standing OS focus rights that
- * a browser-spawned VS Code extension host cannot match. */
+ * a browser-spawned VS Code extension host cannot match.
+ *
+ *   text + commit=true  (default)  -> paste as a new prompt and hit
+ *                                      Enter; the user-typed-and-sent
+ *                                      shape we use for queueSessionPrompt.
+ *   text + commit=false             -> paste into the input buffer
+ *                                      WITHOUT Enter so the user can
+ *                                      review/edit before sending. The
+ *                                      curator pushes suggestions through
+ *                                      this path. */
 interface BridgeMessage {
   queued_at: string;
   text?: string;
+  commit?: boolean;
 }
 
 interface SessionMapping {
@@ -342,8 +352,9 @@ async function handleMessage(message: BridgeMessage): Promise<void> {
     return;
   }
   try {
+    const commit = message.commit !== false; // default true
     channel.appendLine(
-      `[send] -> "${terminal.name}": ${message.text.slice(0, 80)}${
+      `[${commit ? 'send' : 'suggest'}] -> "${terminal.name}": ${message.text.slice(0, 80)}${
         message.text.length > 80 ? '...' : ''
       }`,
     );
@@ -351,23 +362,34 @@ async function handleMessage(message: BridgeMessage): Promise<void> {
     // VS Code's sendText(_, true) appends '\n', but the Claude Code TUI on
     // Windows wants '\r' to commit input. Without an explicit '\r' the
     // text lands in the prompt buffer and waits for the user to hit
-    // Enter manually. Send text with no auto-newline, then a separate
-    // '\r' write so Claude treats it as a real Enter keypress.
+    // Enter manually. Send text with no auto-newline; only append the
+    // '\r' when the message wants to auto-commit.
     terminal.sendText(message.text, false);
-    terminal.sendText('\r', false);
+    if (commit) {
+      terminal.sendText('\r', false);
+    }
   } catch (err) {
     channel.appendLine(`[error] sendText failed: ${(err as Error).message}`);
   }
 }
 
-/* Cache: session_id -> resolved cwd (or '' if unresolvable). Keyed by
- * the path of the source we read it from so cache invalidates when
- * the user moves session-state. */
-const cwdCache = new Map<string, string>();
+/* Cache: session_id -> { cwd, resolvedAt }. Bounded TTL so a session
+ * that was first observed before its meta file existed (cached as '')
+ * gets re-resolved later instead of being misrouted forever. The
+ * positive-resolution case is also bounded so a session that moved
+ * directories is picked up on the next miss. */
+const CWD_CACHE_TTL_MS = 60_000;
+const cwdCache = new Map<string, { cwd: string; resolvedAt: number }>();
 
 function resolveSessionCwd(sessionId: string): string {
   const cached = cwdCache.get(sessionId);
-  if (cached !== undefined) return cached;
+  if (cached) {
+    const fresh = Date.now() - cached.resolvedAt < CWD_CACHE_TTL_MS;
+    // Always re-resolve empty entries; only honour positive cache hits
+    // within the TTL window.
+    if (fresh && cached.cwd) return cached.cwd;
+    if (fresh && cached.cwd === '') return '';
+  }
 
   const dataRoot = getDataRoot();
   const metaFile = path.posix.join(
@@ -379,7 +401,7 @@ function resolveSessionCwd(sessionId: string): string {
     try {
       const meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8')) as SessionMapping;
       const cwd = (meta.cwd ?? meta.project_root ?? '').replace(/\\/g, '/');
-      cwdCache.set(sessionId, cwd);
+      cwdCache.set(sessionId, { cwd, resolvedAt: Date.now() });
       return cwd;
     } catch {
       /* fall through to jsonl scan */
@@ -414,7 +436,7 @@ function resolveSessionCwd(sessionId: string): string {
               const rec = JSON.parse(trimmed) as { cwd?: string };
               if (typeof rec.cwd === 'string' && rec.cwd) {
                 const cwd = rec.cwd.replace(/\\/g, '/');
-                cwdCache.set(sessionId, cwd);
+                cwdCache.set(sessionId, { cwd, resolvedAt: Date.now() });
                 return cwd;
               }
             } catch {
@@ -430,7 +452,7 @@ function resolveSessionCwd(sessionId: string): string {
     }
   }
 
-  cwdCache.set(sessionId, '');
+  cwdCache.set(sessionId, { cwd: '', resolvedAt: Date.now() });
   return '';
 }
 
