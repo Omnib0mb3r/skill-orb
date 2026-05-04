@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { WikiSearch } from "@/components/WikiSearch";
 import { ReferenceList } from "@/components/ReferenceList";
@@ -23,7 +23,11 @@ export default function WikiPage() {
               <Icon name="Upload" size={14} /> upload reference
             </button>
           </div>
-          <WikiSearch />
+          {/* Suspense required because WikiSearch reads useSearchParams; Next
+              static export bails out at prerender otherwise. */}
+          <Suspense fallback={<div className="h-32 rounded-panel bg-surface1 animate-pulse" />}>
+            <WikiSearch />
+          </Suspense>
         </div>
         <div className="col-span-1">
           <ReferenceList />

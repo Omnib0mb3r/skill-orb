@@ -64,27 +64,19 @@ export function generateWhatsNew(daysWindow = 7): WhatsNewResult {
   const reinforcementEvents = countReinforcementEvents(cutoff);
 
   const lines: string[] = [];
-  lines.push(`# What's new — ${new Date().toISOString().slice(0, 10)}`);
-  lines.push('');
-  lines.push(`Window: last ${daysWindow} days`);
-  lines.push('');
-  lines.push(`## Summary`);
-  lines.push(`- pages created (pending): ${recentlyCreated.length}`);
-  lines.push(`- pages promoted to canonical: ${recentlyPromoted.length}`);
-  lines.push(`- pages archived: ${recentlyArchived.length}`);
-  lines.push(`- reinforcement events: ${reinforcementEvents}`);
+  lines.push(narrate(daysWindow, recentlyCreated.length, recentlyPromoted.length, recentlyArchived.length, reinforcementEvents, highWeight.length));
   lines.push('');
   if (recentlyPromoted.length > 0) {
     lines.push(`## Promoted to canonical`);
     for (const r of recentlyPromoted.slice(0, 12)) {
-      lines.push(`- [${r.id}](./pages/${r.id}.md) — ${r.title}`);
+      lines.push(`- [${r.id}](/wiki?page=${encodeURIComponent(r.id)}) ${r.title}`);
     }
     lines.push('');
   }
   if (recentlyCreated.length > 0) {
     lines.push(`## New drafts`);
     for (const r of recentlyCreated.slice(0, 12)) {
-      lines.push(`- [${r.id}](./pending/${r.id}.md) — ${r.title}`);
+      lines.push(`- [${r.id}](/wiki?page=${encodeURIComponent(r.id)}) ${r.title}`);
     }
     lines.push('');
   }
@@ -92,7 +84,7 @@ export function generateWhatsNew(daysWindow = 7): WhatsNewResult {
     lines.push(`## Top by weight`);
     for (const r of highWeight) {
       lines.push(
-        `- ${r.weight.toFixed(2)} [${r.id}](./pages/${r.id}.md) (hits ${r.hits}, corr ${r.corrections})`,
+        `- ${r.weight.toFixed(2)} [${r.id}](/wiki?page=${encodeURIComponent(r.id)}) (hits ${r.hits}, corr ${r.corrections})`,
       );
     }
     lines.push('');
@@ -100,7 +92,7 @@ export function generateWhatsNew(daysWindow = 7): WhatsNewResult {
   if (recentlyArchived.length > 0) {
     lines.push(`## Archived`);
     for (const r of recentlyArchived.slice(0, 12)) {
-      lines.push(`- ~~${r.id}~~ — ${r.title}`);
+      lines.push(`- ~~${r.id}~~ ${r.title}`);
     }
     lines.push('');
   }
@@ -144,6 +136,65 @@ function readDir(
     }
   }
   return out;
+}
+
+/* Narrative summary in place of the prior bullet-list "Summary" block.
+ * Plain English, present tense, written so the daily-brief panel reads
+ * like a quick situational report rather than a stat dump. The numbers
+ * still come from the same counters, just spoken instead of tabled. */
+function narrate(
+  daysWindow: number,
+  created: number,
+  promoted: number,
+  archived: number,
+  reinforcement: number,
+  highWeight: number,
+): string {
+  const window = daysWindow === 1 ? '24 hours' : `${daysWindow} days`;
+  const date = new Date().toISOString().slice(0, 10);
+  const head = `# Brief — ${date}`;
+  const sentences: string[] = [];
+
+  if (created === 0 && promoted === 0 && archived === 0) {
+    sentences.push(
+      `Quiet ${window} on the wiki, sir. No new drafts captured, nothing promoted, nothing retired.`,
+    );
+  } else {
+    const parts: string[] = [];
+    if (created > 0) parts.push(`${created} new draft${created === 1 ? '' : 's'} captured`);
+    if (promoted > 0) parts.push(`${promoted} promoted to canonical`);
+    if (archived > 0) parts.push(`${archived} retired to the archive`);
+    sentences.push(
+      `Across the last ${window}, the wiki took on ${joinClauses(parts)}.`,
+    );
+  }
+
+  if (reinforcement === 0) {
+    sentences.push(
+      `The reinforcement signal is still quiet — no captured pages have surfaced in conversation yet, so weights have nothing to lean on.`,
+    );
+  } else {
+    sentences.push(
+      `Reinforcement fired ${reinforcement} time${reinforcement === 1 ? '' : 's'}; the brain is starting to learn which pages earn their keep.`,
+    );
+  }
+
+  if (highWeight === 0) {
+    sentences.push(`No page has climbed above the noise floor yet. Early days.`);
+  } else {
+    sentences.push(
+      `Top-weighted pages listed below; treat them as the first signal of what's actually useful.`,
+    );
+  }
+
+  return `${head}\n\n${sentences.join(' ')}`;
+}
+
+function joinClauses(parts: string[]): string {
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0]!;
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
 }
 
 function countReinforcementEvents(cutoffMs: number): number {

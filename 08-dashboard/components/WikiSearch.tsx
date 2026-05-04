@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQueries } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { searchAll, type SearchHit } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
 import { WikiPageModal } from "./WikiPageModal";
@@ -62,6 +62,7 @@ function wikiPageId(r: SearchHit): string | null {
 
 export function WikiSearch() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
   const [filters, setFilters] = useState<Set<CollectionId>>(
@@ -83,6 +84,15 @@ export function WikiSearch() {
     }, 320);
     return () => clearTimeout(t);
   }, [q]);
+
+  // Allow deep-link to a specific wiki page via ?page=<id>. CommandPalette,
+  // Orb, and the daily-brief whats-new digest all push this URL shape;
+  // without this hook the modal never opened and clicks 404'd against
+  // a non-existent /pending/<id>.md path on the daemon.
+  useEffect(() => {
+    const id = searchParams.get("page");
+    if (id) setOpenWikiId(id);
+  }, [searchParams]);
 
   // One query per enabled collection; each can paginate independently.
   const queries = useQueries({
