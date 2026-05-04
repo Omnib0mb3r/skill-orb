@@ -81,6 +81,31 @@ function statusColor(status: GraphNode["status"]): string {
   }
 }
 
+/* Phase-driven modulators. force-graph redraws every animation frame as
+ * long as the physics simulation is barely warm, so reading Date.now()
+ * inside drawNode/linkColor lets us layer breathing animations on top
+ * of the static heat language without spinning our own RAF loop. */
+function breathe(phase: number, low = 0.85, high = 1.15): number {
+  // [low, high] sine, period ~3.5s
+  const t = (Date.now() / 3500 + phase) * Math.PI * 2;
+  return low + (Math.sin(t) * 0.5 + 0.5) * (high - low);
+}
+function edgeBreathe(phase: number): number {
+  // Subtle alpha ebb, period ~5s, range [0.85, 1.0]
+  const t = (Date.now() / 5000 + phase) * Math.PI * 2;
+  return 0.85 + (Math.sin(t) * 0.5 + 0.5) * 0.15;
+}
+/* Hash a string into a stable [0,1) phase offset so adjacent nodes/edges
+ * don't breathe in lockstep. */
+function strHash(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 1000) / 1000;
+}
+
 function isRecentlyPromoted(node: GraphNode): boolean {
   if (!node.promoted_at) return false;
   const ms = Date.now() - new Date(node.promoted_at).getTime();
@@ -88,7 +113,10 @@ function isRecentlyPromoted(node: GraphNode): boolean {
 }
 
 function nodeRadius(weight: number): number {
-  return 2.5 + Math.max(0, Math.min(1, weight)) * 6;
+  // Bigger across the board so the dashboard orb reads at a glance
+  // instead of looking like loose constellation dots. Hot pages scale
+  // up further so the eye finds them first.
+  return 4.5 + Math.max(0, Math.min(1, weight)) * 9;
 }
 
 interface OrbProps {
@@ -176,17 +204,18 @@ export function Orb({ compact = false }: OrbProps = {}) {
     try {
       const charge = fg.d3Force("charge") as { strength?: (s: number) => unknown } | undefined;
       if (charge && typeof charge.strength === "function") {
-        charge.strength(-60);
+        // Weaker repulsion + stronger center keeps the cluster compact so
+        // the orb fills its panel instead of leaking edgeless nodes to
+        // the canvas perimeter.
+        charge.strength(-35);
       }
       const center = fg.d3Force("center") as { strength?: (s: number) => unknown } | undefined;
       if (center && typeof center.strength === "function") {
-        // Default centerForce in force-graph is fairly weak; bump so a fully
-        // disconnected node set still pulls toward the middle.
-        center.strength(0.05);
+        center.strength(0.18);
       }
       const link = fg.d3Force("link") as { distance?: (d: number) => unknown } | undefined;
       if (link && typeof link.distance === "function") {
-        link.distance(36);
+        link.distance(28);
       }
     } catch {
       // Force methods are best-effort. If the lib's API ever changes shape
@@ -201,7 +230,10 @@ export function Orb({ compact = false }: OrbProps = {}) {
   const frame = useCallback(() => {
     const fg = fgRef.current;
     if (!fg || userInteractedRef.current) return;
-    const padding = compact ? 32 : 48;
+    // Bigger padding values shrink the cluster (more empty around it);
+    // we want the opposite. Negative-leaning padding zooms in past the
+    // bbox edges so dense clusters fill the panel.
+    const padding = compact ? 8 : 16;
     try {
       fg.zoomToFit(400, padding);
     } catch {
@@ -234,23 +266,63 @@ export function Orb({ compact = false }: OrbProps = {}) {
     (raw: ForceNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const x = raw.x ?? 0;
       const y = raw.y ?? 0;
+      const phase = strHash(raw.id);
       const r = nodeRadius(raw.weight);
 
+      // Soft outer glow that breathes. Canonical pages glow strongest,
+      // pending half as much, archived stays flat. Render glow with
+      // explicit rgba() so the canvas API renders it on every browser
+      // instead of relying on inconsistent oklch() alpha-channel support
+      // in Canvas2D.
+      const glowMul =
+        raw.status === "canonical" ? 1.0 : raw.status === "pending" ? 0.65 : 0;
+      if (glowMul > 0) {
+        const glowR = r * 3.2 * breathe(phase, 0.9, 1.2);
+        const grad = ctx.createRadialGradient(x, y, r * 0.5, x, y, glowR);
+        // Match status colors (oklch() in CSS, RGB approximation here so
+        // gradients render reliably). Accent ~ violet, AI ~ indigo.
+        const rgb =
+          raw.status === "canonical"
+            ? "168, 116, 240"   // accent (violet)
+            : "150, 150, 230";  // ai (indigo)
+        grad.addColorStop(0, `rgba(${rgb}, ${(0.42 * glowMul).toFixed(3)})`);
+        grad.addColorStop(0.55, `rgba(${rgb}, ${(0.18 * glowMul).toFixed(3)})`);
+        grad.addColorStop(1, `rgba(${rgb}, 0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, glowR, 0, Math.PI * 2, false);
+        ctx.fill();
+      }
+
+      // Core fill. Slight scale breathing so even archived nodes have
+      // some life, but tiny so the cluster doesn't visibly throb.
+      const coreR = r * breathe(phase, 0.95, 1.06);
       ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2, false);
+      ctx.arc(x, y, coreR, 0, Math.PI * 2, false);
       ctx.fillStyle = statusColor(raw.status);
       ctx.fill();
 
       if (isRecentlyPromoted(raw)) {
+        // Animated expanding ring: phase grows the ring outward and fades
+        // it, then resets. Period ~2.4s so the user notices it within one
+        // glance at the orb.
+        const t = ((Date.now() / 2400 + phase) % 1);
+        const ringR = r + 2.5 + t * 9;
+        const alpha = 1 - t;
+        ctx.beginPath();
+        ctx.arc(x, y, ringR, 0, Math.PI * 2, false);
+        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = COLOR_PROMOTED.replace(")", ` / ${alpha.toFixed(2)})`);
+        ctx.stroke();
+        // Static inner ring as a baseline so the node still reads as
+        // promoted between pulses.
         ctx.beginPath();
         ctx.arc(x, y, r + 2.5, 0, Math.PI * 2, false);
-        ctx.lineWidth = 1.4;
+        ctx.lineWidth = 1.2;
         ctx.strokeStyle = COLOR_PROMOTED;
         ctx.stroke();
       }
 
-      // Labels appear once the user has zoomed in enough that they don't
-      // overlap. globalScale is the d3-zoom k factor; threshold tuned by eye.
       if (globalScale >= 1.4) {
         const fontSize = Math.max(8, 10 / globalScale * 1.2);
         ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
@@ -350,7 +422,19 @@ export function Orb({ compact = false }: OrbProps = {}) {
                 (typeof tgt === "object" && (tgt as ForceNode).id === hovered.id)
               );
               if (hit) return COLOR_EDGE_HOVER;
-              return edgeHeatColor(link.weight ?? 0.5);
+              const w = link.weight ?? 0.5;
+              const base = edgeHeatColor(w);
+              // Subtle alpha breathing, phase-offset by edge endpoints so
+              // adjacent edges don't pulse in lockstep. The base rgba()
+              // already encodes alpha; multiply that channel by the ebb.
+              const srcId = typeof src === "object" ? (src as ForceNode).id : String(src);
+              const tgtId = typeof tgt === "object" ? (tgt as ForceNode).id : String(tgt);
+              const phase = strHash(`${srcId}->${tgtId}`);
+              const ebb = edgeBreathe(phase);
+              const m = base.match(/^rgba\((\d+), (\d+), (\d+), ([0-9.]+)\)$/);
+              if (!m) return base;
+              const a = Math.max(0, Math.min(1, Number(m[4]) * ebb));
+              return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${a.toFixed(3)})`;
             }) as never
           }
           linkWidth={
@@ -389,14 +473,18 @@ export function Orb({ compact = false }: OrbProps = {}) {
             ((l: object) =>
               edgeHeatColor(((l as ForceLink).weight ?? 0.5) * 1.0)) as never
           }
-          /* Cooldown short enough that the layout settles, long enough that
-           * the warm-up ticks spread nodes from the origin before we frame
-           * them. force-graph internally caps to a finite number, so we keep
-           * this modest. */
-          cooldownTicks={200}
+          /* Long-tail cooldown keeps the simulation barely warm forever so
+           * the canvas keeps redrawing every frame. That's what surfaces
+           * the breathe()/edgeBreathe() animations - force-graph only
+           * paints when the engine is alive. We pair it with a very low
+           * alpha decay + a periodic d3ReheatSimulation tick (see
+           * autoReheatRef effect) to keep nodes drifting gently instead
+           * of snapping into a frozen frame. */
+          cooldownTicks={Infinity}
+          cooldownTime={Infinity}
           warmupTicks={40}
-          d3AlphaDecay={0.025}
-          d3VelocityDecay={0.3}
+          d3AlphaDecay={0.0008}
+          d3VelocityDecay={0.45}
           onNodeClick={((n: object) => onNodeClick(n as ForceNode)) as never}
           onNodeHover={((n: object | null) => onNodeHover(n as ForceNode | null)) as never}
           enableNodeDrag={!compact}
