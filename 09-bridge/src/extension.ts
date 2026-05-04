@@ -22,28 +22,18 @@ import * as vscode from 'vscode';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { spawn, execFile } from 'node:child_process';
+import { execFile } from 'node:child_process';
 
 const channel = vscode.window.createOutputChannel('DevNeural Bridge');
 
-/* Bridge messages from the daemon. Three shapes:
- *   text          - paste a prompt into the matching Claude terminal
- *   action=focus  - bring this VS Code window to OS foreground
- *   action=key    - inject a single virtual-key press (or chord for mic).
- *                   Mirrors the physical Stream Deck Nav mode: arrows for
- *                   permission picks, numbers for menu options, enter,
- *                   backspace, and Win+H for the OS dictation overlay. */
-type NavKey =
-  | 'up' | 'down' | 'left' | 'right'
-  | 'enter' | 'backspace'
-  | '1' | '2' | '3' | '4' | '5'
-  | 'mic';
-
+/* Bridge messages from the daemon. The bridge is now responsible only
+ * for delivering prompt text into the matching Claude terminal via
+ * VS Code's terminal API. Focus and Nav-mode key inject moved to the
+ * StreamDeck.App tray app, which holds standing OS focus rights that
+ * a browser-spawned VS Code extension host cannot match. */
 interface BridgeMessage {
   queued_at: string;
   text?: string;
-  action?: 'focus' | 'key';
-  key?: NavKey;
 }
 
 interface SessionMapping {
@@ -287,167 +277,14 @@ async function findTargetTerminalAsync(): Promise<vscode.Terminal | undefined> {
   return undefined;
 }
 
-function focusWindow(): void {
-  // VS Code's extension API has no "bring my window to OS foreground" call.
-  // workbench.action.focusActiveEditorGroup moves focus inside VS Code but
-  // does NOT pull the window above other apps on Windows. To match the
-  // physical Stream Deck's tap-to-focus behavior we shell out to a hidden
-  // PowerShell that calls Win32 SetForegroundWindow against the matching
-  // Code.exe process. Match by workspace folder name in MainWindowTitle so
-  // the right window comes forward when the user has multiple VS Codes
-  // open.
-  void vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
-  vscode.window.setStatusBarMessage('DevNeural Bridge: focus requested', 1500);
-  channel.appendLine(`[focus] requested at ${new Date().toISOString()}`);
-
-  if (process.platform !== 'win32') return;
-
-  const folders = vscode.workspace.workspaceFolders ?? [];
-  const folderName = folders[0]?.name ?? '';
-  // PowerShell escapes: keep folder name simple. If empty, fall back to any
-  // VS Code window (better than nothing).
-  const titleFilter = folderName
-    ? `$_.MainWindowTitle -like '*${folderName.replace(/'/g, "''")}*'`
-    : '$_.MainWindowHandle -ne 0';
-  // Windows' SetForegroundWindow refuses to honour calls from a process
-  // that doesn't currently own focus or didn't receive the most recent
-  // input event. Browser-originated focus requests trip both rules. The
-  // belt-and-braces strategy here:
-  //   1. fire a synthetic Alt down/up so the calling thread is recorded
-  //      as the most recent input source
-  //   2. AttachThreadInput between the calling thread and the foreground
-  //      thread so we share input-state and become eligible for focus
-  //   3. SwitchToThisWindow with fAltTab=true (the API used by Alt-Tab
-  //      itself; fewer foreground-lock restrictions than SetForegroundWindow)
-  //   4. fall through to ShowWindow + BringWindowToTop + SetForegroundWindow
-  //      so the window is restored if minimised even when SwitchToThisWindow
-  //      no-ops on the foreground swap
-  // The script also writes a one-line breadcrumb to %TEMP%\\devneural-bridge-focus.log
-  // so we can tell after the fact which call returned what.
-  const ps = `
-$ErrorActionPreference = 'SilentlyContinue'
-$sig = @'
-[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int n);
-[DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
-[DllImport("user32.dll")] public static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
-[DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, IntPtr extra);
-[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint procId);
-[DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-[DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
-'@
-Add-Type -MemberDefinition $sig -Name W -Namespace DN -ErrorAction SilentlyContinue
-[DN.W]::keybd_event(0x12, 0, 0, [IntPtr]::Zero)
-[DN.W]::keybd_event(0x12, 0, 2, [IntPtr]::Zero)
-$proc = Get-Process Code -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and (${titleFilter}) } | Select-Object -First 1
-if (-not $proc) { $proc = Get-Process Code -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1 }
-if ($proc) {
-  $h = $proc.MainWindowHandle
-  $fg = [DN.W]::GetForegroundWindow()
-  $junk = 0
-  $fgThread = [DN.W]::GetWindowThreadProcessId($fg, [ref]$junk)
-  $myThread = [DN.W]::GetCurrentThreadId()
-  $attached = [DN.W]::AttachThreadInput($myThread, $fgThread, $true)
-  [DN.W]::ShowWindow($h, 9) | Out-Null
-  [DN.W]::BringWindowToTop($h) | Out-Null
-  [DN.W]::SwitchToThisWindow($h, $true)
-  $r = [DN.W]::SetForegroundWindow($h)
-  if ($attached) { [DN.W]::AttachThreadInput($myThread, $fgThread, $false) | Out-Null }
-  $logLine = "$([DateTime]::Now.ToString('HH:mm:ss.fff')) pid=$($proc.Id) title='$($proc.MainWindowTitle)' fgThread=$fgThread myThread=$myThread attached=$attached SetForegroundWindow=$r"
-  try { Add-Content -LiteralPath "$env:TEMP\\devneural-bridge-focus.log" -Value $logLine } catch {}
-}
-`.trim();
-  try {
-    const child = spawn(
-      'powershell',
-      ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', ps],
-      { detached: true, stdio: 'ignore', windowsHide: true },
-    );
-    child.unref();
-    channel.appendLine(`[focus] dispatched SetForegroundWindow for "${folderName || '(any)'}"`);
-  } catch (err) {
-    channel.appendLine(`[focus] powershell failed: ${(err as Error).message}`);
-  }
-}
-
-/* Inject one Nav key into the OS foreground via Win32 SendInput. We shell
- * out to a hidden PowerShell that builds the INPUT struct and calls the
- * native SendInput, mirroring the C# StreamDeck.Platform.InputInjector.
- * Mic = Win+H (Windows 11 dictation overlay). Numbers send VK_1..VK_5,
- * arrows + enter + backspace map to their VKs. */
-function injectKey(key: NavKey): void {
-  if (process.platform !== 'win32') {
-    channel.appendLine(`[key] non-windows; skipped ${key}`);
-    return;
-  }
-  const VKs: Record<NavKey, number | null> = {
-    up: 0x26, down: 0x28, left: 0x25, right: 0x27,
-    enter: 0x0d, backspace: 0x08,
-    '1': 0x31, '2': 0x32, '3': 0x33, '4': 0x34, '5': 0x35,
-    mic: null, // chord; handled separately below
-  };
-  const VK_LWIN = 0x5b;
-  const VK_H = 0x48;
-  const single = VKs[key];
-
-  const ps = key === 'mic'
-    ? buildChordPs(VK_LWIN, VK_H)
-    : single != null
-      ? buildSinglePs(single)
-      : null;
-  if (!ps) {
-    channel.appendLine(`[key] unknown key: ${key}`);
-    return;
-  }
-  try {
-    const child = spawn(
-      'powershell',
-      ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', ps],
-      { detached: true, stdio: 'ignore', windowsHide: true },
-    );
-    child.unref();
-    channel.appendLine(`[key] dispatched ${key}`);
-  } catch (err) {
-    channel.appendLine(`[key] powershell failed: ${(err as Error).message}`);
-  }
-}
-
-function buildSinglePs(vk: number): string {
-  return `
-$ErrorActionPreference = 'SilentlyContinue'
-$sig = @'
-[StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
-[StructLayout(LayoutKind.Explicit)] public struct INPUT_UNION { [FieldOffset(0)] public KEYBDINPUT ki; [FieldOffset(0)] public ulong pad1; [FieldOffset(8)] public ulong pad2; [FieldOffset(16)] public ulong pad3; }
-[StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public INPUT_UNION u; }
-[DllImport("user32.dll")] public static extern uint SendInput(uint n, INPUT[] inputs, int cbSize);
-'@
-Add-Type -MemberDefinition $sig -Name K -Namespace DN -ErrorAction SilentlyContinue
-$inputs = New-Object DN.K+INPUT[] 2
-$inputs[0].type = 1; $inputs[0].u.ki.wVk = ${vk}
-$inputs[1].type = 1; $inputs[1].u.ki.wVk = ${vk}; $inputs[1].u.ki.dwFlags = 2
-[DN.K]::SendInput(2, $inputs, [System.Runtime.InteropServices.Marshal]::SizeOf([type][DN.K+INPUT])) | Out-Null
-`.trim();
-}
-
-function buildChordPs(modifier: number, key: number): string {
-  return `
-$ErrorActionPreference = 'SilentlyContinue'
-$sig = @'
-[StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
-[StructLayout(LayoutKind.Explicit)] public struct INPUT_UNION { [FieldOffset(0)] public KEYBDINPUT ki; [FieldOffset(0)] public ulong pad1; [FieldOffset(8)] public ulong pad2; [FieldOffset(16)] public ulong pad3; }
-[StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public INPUT_UNION u; }
-[DllImport("user32.dll")] public static extern uint SendInput(uint n, INPUT[] inputs, int cbSize);
-'@
-Add-Type -MemberDefinition $sig -Name K -Namespace DN -ErrorAction SilentlyContinue
-$inputs = New-Object DN.K+INPUT[] 4
-$inputs[0].type = 1; $inputs[0].u.ki.wVk = ${modifier}
-$inputs[1].type = 1; $inputs[1].u.ki.wVk = ${key}
-$inputs[2].type = 1; $inputs[2].u.ki.wVk = ${key};      $inputs[2].u.ki.dwFlags = 2
-$inputs[3].type = 1; $inputs[3].u.ki.wVk = ${modifier}; $inputs[3].u.ki.dwFlags = 2
-[DN.K]::SendInput(4, $inputs, [System.Runtime.InteropServices.Marshal]::SizeOf([type][DN.K+INPUT])) | Out-Null
-`.trim();
-}
+/* focusWindow / injectKey / buildSinglePs / buildChordPs lived here
+ * before the StreamDeck.App tray app took ownership of OS focus + key
+ * inject. The bridge could never reliably honour SetForegroundWindow
+ * because Windows refuses foreground swaps from processes that don't
+ * own focus and didn't receive the most recent input event, and a
+ * VS Code extension host spawned by the browser's process tree
+ * satisfies neither. Removed; see %LOCALAPPDATA%\\stream-deck\\
+ * virtual-input\\<sessionId>.in for the current path. */
 
 /* Throttle the "no terminal" notice. Without this the user sees a
  * popup every time the daemon writes another prompt to the bridge
@@ -485,23 +322,8 @@ function noticeNoTerminal(): void {
 }
 
 async function handleMessage(message: BridgeMessage): Promise<void> {
-  if (message.action === 'focus') {
-    focusWindow();
-    return;
-  }
-  if (message.action === 'key' && message.key) {
-    // Browser-originated key presses arrive while the browser still owns
-    // OS focus. Send keys directly and they land in the browser, not
-    // Claude. Bring the VS Code window forward first, give Windows a
-    // beat to honour SetForegroundWindow, then inject. Still subject to
-    // Windows' SetForegroundWindow restrictions; the dummy alt keypress
-    // inside focusWindow is what gets us past the foreground lock.
-    focusWindow();
-    setTimeout(() => injectKey(message.key!), 220);
-    return;
-  }
   if (!message.text) {
-    channel.appendLine('[skip] message has no text and no action');
+    channel.appendLine('[skip] message has no text');
     return;
   }
 
@@ -680,7 +502,7 @@ function processFile(file: string): void {
         const queuedMs = Date.parse(message.queued_at);
         if (Number.isFinite(queuedMs) && Date.now() - queuedMs > 90_000) {
           channel.appendLine(
-            `[skip-stale] queued_at=${message.queued_at} age=${Math.round((Date.now() - queuedMs) / 1000)}s text=${(message.text ?? message.action ?? '').toString().slice(0, 60)}`,
+            `[skip-stale] queued_at=${message.queued_at} age=${Math.round((Date.now() - queuedMs) / 1000)}s text=${(message.text ?? '').slice(0, 60)}`,
           );
           continue;
         }
