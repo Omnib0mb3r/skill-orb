@@ -299,6 +299,33 @@ Phase 3 will provide a polished setup option.
 
 ---
 
+## Optional: install the 09-bridge VS Code extension
+
+The bridge makes the dashboard's "focus VSCode window" and "send prompt to terminal" actions actually drive your editor. Without it, the daemon writes queue files but nothing consumes them.
+
+```powershell
+cd C:/dev/Projects/DevNeural/09-bridge
+npm install
+npm run build
+npx vsce package --no-dependencies
+& "C:\Users\michael\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd" --install-extension .\devneural-bridge-0.1.0.vsix
+```
+
+After install, reload the VS Code window (Command Palette → "Developer: Reload Window") so the extension activates. Confirm with `code --list-extensions | findstr devneural`. The output channel "DevNeural Bridge" prints activation, watched dir, and every send/focus event.
+
+Verify end-to-end (replace the session id with a live one from `/sessions`):
+
+```powershell
+curl -sk -X POST "https://OTLCDEV.<tailnet>.ts.net/sessions/<session-id>/focus"
+# Then check
+ls C:/dev/data/skill-connections/session-bridge/
+# A <session-id>.in JSONL should appear, and the bridge output channel should log [focus] requested...
+```
+
+The watched dir `C:/dev/data/skill-connections/session-bridge` is created on demand by the daemon's first queue write; if you check before any prompt/focus it will not exist yet.
+
+---
+
 ## Done
 
 Capture is alive. The daemon is reachable. The wiki has been seeded (or is in progress). Claude Code sessions will start being augmented as the wiki accumulates canonical pages.
