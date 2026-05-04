@@ -199,3 +199,40 @@ export function queueSessionFocus(sessionId: string): { ok: true } {
   );
   return { ok: true };
 }
+
+export type NavKey =
+  | 'up' | 'down' | 'left' | 'right'
+  | 'enter' | 'backspace'
+  | '1' | '2' | '3' | '4' | '5'
+  | 'mic';
+
+const NAV_KEYS: ReadonlySet<NavKey> = new Set([
+  'up', 'down', 'left', 'right',
+  'enter', 'backspace',
+  '1', '2', '3', '4', '5',
+  'mic',
+]);
+
+export function isNavKey(value: unknown): value is NavKey {
+  return typeof value === 'string' && NAV_KEYS.has(value as NavKey);
+}
+
+/* Queue a single Nav-mode key press for the bridge to inject into the
+ * matching VS Code window. Mirrors the physical Stream Deck Nav layout:
+ * arrows for permission picks, numbers for menu options, enter, backspace,
+ * mic = Win+H. The bridge file is the same per-session inbox the focus
+ * and prompt actions use. */
+export function queueSessionKey(
+  sessionId: string,
+  key: NavKey,
+): { ok: true; queued_at: string } {
+  ensureDir(BRIDGE_DIR);
+  const file = path.posix.join(BRIDGE_DIR, `${sessionId}.in`);
+  const queued_at = new Date().toISOString();
+  fs.appendFileSync(
+    file,
+    JSON.stringify({ queued_at, action: 'key', key }) + '\n',
+    'utf-8',
+  );
+  return { ok: true, queued_at };
+}

@@ -26,10 +26,24 @@ import { spawn } from 'node:child_process';
 
 const channel = vscode.window.createOutputChannel('DevNeural Bridge');
 
+/* Bridge messages from the daemon. Three shapes:
+ *   text          - paste a prompt into the matching Claude terminal
+ *   action=focus  - bring this VS Code window to OS foreground
+ *   action=key    - inject a single virtual-key press (or chord for mic).
+ *                   Mirrors the physical Stream Deck Nav mode: arrows for
+ *                   permission picks, numbers for menu options, enter,
+ *                   backspace, and Win+H for the OS dictation overlay. */
+type NavKey =
+  | 'up' | 'down' | 'left' | 'right'
+  | 'enter' | 'backspace'
+  | '1' | '2' | '3' | '4' | '5'
+  | 'mic';
+
 interface BridgeMessage {
   queued_at: string;
   text?: string;
-  action?: 'focus';
+  action?: 'focus' | 'key';
+  key?: NavKey;
 }
 
 interface SessionMapping {
@@ -140,9 +154,91 @@ if ($proc) {
   }
 }
 
+/* Inject one Nav key into the OS foreground via Win32 SendInput. We shell
+ * out to a hidden PowerShell that builds the INPUT struct and calls the
+ * native SendInput, mirroring the C# StreamDeck.Platform.InputInjector.
+ * Mic = Win+H (Windows 11 dictation overlay). Numbers send VK_1..VK_5,
+ * arrows + enter + backspace map to their VKs. */
+function injectKey(key: NavKey): void {
+  if (process.platform !== 'win32') {
+    channel.appendLine(`[key] non-windows; skipped ${key}`);
+    return;
+  }
+  const VKs: Record<NavKey, number | null> = {
+    up: 0x26, down: 0x28, left: 0x25, right: 0x27,
+    enter: 0x0d, backspace: 0x08,
+    '1': 0x31, '2': 0x32, '3': 0x33, '4': 0x34, '5': 0x35,
+    mic: null, // chord; handled separately below
+  };
+  const VK_LWIN = 0x5b;
+  const VK_H = 0x48;
+  const single = VKs[key];
+
+  const ps = key === 'mic'
+    ? buildChordPs(VK_LWIN, VK_H)
+    : single != null
+      ? buildSinglePs(single)
+      : null;
+  if (!ps) {
+    channel.appendLine(`[key] unknown key: ${key}`);
+    return;
+  }
+  try {
+    const child = spawn(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', ps],
+      { detached: true, stdio: 'ignore', windowsHide: true },
+    );
+    child.unref();
+    channel.appendLine(`[key] dispatched ${key}`);
+  } catch (err) {
+    channel.appendLine(`[key] powershell failed: ${(err as Error).message}`);
+  }
+}
+
+function buildSinglePs(vk: number): string {
+  return `
+$ErrorActionPreference = 'SilentlyContinue'
+$sig = @'
+[StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+[StructLayout(LayoutKind.Explicit)] public struct INPUT_UNION { [FieldOffset(0)] public KEYBDINPUT ki; [FieldOffset(0)] public ulong pad1; [FieldOffset(8)] public ulong pad2; [FieldOffset(16)] public ulong pad3; }
+[StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public INPUT_UNION u; }
+[DllImport("user32.dll")] public static extern uint SendInput(uint n, INPUT[] inputs, int cbSize);
+'@
+Add-Type -MemberDefinition $sig -Name K -Namespace DN -ErrorAction SilentlyContinue
+$inputs = New-Object DN.K+INPUT[] 2
+$inputs[0].type = 1; $inputs[0].u.ki.wVk = ${vk}
+$inputs[1].type = 1; $inputs[1].u.ki.wVk = ${vk}; $inputs[1].u.ki.dwFlags = 2
+[DN.K]::SendInput(2, $inputs, [System.Runtime.InteropServices.Marshal]::SizeOf([type][DN.K+INPUT])) | Out-Null
+`.trim();
+}
+
+function buildChordPs(modifier: number, key: number): string {
+  return `
+$ErrorActionPreference = 'SilentlyContinue'
+$sig = @'
+[StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+[StructLayout(LayoutKind.Explicit)] public struct INPUT_UNION { [FieldOffset(0)] public KEYBDINPUT ki; [FieldOffset(0)] public ulong pad1; [FieldOffset(8)] public ulong pad2; [FieldOffset(16)] public ulong pad3; }
+[StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public INPUT_UNION u; }
+[DllImport("user32.dll")] public static extern uint SendInput(uint n, INPUT[] inputs, int cbSize);
+'@
+Add-Type -MemberDefinition $sig -Name K -Namespace DN -ErrorAction SilentlyContinue
+$inputs = New-Object DN.K+INPUT[] 4
+$inputs[0].type = 1; $inputs[0].u.ki.wVk = ${modifier}
+$inputs[1].type = 1; $inputs[1].u.ki.wVk = ${key}
+$inputs[2].type = 1; $inputs[2].u.ki.wVk = ${key};      $inputs[2].u.ki.dwFlags = 2
+$inputs[3].type = 1; $inputs[3].u.ki.wVk = ${modifier}; $inputs[3].u.ki.dwFlags = 2
+[DN.K]::SendInput(4, $inputs, [System.Runtime.InteropServices.Marshal]::SizeOf([type][DN.K+INPUT])) | Out-Null
+`.trim();
+}
+
 async function handleMessage(message: BridgeMessage): Promise<void> {
   if (message.action === 'focus') {
     focusWindow();
+    return;
+  }
+  if (message.action === 'key' && message.key) {
+    injectKey(message.key);
     return;
   }
   if (!message.text) {

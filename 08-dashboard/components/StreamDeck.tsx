@@ -1,38 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { focusSession, sessions as sessionsClient, type SessionSummary } from "@/lib/daemon-client";
 import { projectFromSlug, relTime } from "@/lib/session-helpers";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
+import { NavGrid } from "./NavGrid";
 
 /* Stream Deck rail = remote analog of the physical Elgato deck.
  *
- * Tap a tile = POST /sessions/:id/focus, which writes to the session-bridge
- * queue. The 09-bridge VS Code extension on OTLCDEV picks it up and brings
- * the matching VSCode window forward, exactly like the hardware deck does.
+ * Two modes mirror the hardware exactly:
  *
- * No navigation: the rail is a remote control surface, not a navigation
- * affordance. Sessions tab is where you go to read transcripts and send
- * prompts; this rail is just "make this window the active one on my PC."
+ *   Grid (default) - one tile per active session. Tap a tile -> POST
+ *   /sessions/:id/focus, bridge brings the matching VS Code window
+ *   forward via SetForegroundWindow.
  *
- * Visual feedback: the tile briefly pulses brand color while the focus
- * request is in flight so the user knows their tap was registered even
- * when they can't see the host monitor (e.g. on phone over Tailscale). */
+ *   Nav - tap the same tile a second time within RETAP_WINDOW_MS while
+ *   it's still the most-recently-focused. The rail collapses into the
+ *   5x3 Nav grid (NavGrid.tsx), exactly like the hardware does. Each
+ *   key press POSTs /sessions/:id/key and the bridge SendInputs into
+ *   the focused window. Mic = Win+H. ✕ exits Nav back to Grid.
+ *
+ * "Already focused" detection is dashboard-local: we can't poll
+ * GetForegroundWindow from the browser. Approximation: track the last
+ * tile the user tapped + when. A second tap on the same tile within
+ * RETAP_WINDOW_MS counts as "already focused, switching to nav." Click
+ * a different tile while in Nav = focus that one + remain in Grid (so
+ * the user can re-tap the new one to enter Nav for it). */
 
 const STALE_HIDE_MS = 7 * 24 * 60 * 60 * 1000;
+const RETAP_WINDOW_MS = 8_000;
 
-/* TileState collapses (active boolean × phase enum) into one display
- * state. Phase comes from the daemon's hook-driven session-phase tracker,
- * so the LED matches what's actually happening on the host:
- *
- *   thinking   = Claude generating response
- *   tool       = tool running (Pre fired, Post hasn't)
- *   permission = waiting on user OK
- *   idle       = active but quiet
- *   inactive   = no recent file activity (>10 min)
- *   stale      = >7d no activity (filtered out by default) */
 type TileState =
   | "thinking"
   | "tool"
@@ -56,12 +55,12 @@ function ledStatus(
   state: TileState,
 ): "live" | "ok" | "fail" | "ai" | "promoted" | "idle" {
   switch (state) {
-    case "thinking":   return "ai";        // indigo, pulse
-    case "tool":       return "ok";        // green, pulse
-    case "permission": return "fail";      // red, blink
-    case "idle":       return "live";      // cyan steady
-    case "inactive":   return "idle";      // gray
-    case "stale":      return "idle";      // gray
+    case "thinking":   return "ai";
+    case "tool":       return "ok";
+    case "permission": return "fail";
+    case "idle":       return "live";
+    case "inactive":   return "idle";
+    case "stale":      return "idle";
   }
 }
 
@@ -83,12 +82,10 @@ export function StreamDeck() {
   });
   const [showStale, setShowStale] = useState(false);
 
-  /* Only ACTIVE sessions go on the rail. The hardware Stream Deck only
-   * paints tiles for live Claude sessions; tiles you tap actually do
-   * something. Idle sessions are jsonl files with no live process to
-   * focus or send a prompt to, so they belong on the /sessions tab as
-   * a list, not on the deck. The "show inactive" toggle pops them back
-   * in if the user explicitly wants to see history. */
+  /* Last-focused tracker drives the "tap again to enter Nav" rule. */
+  const [navSessionId, setNavSessionId] = useState<string | null>(null);
+  const lastFocusRef = useRef<{ id: string; ts: number } | null>(null);
+
   const all: SessionSummary[] = q.data?.sessions ?? [];
   const active = all.filter((s) => s.active);
   const inactive = all.filter((s) => !s.active);
@@ -96,6 +93,33 @@ export function StreamDeck() {
     if (a.active !== b.active) return a.active ? -1 : 1;
     return b.last_modified_ms - a.last_modified_ms;
   });
+
+  const navSession =
+    navSessionId != null ? all.find((s) => s.session_id === navSessionId) : null;
+
+  function handleTileTap(s: SessionSummary, focusFn: () => void): void {
+    const last = lastFocusRef.current;
+    const now = Date.now();
+    const isRetap =
+      last != null && last.id === s.session_id && now - last.ts < RETAP_WINDOW_MS;
+    if (isRetap) {
+      // Same tile still recently focused -> enter Nav for it. No focus
+      // request this time; the window is already in front.
+      setNavSessionId(s.session_id);
+      return;
+    }
+    // First tap (or different tile, or window expired) -> regular focus.
+    setNavSessionId(null);
+    lastFocusRef.current = { id: s.session_id, ts: now };
+    focusFn();
+  }
+
+  // Auto-exit Nav if the underlying session disappears (process ended).
+  useEffect(() => {
+    if (navSessionId && !navSession) {
+      setNavSessionId(null);
+    }
+  }, [navSessionId, navSession]);
 
   return (
     <aside className="w-64 flex-shrink-0 flex flex-col gap-3 p-4 hairline-soft border-r border-border2 overflow-y-auto">
@@ -106,51 +130,71 @@ export function StreamDeck() {
         </span>
       </div>
 
-      {q.isLoading && (
-        <div className="space-y-2">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="h-20 rounded-card bg-surface1 animate-pulse" />
+      {navSession ? (
+        <NavGrid
+          sessionId={navSession.session_id}
+          projectLabel={projectFromSlug(navSession.project_slug)}
+          onClose={() => setNavSessionId(null)}
+        />
+      ) : (
+        <>
+          {q.isLoading && (
+            <div className="space-y-2">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="h-20 rounded-card bg-surface1 animate-pulse" />
+              ))}
+            </div>
+          )}
+
+          {!q.isLoading && visible.length === 0 && (
+            <div className="text-xs text-txt3 px-2 py-3">
+              No active sessions to control right now. Start a Claude session in any VS Code window
+              on OTLCDEV; a tile appears here within 5s.
+            </div>
+          )}
+
+          {visible.map((s) => (
+            <DeckTile key={s.session_id} session={s} onTap={handleTileTap} />
           ))}
-        </div>
-      )}
 
-      {!q.isLoading && visible.length === 0 && (
-        <div className="text-xs text-txt3 px-2 py-3">
-          No active sessions to control right now. Start a Claude session in any VS Code window
-          on OTLCDEV; a tile appears here within 5s.
-        </div>
-      )}
+          <a
+            href="/sessions"
+            className="mt-1 lift p-3 rounded-card bg-surface1 hairline border-dashed text-txt2 hover:text-txt1 flex items-center justify-center gap-2 text-sm font-medium"
+            aria-label="Manage sessions on the Sessions tab"
+          >
+            <Icon name="Plus" size={16} /> new session
+          </a>
 
-      {visible.map((s) => (
-        <DeckTile key={s.session_id} session={s} />
-      ))}
+          {inactive.length > 0 && (
+            <button
+              onClick={() => setShowStale((v) => !v)}
+              className="text-nano text-txt3 hover:text-txt1 mt-1 px-2 py-1 text-left"
+              aria-expanded={showStale}
+            >
+              {showStale
+                ? `Hide ${inactive.length} inactive`
+                : `+${inactive.length} inactive (history)`}
+            </button>
+          )}
 
-      <a
-        href="/sessions"
-        className="mt-1 lift p-3 rounded-card bg-surface1 hairline border-dashed text-txt2 hover:text-txt1 flex items-center justify-center gap-2 text-sm font-medium"
-        aria-label="Manage sessions on the Sessions tab"
-      >
-        <Icon name="Plus" size={16} /> new session
-      </a>
-
-      {inactive.length > 0 && (
-        <button
-          onClick={() => setShowStale((v) => !v)}
-          className="text-nano text-txt3 hover:text-txt1 mt-1 px-2 py-1 text-left"
-          aria-expanded={showStale}
-        >
-          {showStale
-            ? `Hide ${inactive.length} inactive`
-            : `+${inactive.length} inactive (history)`}
-        </button>
+          {/* Hint for re-tap behavior so users discover Nav without docs. */}
+          {visible.length > 0 && (
+            <div className="text-nano text-txt3 px-2 pt-1">
+              Tap to focus · tap again for Nav
+            </div>
+          )}
+        </>
       )}
     </aside>
   );
 }
 
-/* Single deck tile. Encapsulates the focus mutation so each tile manages
- * its own pulse state independently of siblings. */
-function DeckTile({ session: s }: { session: SessionSummary }) {
+interface DeckTileProps {
+  session: SessionSummary;
+  onTap: (s: SessionSummary, focusFn: () => void) => void;
+}
+
+function DeckTile({ session: s, onTap }: DeckTileProps) {
   const state = tileState(s);
   const led = ledStatus(state);
   const project = projectFromSlug(s.project_slug);
@@ -173,12 +217,12 @@ function DeckTile({ session: s }: { session: SessionSummary }) {
   return (
     <button
       type="button"
-      onClick={() => focusM.mutate()}
+      onClick={() => onTap(s, () => focusM.mutate())}
       disabled={focusM.isPending}
       className={`block text-left p-3 rounded-card bg-surface1 hairline lift transition-shadow ${ring} ${
         focusM.isPending ? "ring-1 ring-brand/60" : ""
       }`}
-      aria-label={`Focus VS Code window for ${project} (${state})`}
+      aria-label={`Focus VS Code window for ${project} (${state}). Tap again to enter nav mode.`}
     >
       <div className="flex items-center justify-between mb-1.5">
         <div className="font-display text-sm font-emphasized truncate text-txt1">

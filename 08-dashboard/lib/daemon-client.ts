@@ -271,6 +271,17 @@ export const queuePrompt = (id: string, text: string) =>
 export const focusSession = (id: string) =>
   request<{ ok: boolean }>(`/sessions/${id}/focus`, { method: "POST" });
 
+export type NavKey =
+  | "up" | "down" | "left" | "right"
+  | "enter" | "backspace"
+  | "1" | "2" | "3" | "4" | "5"
+  | "mic";
+export const sendSessionKey = (id: string, key: NavKey) =>
+  request<{ ok: boolean; queued_at?: string }>(
+    `/sessions/${id}/key`,
+    { method: "POST", body: { key } },
+  );
+
 // ── search ──────────────────────────────────────────────────────
 export interface SearchHit {
   source: "wiki_page" | "raw_chunk" | "reference_chunk";

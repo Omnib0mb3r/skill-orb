@@ -18,6 +18,8 @@ import {
   getSessionDetail,
   queueSessionPrompt,
   queueSessionFocus,
+  queueSessionKey,
+  isNavKey,
 } from './sessions.js';
 import { setPhase, type SessionPhase } from './session-phase.js';
 import { lintQueueStatus } from '../wiki/lint-queue.js';
@@ -213,6 +215,24 @@ export async function registerDashboardRoutes(
   app.post('/sessions/:id/focus', async (req) => {
     const id = (req.params as { id: string }).id;
     return queueSessionFocus(id);
+  });
+
+  /* Nav-mode key injection. The dashboard's Stream Deck rail enters Nav
+   * mode on a re-tap of the already-focused tile and exposes the same
+   * 5x3 grid the hardware deck does. Each press POSTs here, daemon
+   * queues for the bridge, bridge SendInputs into the focused window. */
+  app.post('/sessions/:id/key', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const body = (req.body ?? {}) as { key?: unknown };
+    if (!isNavKey(body.key)) {
+      reply.code(400);
+      return {
+        ok: false,
+        error:
+          'key must be one of: up, down, left, right, enter, backspace, 1-5, mic',
+      };
+    }
+    return queueSessionKey(id, body.key);
   });
 
   /* Phase ping. Hook-runner POSTs here on every Pre/Post/Prompt/Stop so
