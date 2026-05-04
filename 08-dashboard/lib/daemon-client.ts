@@ -113,6 +113,17 @@ export interface SystemMetrics {
 }
 export const systemMetrics = () => request<SystemMetrics>("/dashboard/system-metrics");
 
+export interface LogTail {
+  ok: boolean;
+  lines: string[];
+  total_bytes: number;
+  truncated?: boolean;
+}
+export const logTail = (n = 200, filter = "") =>
+  request<LogTail>(
+    `/dashboard/log-tail?n=${n}${filter ? `&filter=${encodeURIComponent(filter)}` : ""}`,
+  );
+
 // ── services ────────────────────────────────────────────────────
 export interface ServiceStatus {
   id: string;

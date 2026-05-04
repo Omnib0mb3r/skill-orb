@@ -6,6 +6,7 @@ import { SparkAreaChart } from "@tremor/react";
 import { systemMetrics, services as servicesClient } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
+import { LogTail } from "./LogTail";
 
 function fmtBytes(bytes: number): string {
   if (!bytes) return "0";
@@ -201,6 +202,11 @@ export function SystemPanel() {
             ))}
           </ul>
         </section>
+      </div>
+
+      {/* Daemon log tail spans full width */}
+      <div className="col-span-3">
+        <LogTail />
       </div>
     </div>
   );

@@ -82,6 +82,44 @@ export async function registerDashboardRoutes(
     return getSystemMetrics();
   });
 
+  /* Daemon log tail. Reads the last ~64KB of daemon.log and returns the
+   * last N lines, newest last. 64KB cap keeps it cheap; the daemon log
+   * grows but log lines are short so 64KB is comfortably > 200 lines.
+   * Filter param trims by substring match (case-insensitive). */
+  app.get('/dashboard/log-tail', async (req) => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const { DATA_ROOT } = await import('../paths.js');
+    const logFile = path.posix.join(DATA_ROOT, 'daemon.log');
+    const query = req.query as { n?: string; filter?: string };
+    const n = Math.min(Math.max(Number(query.n ?? '200') || 200, 10), 1000);
+    const filter = (query.filter ?? '').toLowerCase();
+    if (!fs.existsSync(logFile)) {
+      return { ok: true, lines: [], total_bytes: 0 };
+    }
+    const stat = fs.statSync(logFile);
+    const READ = 64 * 1024;
+    const start = Math.max(0, stat.size - READ);
+    const fd = fs.openSync(logFile, 'r');
+    try {
+      const buf = Buffer.alloc(stat.size - start);
+      fs.readSync(fd, buf, 0, buf.length, start);
+      const text = buf.toString('utf-8');
+      const firstNl = start === 0 ? -1 : text.indexOf('\n');
+      const usable = firstNl === -1 ? text : text.slice(firstNl + 1);
+      let lines = usable.split('\n').filter((l) => l.length > 0);
+      if (filter) lines = lines.filter((l) => l.toLowerCase().includes(filter));
+      return {
+        ok: true,
+        lines: lines.slice(-n),
+        total_bytes: stat.size,
+        truncated: start > 0,
+      };
+    } finally {
+      fs.closeSync(fd);
+    }
+  });
+
   // ── Wiki graph for the orb ───────────────────────────────────────
   app.get('/graph', async () => buildGraph());
 
