@@ -304,11 +304,20 @@ export const searchAll = (
   q: string,
   opts: {
     project_id?: string;
+    /** @deprecated use limit + offset */
     top_k?: number;
+    limit?: number;
+    offset?: number;
     collections?: Array<"wiki_page" | "raw_chunk" | "reference_chunk">;
   } = {},
 ) =>
-  request<{ ok: boolean; results: SearchHit[] }>("/search/all", {
+  request<{
+    ok: boolean;
+    results: SearchHit[];
+    total?: number;
+    offset?: number;
+    limit?: number;
+  }>("/search/all", {
     method: "POST",
     body: { q, ...opts },
   });
@@ -397,6 +406,28 @@ export interface GraphResponse {
   edges: GraphEdge[];
 }
 export const graph = () => request<GraphResponse>("/graph");
+
+// ── single wiki page (for search-result modal) ─────────────────
+export interface WikiPageDetail {
+  id: string;
+  title: string;
+  trigger: string;
+  insight: string;
+  summary: string;
+  status: "canonical" | "pending" | "archived";
+  weight: number;
+  hits: number;
+  corrections: number;
+  created: string;
+  last_touched: string;
+  projects: string[];
+  pattern: string;
+  cross_refs: string[];
+  evidence: string[];
+  log: string[];
+}
+export const wikiPage = (id: string) =>
+  request<{ ok: boolean; page: WikiPageDetail; error?: string }>(`/wiki/page/${encodeURIComponent(id)}`);
 
 // ── push (VAPID) ──────────────────────────────────────────────
 export const vapidPublicKey = () =>

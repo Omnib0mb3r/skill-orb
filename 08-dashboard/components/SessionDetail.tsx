@@ -242,20 +242,68 @@ export function SessionDetail({ sessionId, query }: Props) {
             <span className="text-nano text-txt3">{chunks?.length ?? 0} turns</span>
           )}
         </div>
+        {/* Terminal-styled transcript pane. Each turn rendered as a
+         * shell-like block:
+         *
+         *   > ai           (role tag, color-coded)
+         *   timestamp      (right-aligned, dim)
+         *   ┃ message body (vertical bar + monospace, indented)
+         *
+         * Roles map to a short label + color so the user reads as a
+         * conversation log rather than a JSON dump:
+         *   user      -> "you"   (green prompt)
+         *   assistant -> "ai"    (brand-soft prompt)
+         *   tool      -> "tool"  (cyan)
+         *   else      -> first 8 chars of the role (lower-cased)
+         */}
         <div
           ref={transcriptScroll}
-          className="max-h-[60vh] overflow-y-auto divide-y divide-border2"
+          className="max-h-[60vh] overflow-y-auto bg-[oklch(11%_0_0)] font-mono text-xs"
         >
           {renderedChunks.length === 0 && (
             <div className="px-5 py-4 text-xs text-txt3">No recent turns captured.</div>
           )}
-          {renderedChunks.map(({ chunk: c, rendered }, i) => (
-            <div key={i} className="px-5 py-3 flex gap-3">
-              <span className="text-nano text-txt3 shrink-0 w-12 mt-0.5">
-                {c.role.slice(0, 8)}
-              </span>
-              <div className="text-xs text-txt2 font-mono whitespace-pre-wrap flex-1 min-w-0 break-words">
-                {rendered.parts.map((p, j) => {
+          {renderedChunks.map(({ chunk: c, rendered }, i) => {
+            const role = (c.role ?? "").toLowerCase();
+            const tag =
+              role === "assistant" ? "ai"
+              : role === "user" ? "you"
+              : role === "tool" ? "tool"
+              : role.slice(0, 8) || "?";
+            const tagColor =
+              tag === "ai" ? "text-brandSoft"
+              : tag === "you" ? "text-ok"
+              : tag === "tool" ? "text-ai"
+              : "text-txt3";
+            const barColor =
+              tag === "ai" ? "bg-brandSoft/40"
+              : tag === "you" ? "bg-ok/40"
+              : tag === "tool" ? "bg-ai/40"
+              : "bg-border1";
+            return (
+              <div
+                key={i}
+                className="px-4 py-2 border-b border-border2/40 hover:bg-[oklch(13%_0_0)] transition-colors"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`${tagColor} font-emphasized`}>
+                    <span className="text-txt3">&gt;</span> {tag}
+                  </span>
+                  {c.timestamp && (
+                    <span className="ml-auto text-txt3 text-[11px]">
+                      {new Date(c.timestamp).toLocaleString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  )}
+                </div>
+                <div className="flex">
+                  <span className={`w-0.5 ${barColor} shrink-0 mr-3`} />
+                  <pre className="text-txt2 whitespace-pre-wrap break-words flex-1 min-w-0 leading-relaxed">
+                    {rendered.parts.map((p, j) => {
                   if (!p.isMatch) {
                     return <span key={j}>{p.text}</span>;
                   }
@@ -278,17 +326,11 @@ export function SessionDetail({ sessionId, query }: Props) {
                     </mark>
                   );
                 })}
+                  </pre>
+                </div>
               </div>
-              {c.timestamp && (
-                <span className="text-nano text-txt3 shrink-0 mt-0.5">
-                  {new Date(c.timestamp).toLocaleTimeString(undefined, {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

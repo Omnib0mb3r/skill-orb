@@ -20,16 +20,38 @@ export interface UnifiedSearchOptions {
   query: string;
   project_id?: string;
   collections?: Array<'wiki_page' | 'raw_chunk' | 'reference_chunk'>;
+  /** @deprecated Use limit + offset. Kept for backwards compatibility. */
   top_k?: number;
+  /** Page size for the merged result list. Default 10, capped at 100. */
+  limit?: number;
+  /** Zero-based page offset across the merged result list. Default 0. */
+  offset?: number;
+}
+
+/* Per-collection candidate pool. We pull this many hits from each
+ * vector store before merging and sorting, so pagination can walk
+ * through more than the top-N most-similar hits. Capped to keep
+ * memory bounded; 500 hits across 3 collections = 1500 hit objects
+ * temporary, well within budget. */
+const CANDIDATE_POOL_PER_COLLECTION = 500;
+
+export interface UnifiedSearchPage {
+  results: UnifiedSearchHit[];
+  total: number;
+  offset: number;
+  limit: number;
 }
 
 export async function searchAll(
   store: Store,
   options: UnifiedSearchOptions,
   referenceStore?: ReferenceStore,
-): Promise<UnifiedSearchHit[]> {
+): Promise<UnifiedSearchPage> {
   const collections = options.collections ?? ['wiki_page', 'raw_chunk'];
-  const topK = Math.min(Math.max(options.top_k ?? 20, 1), 100);
+  // limit takes precedence; fall back to legacy top_k; default 10.
+  const limit = Math.min(Math.max(options.limit ?? options.top_k ?? 10, 1), 100);
+  const offset = Math.max(0, options.offset ?? 0);
+  const candidatePerCollection = CANDIDATE_POOL_PER_COLLECTION;
   const vec = await embedOne(options.query.slice(0, 4000));
 
   const all: UnifiedSearchHit[] = [];
@@ -43,7 +65,7 @@ export async function searchAll(
         ) => Array<{ id: string; score: number; metadata: unknown }>;
       }
     ).search(vec, {
-      topK,
+      topK: candidatePerCollection,
       filter: (m) => {
         const meta = m as Record<string, unknown>;
         // wiki pages may have project_ids in projects array; soft filter only if provided
@@ -75,7 +97,7 @@ export async function searchAll(
         ) => Array<{ id: string; score: number; metadata: unknown }>;
       }
     ).search(vec, {
-      topK,
+      topK: candidatePerCollection,
       filter: (m) => {
         const meta = m as Record<string, unknown>;
         if (options.project_id && meta.project_id !== options.project_id) {
@@ -107,7 +129,7 @@ export async function searchAll(
         ) => Array<{ id: string; score: number; metadata: unknown }>;
       }
     ).search(vec, {
-      topK,
+      topK: candidatePerCollection,
       filter: (m) => {
         const meta = m as Record<string, unknown>;
         if (options.project_id && meta.project_id !== options.project_id) {
@@ -127,5 +149,11 @@ export async function searchAll(
   }
 
   all.sort((a, b) => b.score - a.score);
-  return all.slice(0, topK);
+  const total = all.length;
+  return {
+    results: all.slice(offset, offset + limit),
+    total,
+    offset,
+    limit,
+  };
 }

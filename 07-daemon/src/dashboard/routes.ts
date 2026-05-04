@@ -169,6 +169,57 @@ export async function registerDashboardRoutes(
   // ── Wiki graph for the orb ───────────────────────────────────────
   app.get('/graph', async () => buildGraph());
 
+  // ── Single wiki page fetch (for the search-result modal) ─────────
+  app.get('/wiki/page/:id', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    if (!/^[a-z0-9][a-z0-9-]+$/.test(id)) {
+      reply.code(400);
+      return { ok: false, error: 'invalid id' };
+    }
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const { wikiPagesDir, wikiPendingDir, wikiArchiveDir } = await import('../paths.js');
+    const { readPage } = await import('../wiki/schema.js');
+    const candidates: Array<{ dir: string; status: 'canonical' | 'pending' | 'archived' }> = [
+      { dir: wikiPagesDir(), status: 'canonical' },
+      { dir: wikiPendingDir(), status: 'pending' },
+      { dir: wikiArchiveDir(), status: 'archived' },
+    ];
+    for (const c of candidates) {
+      const file = path.posix.join(c.dir, `${id}.md`);
+      if (!fs.existsSync(file)) continue;
+      try {
+        const page = readPage(file);
+        return {
+          ok: true,
+          page: {
+            id: page.frontmatter.id,
+            title: page.frontmatter.title,
+            trigger: page.frontmatter.trigger,
+            insight: page.frontmatter.insight,
+            summary: page.frontmatter.summary,
+            status: c.status,
+            weight: page.frontmatter.weight,
+            hits: page.frontmatter.hits,
+            corrections: page.frontmatter.corrections,
+            created: page.frontmatter.created,
+            last_touched: page.frontmatter.last_touched,
+            projects: page.frontmatter.projects,
+            pattern: page.sections.pattern,
+            cross_refs: page.sections.crossRefs,
+            evidence: page.sections.evidence,
+            log: page.sections.log,
+          },
+        };
+      } catch (err) {
+        reply.code(500);
+        return { ok: false, error: `parse failed: ${(err as Error).message}` };
+      }
+    }
+    reply.code(404);
+    return { ok: false, error: 'page not found' };
+  });
+
   // ── Services manifest ─────────────────────────────────────────────
   app.get('/services', async () => {
     const services = await checkAll();
@@ -261,19 +312,29 @@ export async function registerDashboardRoutes(
       project_id?: string;
       collections?: Array<'wiki_page' | 'raw_chunk' | 'reference_chunk'>;
       top_k?: number;
+      limit?: number;
+      offset?: number;
     };
     if (!body.q) return { ok: false, error: 'q required' };
-    const results = await searchAll(
+    const page = await searchAll(
       store,
       {
         query: body.q,
         ...(body.project_id ? { project_id: body.project_id } : {}),
         ...(body.collections ? { collections: body.collections } : {}),
         ...(body.top_k ? { top_k: body.top_k } : {}),
+        ...(typeof body.limit === 'number' ? { limit: body.limit } : {}),
+        ...(typeof body.offset === 'number' ? { offset: body.offset } : {}),
       },
       referenceStore,
     );
-    return { ok: true, results };
+    return {
+      ok: true,
+      results: page.results,
+      total: page.total,
+      offset: page.offset,
+      limit: page.limit,
+    };
   });
 
   // ── Reminders ─────────────────────────────────────────────────────
