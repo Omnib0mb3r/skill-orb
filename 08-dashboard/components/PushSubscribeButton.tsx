@@ -15,21 +15,53 @@ function urlBase64ToBuffer(base64: string): ArrayBuffer {
   return buf;
 }
 
+type Mode = "loading" | "unsupported" | "insecure" | "subscribed" | "subscribable";
+
 export function PushSubscribeButton() {
-  const [ready, setReady] = useState(false);
-  const [subscribed, setSubscribed] = useState(false);
+  const [mode, setMode] = useState<Mode>("loading");
   const [permission, setPermission] = useState<NotificationPermission>("default");
 
   useEffect(() => {
-    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    if (typeof window === "undefined") return;
+
+    /* Three failure modes the button needs to communicate, not hide:
+     *   1. unsupported  - browser has no Service Worker / Push API at all
+     *   2. insecure     - APIs exist but the page is not on a secure origin
+     *                     (HTTP off-localhost). Surfacing this lets the user
+     *                     hit the HTTPS URL instead of guessing why nothing
+     *                     happens.
+     *   3. subscribed   - already subscribed, show acknowledgment
+     *   4. subscribable - APIs available, secure origin, ready to subscribe.
+     *                     We do NOT wait for navigator.serviceWorker.ready
+     *                     here; first visit wouldn't have an active SW yet
+     *                     and the button would never appear. Wait happens
+     *                     at click time inside the mutation. */
+    const hasSW = "serviceWorker" in navigator;
+    const hasPush = "PushManager" in window;
+    if (!hasSW || !hasPush) {
+      setMode("unsupported");
       return;
     }
+    if (!window.isSecureContext) {
+      setMode("insecure");
+      return;
+    }
+
     setPermission(Notification.permission);
-    navigator.serviceWorker.ready.then(async (reg) => {
-      const sub = await reg.pushManager.getSubscription();
-      setSubscribed(Boolean(sub));
-      setReady(true);
-    });
+    /* Best-effort check whether we're already subscribed. If the SW isn't
+     * controlling the page yet, getRegistration() returns undefined and we
+     * fall through to "subscribable" (a redundant click is harmless). */
+    navigator.serviceWorker
+      .getRegistration("/")
+      .then(async (reg) => {
+        if (!reg) {
+          setMode("subscribable");
+          return;
+        }
+        const sub = await reg.pushManager.getSubscription().catch(() => null);
+        setMode(sub ? "subscribed" : "subscribable");
+      })
+      .catch(() => setMode("subscribable"));
   }, []);
 
   const subM = useMutation({
@@ -37,7 +69,14 @@ export function PushSubscribeButton() {
       const perm = await Notification.requestPermission();
       setPermission(perm);
       if (perm !== "granted") throw new Error("notification permission denied");
-      const reg = await navigator.serviceWorker.ready;
+      // Nudge the registration if it hasn't happened yet (RegisterServiceWorker
+      // does this on mount but we want to be defensive).
+      let reg: ServiceWorkerRegistration;
+      try {
+        reg = await navigator.serviceWorker.ready;
+      } catch {
+        reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+      }
       const { public_key } = await vapidPublicKey();
       const browserSub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
@@ -56,13 +95,36 @@ export function PushSubscribeButton() {
         user_agent: navigator.userAgent,
       });
       if (!r.ok) throw new Error(r.error ?? "subscribe failed");
-      setSubscribed(true);
+      setMode("subscribed");
     },
   });
 
-  if (!ready) return null;
+  if (mode === "loading") {
+    return (
+      <span className="inline-flex items-center gap-2 text-xs font-mono text-txt3">
+        <Icon name="Bell" size={14} /> checking push support
+      </span>
+    );
+  }
 
-  if (subscribed) {
+  if (mode === "unsupported") {
+    return (
+      <span className="inline-flex items-center gap-2 text-xs font-mono text-txt3">
+        <Icon name="BellOff" size={14} /> push not supported in this browser
+      </span>
+    );
+  }
+
+  if (mode === "insecure") {
+    return (
+      <span className="inline-flex items-center gap-2 text-xs font-mono text-warn">
+        <Icon name="ShieldAlert" size={14} /> push needs HTTPS
+        <span className="text-txt3">(open this dashboard at the tailnet HTTPS URL)</span>
+      </span>
+    );
+  }
+
+  if (mode === "subscribed") {
     return (
       <span className="inline-flex items-center gap-2 text-xs font-mono text-ok">
         <Icon name="BellRing" size={14} /> push enabled on this device
@@ -78,7 +140,11 @@ export function PushSubscribeButton() {
     >
       <Icon name="Bell" size={14} />
       {subM.isPending ? "subscribing…" : "enable push"}
-      {subM.isError && <span className="text-err">·</span>}
+      {subM.isError && (
+        <span className="text-err" title={(subM.error as Error)?.message}>
+          ·
+        </span>
+      )}
       {permission === "denied" && <span className="text-err">(blocked)</span>}
     </button>
   );
