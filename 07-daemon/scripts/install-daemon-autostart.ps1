@@ -56,24 +56,32 @@ $argList = @(
 
 $action = New-ScheduledTaskAction -Execute $pwsh -Argument $argList
 
-# Three triggers stacked for resilience:
-#   AtLogOn   - covers fresh login + reboot
-#   AtStartup - covers full system boot before any user logs in
-#   Daily     - hourly repeating safety-net so a sleep/wake cycle, an
-#               OOM kill, or a manual stop is auto-recovered within an
-#               hour. start-daemon.ps1 is a no-op when the daemon is
-#               already alive (PID file singleton check), so the cost
-#               of re-firing is just a quick exit.
+# Two triggers stacked for resilience:
+#   AtLogOn  - covers fresh login + reboot (with 30s delay so the
+#              login session warmup wins).
+#   Once+5m  - safety-net that fires every 5 minutes forever; auto-
+#              recovers from sleep/wake, OOM, manual kill. The repeat
+#              also catches a fresh boot within 5 minutes, which is
+#              why we don't need a separate AtStartup trigger
+#              (AtStartup requires admin to register, breaking the
+#              user-level install posture).
+#
+# start-daemon.ps1 short-circuits via /health probe when the daemon
+# is already alive, so the 5-minute fire is near-zero-cost when
+# things are healthy.
 $logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User (whoami)
 $logonTrigger.Delay = 'PT30S'
 
-$bootTrigger = New-ScheduledTaskTrigger -AtStartup
-$bootTrigger.Delay = 'PT60S'
-
+# 365-day duration is the largest the cmdlet accepts before
+# overflowing the schema's PnDT format. Re-installing yearly is fine
+# (we re-install on script changes anyway).
 $now = Get-Date
-$safetyTrigger = New-ScheduledTaskTrigger -Once -At $now -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration ([System.TimeSpan]::MaxValue)
+$safetyTrigger = New-ScheduledTaskTrigger `
+    -Once -At $now `
+    -RepetitionInterval (New-TimeSpan -Minutes 5) `
+    -RepetitionDuration (New-TimeSpan -Days 365)
 
-$triggers = @($logonTrigger, $bootTrigger, $safetyTrigger)
+$triggers = @($logonTrigger, $safetyTrigger)
 
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `

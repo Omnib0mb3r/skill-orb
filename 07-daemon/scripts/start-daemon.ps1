@@ -21,8 +21,23 @@
 
 [CmdletBinding()]
 param(
-    [string]$DaemonRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+    [string]$DaemonRoot
 )
+
+# Resolve the daemon root relative to this script's location. Use a
+# fallback chain because $PSScriptRoot is sometimes empty when the
+# script is invoked with a forward-slash path through `powershell.exe
+# -File ...` from a non-PowerShell shell (bash, cmd).
+if ([string]::IsNullOrWhiteSpace($DaemonRoot)) {
+    $scriptDir = $PSScriptRoot
+    if ([string]::IsNullOrWhiteSpace($scriptDir)) {
+        $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    }
+    if ([string]::IsNullOrWhiteSpace($scriptDir)) {
+        $scriptDir = (Get-Location).Path
+    }
+    $DaemonRoot = (Resolve-Path (Join-Path $scriptDir '..')).Path
+}
 
 $ErrorActionPreference = 'Stop'
 
@@ -41,16 +56,19 @@ try {
     $existing = Invoke-WebRequest -Uri "http://localhost:$port/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
     if ($existing.StatusCode -eq 200) {
         Write-Host "[start-daemon] already alive on :$port; skipping spawn"
-        return
+        exit 0
     }
 } catch {
     # Not reachable; proceed with launch.
 }
 
-$node = (Get-Command node -ErrorAction SilentlyContinue)?.Source
-if (-not $node) {
+# PowerShell 5.1 (default Windows shell) doesn't support `?.` so we
+# fall back to an explicit null check.
+$nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+if (-not $nodeCmd) {
     throw "node not on PATH. Install Node.js or set explicit path."
 }
+$node = $nodeCmd.Source
 
 # Use the data root the daemon is configured for (matches DATA_ROOT default
 # in 07-daemon/src/paths.ts). DEVNEURAL_DATA_ROOT env override respected.
@@ -85,3 +103,4 @@ $proc.BeginOutputReadLine()
 $proc.BeginErrorReadLine()
 
 Write-Host "[start-daemon] launched node $dist (pid=$($proc.Id))"
+exit 0
