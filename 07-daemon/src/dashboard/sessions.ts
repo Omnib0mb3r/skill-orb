@@ -34,6 +34,53 @@ export interface SessionListItem {
   phase: 'thinking' | 'tool' | 'permission' | 'idle' | 'unknown';
 }
 
+/* Derive current phase by reading the last few KB of the jsonl. The
+ * chokidar transcript-watcher fires unreliably on Windows for files
+ * that are being appended-to live, leaving phase stuck at 'unknown'
+ * for active sessions. Tailing the file on every /sessions request is
+ * cheap (~8KB read, only for active sessions) and reflects ground
+ * truth: the last record tells us whether Claude is thinking, running
+ * a tool, or idle. */
+function derivePhaseFromTail(file: string): 'thinking' | 'tool' | 'idle' | 'unknown' {
+  try {
+    const stat = fs.statSync(file);
+    if (stat.size === 0) return 'unknown';
+    const tailLen = Math.min(stat.size, 16 * 1024);
+    const start = stat.size - tailLen;
+    const fd = fs.openSync(file, 'r');
+    let text: string;
+    try {
+      const buf = Buffer.alloc(tailLen);
+      fs.readSync(fd, buf, 0, tailLen, start);
+      text = buf.toString('utf-8');
+    } finally {
+      fs.closeSync(fd);
+    }
+    const lines = text.split('\n').filter((l) => l.trim().length > 0);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i]!;
+      try {
+        const rec = JSON.parse(line) as {
+          type?: string;
+          role?: string;
+          message?: { role?: string; content?: unknown };
+        };
+        const role = rec.type ?? rec.role ?? rec.message?.role;
+        if (role === 'user') return 'thinking';
+        if (role === 'assistant') {
+          if (/"type"\s*:\s*"tool_use"/.test(line)) return 'tool';
+          return 'idle';
+        }
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return 'unknown';
+}
+
 export function listSessions(): SessionListItem[] {
   if (!fs.existsSync(SESSIONS_ROOT)) return [];
   const out: SessionListItem[] = [];
@@ -58,16 +105,25 @@ export function listSessions(): SessionListItem[] {
       } catch {
         continue;
       }
+      const isActive = now - stat.mtimeMs < ACTIVE_THRESHOLD_MS;
+      // For active sessions, tail-derive phase so the dashboard reflects
+      // current reality even when chokidar misses change events. Stale
+      // sessions just take whatever the in-memory tracker last knew.
+      let phase = getPhase(sessionId);
+      if (isActive) {
+        const derived = derivePhaseFromTail(file);
+        if (derived !== 'unknown') phase = derived;
+      }
       out.push({
         session_id: sessionId,
         project_slug: slug.name,
         jsonl_path: file,
         bytes: stat.size,
         last_modified_ms: stat.mtimeMs,
-        active: now - stat.mtimeMs < ACTIVE_THRESHOLD_MS,
+        active: isActive,
         has_summary: Boolean(readSummary(sessionId)),
         has_task: Boolean(readCurrentTask(sessionId)),
-        phase: getPhase(sessionId),
+        phase,
       });
     }
   }
