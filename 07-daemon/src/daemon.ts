@@ -259,48 +259,8 @@ async function main(): Promise<void> {
     return { ok: true, ...r };
   });
 
-  app.get('/graph', async () => {
-    const nodes: Array<{
-      id: string;
-      title: string;
-      status: string;
-      weight: number;
-      hits: number;
-      corrections: number;
-    }> = [];
-    const edges: Array<{ from: string; to: string; weight: number }> = [];
-    const fsLib = await import('node:fs');
-    const pathLib = await import('node:path');
-    const { wikiPagesDir, wikiPendingDir } = await import('./paths.js');
-    const { parsePage } = await import('./wiki/schema.js');
-
-    for (const dir of [wikiPagesDir(), wikiPendingDir()]) {
-      if (!fsLib.existsSync(dir)) continue;
-      for (const file of fsLib.readdirSync(dir)) {
-        if (!file.endsWith('.md')) continue;
-        try {
-          const parsed = parsePage(
-            fsLib.readFileSync(pathLib.posix.join(dir, file), 'utf-8'),
-          );
-          const fm = parsed.frontmatter;
-          nodes.push({
-            id: fm.id,
-            title: fm.title,
-            status: fm.status,
-            weight: fm.weight,
-            hits: fm.hits ?? 0,
-            corrections: fm.corrections ?? 0,
-          });
-          for (const target of parsed.sections.crossRefs) {
-            edges.push({ from: fm.id, to: target, weight: fm.weight });
-          }
-        } catch {
-          /* skip malformed */
-        }
-      }
-    }
-    return { ok: true, nodes, edges, generated_at: new Date().toISOString() };
-  });
+  // /graph is now registered by registerDashboardRoutes (see dashboard/graph.ts).
+  // Kept this comment as a breadcrumb so future edits know where to find it.
 
   app.get('/page/:id', async (req) => {
     const id = (req.params as { id: string }).id;
