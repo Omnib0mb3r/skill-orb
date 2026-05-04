@@ -309,14 +309,25 @@ function focusWindow(): void {
   const titleFilter = folderName
     ? `$_.MainWindowTitle -like '*${folderName.replace(/'/g, "''")}*'`
     : '$_.MainWindowHandle -ne 0';
+  // Windows' SetForegroundWindow refuses to honour calls from a process
+  // that doesn't currently own focus or didn't receive the most recent
+  // input event. Browser-originated focus requests trip both rules. The
+  // documented workaround is to fire a synthetic key event (Alt down +
+  // up) from this PowerShell first; that registers our thread as the
+  // most recent input source and unlocks SetForegroundWindow for one
+  // call. The Alt is harmless because it's the same key combo used by
+  // legitimate window managers.
   const ps = `
 $ErrorActionPreference = 'SilentlyContinue'
 $sig = @'
 [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
 [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int n);
 [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, IntPtr extra);
 '@
 Add-Type -MemberDefinition $sig -Name W -Namespace DN -ErrorAction SilentlyContinue
+[DN.W]::keybd_event(0x12, 0, 0, [IntPtr]::Zero)
+[DN.W]::keybd_event(0x12, 0, 2, [IntPtr]::Zero)
 $proc = Get-Process Code -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and (${titleFilter}) } | Select-Object -First 1
 if (-not $proc) { $proc = Get-Process Code -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1 }
 if ($proc) {
@@ -457,7 +468,14 @@ async function handleMessage(message: BridgeMessage): Promise<void> {
     return;
   }
   if (message.action === 'key' && message.key) {
-    injectKey(message.key);
+    // Browser-originated key presses arrive while the browser still owns
+    // OS focus. Send keys directly and they land in the browser, not
+    // Claude. Bring the VS Code window forward first, give Windows a
+    // beat to honour SetForegroundWindow, then inject. Still subject to
+    // Windows' SetForegroundWindow restrictions; the dummy alt keypress
+    // inside focusWindow is what gets us past the foreground lock.
+    focusWindow();
+    setTimeout(() => injectKey(message.key!), 220);
     return;
   }
   if (!message.text) {

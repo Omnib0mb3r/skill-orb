@@ -55,7 +55,7 @@ const TONE: Record<KeyDef["tone"], string> = {
   yellow: "bg-[oklch(75%_0.13_95)] text-black",
   green:  "bg-[oklch(58%_0.17_145)] text-white",
   blue:   "bg-[oklch(54%_0.18_265)] text-white",
-  slate:  "bg-surface2 text-[oklch(85%_0.05_260)]",
+  slate:  "bg-surface2 text-white",
   light:  "bg-[oklch(92%_0_0)] text-black",
   warn:   "bg-[oklch(50%_0.20_25)] text-white",
   empty:  "bg-[oklch(15%_0_0)] text-transparent",
