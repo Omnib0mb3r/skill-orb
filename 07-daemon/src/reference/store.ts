@@ -186,7 +186,7 @@ export function detectKind(filename: string): ReferenceChunkMetadata['kind'] {
   if (['png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'webp'].includes(ext))
     return 'image';
   if (['mp3', 'wav', 'm4a', 'flac', 'ogg'].includes(ext)) return 'audio';
-  if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) return 'video';
+  if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv'].includes(ext)) return 'video';
   if (['md', 'markdown', 'txt'].includes(ext)) return 'markdown';
   if (['docx'].includes(ext)) return 'docx';
   return 'other';
@@ -197,6 +197,8 @@ export function ensureReferenceDirs(): void {
   ensureDir(path.posix.join(DATA_ROOT, 'reference', 'queue'));
   ensureDir(path.posix.join(DATA_ROOT, 'reference', 'docs'));
   ensureDir(path.posix.join(DATA_ROOT, 'reference', 'images'));
+  ensureDir(path.posix.join(DATA_ROOT, 'reference', 'audio'));
+  ensureDir(path.posix.join(DATA_ROOT, 'reference', 'video'));
 }
 
 void fs;

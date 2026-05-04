@@ -1,10 +1,14 @@
 import { AppShell } from "@/components/AppShell";
 import { DailyBrief } from "@/components/DailyBrief";
+import { InstallPrompt } from "@/components/InstallPrompt";
 
 export default function HomePage() {
   return (
     <AppShell>
       <div className="px-6 py-5 flex flex-col gap-5">
+        <div className="flex items-center justify-end">
+          <InstallPrompt />
+        </div>
         <DailyBrief />
         {/* Project status grid + Orb panel land here in 3.4.4. Stubbed for now. */}
         <section className="grid grid-cols-2 gap-5">

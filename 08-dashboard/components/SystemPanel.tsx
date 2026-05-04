@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { SparkAreaChart } from "@tremor/react";
 import { systemMetrics, services as servicesClient } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
@@ -10,6 +12,45 @@ function fmtBytes(bytes: number): string {
   const u = ["B", "K", "M", "G", "T"];
   const i = Math.min(u.length - 1, Math.floor(Math.log10(bytes) / 3));
   return `${(bytes / 10 ** (i * 3)).toFixed(1)}${u[i]}`;
+}
+
+interface SamplePoint {
+  t: number;
+  cpu: number;
+  mem: number;
+}
+
+const HISTORY_CAP = 60;
+
+interface SparkProps {
+  label: string;
+  data: SamplePoint[];
+  category: "cpu" | "mem";
+  // Token-derived color, passed as a CSS var so the value tracks the dark/light
+  // theme without hard-coding hex. Tremor forwards the string straight to
+  // recharts which uses it as an SVG fill/stroke; SVG accepts var() and oklch().
+  colorVar: string;
+}
+function Spark({ label, data, category, colorVar }: SparkProps) {
+  const last = data[data.length - 1]?.[category] ?? 0;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-nano text-txt3">{label}</span>
+        <span className="text-xs font-mono text-txt2">{last.toFixed(0)}%</span>
+      </div>
+      <SparkAreaChart
+        data={data}
+        index="t"
+        categories={[category]}
+        colors={[colorVar]}
+        className="h-10 w-full"
+        minValue={0}
+        maxValue={100}
+        curveType="monotone"
+      />
+    </div>
+  );
 }
 
 interface BarProps {
@@ -58,6 +99,23 @@ export function SystemPanel() {
   const cpuTone = cpu > 90 ? "err" : cpu > 70 ? "warn" : "ok";
   const memTone = mem.used_percent > 90 ? "err" : mem.used_percent > 80 ? "warn" : "ok";
 
+  // Rolling sample buffer kept in component state. Last 60 samples at the 4s
+  // poll cadence covers the most recent ~4 minutes of host vitals. Reset on
+  // unmount; not persisted across navigations.
+  const [history, setHistory] = useState<SamplePoint[]>([]);
+  const dataUpdatedAt = m.dataUpdatedAt;
+  useEffect(() => {
+    if (!m.data) return;
+    setHistory((prev) => {
+      const next = prev.concat({
+        t: dataUpdatedAt || Date.now(),
+        cpu: m.data!.cpu.usage_percent ?? 0,
+        mem: m.data!.memory?.used_percent ?? 0,
+      });
+      return next.length > HISTORY_CAP ? next.slice(next.length - HISTORY_CAP) : next;
+    });
+  }, [dataUpdatedAt, m.data]);
+
   return (
     <div className="grid grid-cols-3 gap-4">
       <div className="col-span-2 space-y-4">
@@ -90,6 +148,12 @@ export function SystemPanel() {
               />
             ))}
           </div>
+          {history.length > 1 && (
+            <div className="px-5 pb-4 grid grid-cols-2 gap-5">
+              <Spark label="CPU trend" data={history} category="cpu" colorVar="var(--c-accent)" />
+              <Spark label="Memory trend" data={history} category="mem" colorVar="var(--c-ok)" />
+            </div>
+          )}
           <div className="px-5 py-3 border-t border-border2 flex items-center justify-between text-[11px] font-mono text-txt3">
             <div className="flex items-center gap-2">
               <StatusDot status={ollama?.reachable ? "ok" : "fail"} size={6} />

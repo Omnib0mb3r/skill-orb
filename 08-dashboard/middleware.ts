@@ -25,6 +25,7 @@ const DAEMON_PROXY_PREFIXES = [
   "/push",
   "/search",
   "/upload",
+  "/graph",
 ];
 
 function isProxyPath(pathname: string): boolean {

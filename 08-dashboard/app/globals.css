@@ -227,6 +227,14 @@ html, body {
 .text-nano  { font-family: var(--font-mono); font-size: var(--fs-11); letter-spacing: var(--ls-loose); text-transform: uppercase; }
 .text-micro { font-family: var(--font-sans); font-size: var(--fs-12); }
 
+/* Reduced-motion override. Audited 2026-05-03 against every @keyframes in
+ * this file (breathe, shimmer, slidein, ingest) plus animate-pulse from
+ * Tailwind. The universal selector covers every CSS animation and transition
+ * regardless of where it is declared, so any future @keyframes added to this
+ * file or to a component-level <style> block is covered automatically.
+ * If a future feature uses requestAnimationFrame or canvas-driven motion that
+ * does not route through CSS, that feature must check
+ * window.matchMedia('(prefers-reduced-motion: reduce)') explicitly. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0ms !important; transition-duration: 0ms !important; }
 }

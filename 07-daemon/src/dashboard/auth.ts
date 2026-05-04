@@ -180,6 +180,7 @@ const PROTECTED_API_PREFIXES = [
   '/push',
   '/search',
   '/upload',
+  '/graph',
 ];
 
 function isProtectedApi(url: string): boolean {

@@ -281,6 +281,17 @@ Per upload:
 7. **Index in SQLite**: metadata table `reference_meta` for filterable queries.
 8. **Notify**: dashboard receives a "doc ready" event.
 
+#### Status
+
+Phase 3.5 (audio + video) is implemented at the code level:
+`07-daemon/src/reference/audio.ts` shells out to whisper.cpp,
+`07-daemon/src/reference/video.ts` demuxes via ffmpeg then transcribes
+via the same audio extractor. Both binaries are external. When either
+is missing the upload still lands on disk with status `queued` and the
+dashboard receives a `warn` notification (see
+`docs/install/AUDIO-VIDEO.md` for setup). End-to-end validation is
+pending whisper.cpp + ffmpeg installation on `OTLCDEV`.
+
 ### 6.5 Cost discipline
 
 All steps are local. Tesseract is fast and dumb. Whisper.cpp is a one-time-per-file cost. PDF parsing is cheap. Vision-model upgrade is opt-in if user wants better image understanding.

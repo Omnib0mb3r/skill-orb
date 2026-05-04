@@ -38,6 +38,7 @@ import {
   events as notificationEvents,
 } from './notifications.js';
 import { createProject } from './projects-new.js';
+import { buildGraph } from './graph.js';
 import {
   vapidPublicKey,
   saveSubscription,
@@ -80,6 +81,9 @@ export async function registerDashboardRoutes(
   app.get('/dashboard/system-metrics', async () => {
     return getSystemMetrics();
   });
+
+  // ── Wiki graph for the orb ───────────────────────────────────────
+  app.get('/graph', async () => buildGraph());
 
   // ── Services manifest ─────────────────────────────────────────────
   app.get('/services', async () => {

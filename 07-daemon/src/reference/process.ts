@@ -15,12 +15,17 @@ import { randomUUID } from 'node:crypto';
 import {
   referenceDocsDir,
   referenceImagesDir,
+  referenceAudioDir,
+  referenceVideoDir,
   ensureDir,
 } from '../paths.js';
 import { embedOne } from '../embedder/index.js';
 import { chunkText, type Chunk } from './chunk.js';
 import { extractPdf } from './pdf.js';
 import { extractImage } from './image.js';
+import { extractAudioTranscript } from './audio.js';
+import { extractVideoTranscript } from './video.js';
+import { emitNotification } from '../dashboard/notifications.js';
 import {
   ReferenceStore,
   detectKind,
@@ -56,7 +61,14 @@ export async function ingestUpload(
   const projectId = input.project_id ?? 'global';
 
   // Write file to its kind-specific dir
-  const targetDir = kind === 'image' ? referenceImagesDir() : referenceDocsDir();
+  const targetDir =
+    kind === 'image'
+      ? referenceImagesDir()
+      : kind === 'audio'
+        ? referenceAudioDir()
+        : kind === 'video'
+          ? referenceVideoDir()
+          : referenceDocsDir();
   ensureDir(targetDir);
   const docFolder = path.posix.join(targetDir, docId);
   ensureDir(docFolder);
@@ -102,22 +114,47 @@ export async function ingestUpload(
       };
       const r = await mammoth.extractRawText({ path: originalPath });
       text = r.value;
-    } else if (kind === 'audio' || kind === 'video') {
-      store.upsertDoc({
-        ...baseMeta,
-        status: 'failed',
-        error:
-          'audio and video processing land in Phase 3.5 (whisper.cpp + ffmpeg). File saved for later re-processing.',
-        warnings,
-      });
-      log(`[reference] ${input.filename}: audio/video deferred to 3.5`);
-      return {
-        ok: false,
-        doc_id: docId,
-        status: 'failed',
-        warnings,
-        error: 'audio/video processing not yet implemented',
-      };
+    } else if (kind === 'audio') {
+      const r = await extractAudioTranscript(originalPath);
+      if (r.ok) {
+        text = r.text;
+      } else if (r.reason === 'no_whisper') {
+        return handleMissingBinary(
+          store,
+          baseMeta,
+          'whisper.cpp',
+          r.detail ?? 'whisper.cpp not installed',
+          warnings,
+          log,
+        );
+      } else {
+        warnings.push(`audio transcription failed: ${r.detail ?? 'unknown'}`);
+      }
+    } else if (kind === 'video') {
+      const r = await extractVideoTranscript(originalPath);
+      if (r.ok) {
+        text = r.text;
+      } else if (r.reason === 'no_ffmpeg') {
+        return handleMissingBinary(
+          store,
+          baseMeta,
+          'ffmpeg',
+          r.detail ?? 'ffmpeg not installed',
+          warnings,
+          log,
+        );
+      } else if (r.reason === 'no_whisper') {
+        return handleMissingBinary(
+          store,
+          baseMeta,
+          'whisper.cpp',
+          r.detail ?? 'whisper.cpp not installed',
+          warnings,
+          log,
+        );
+      } else {
+        warnings.push(`video transcription failed: ${r.detail ?? 'unknown'}`);
+      }
     } else {
       // Plain text / unknown: try to read as utf-8
       try {
@@ -225,4 +262,38 @@ export async function ingestUpload(
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[<>:"|?*\x00-\x1F]/g, '_').slice(0, 200);
+}
+
+/**
+ * Audio/video uploads should not fail just because the user has not
+ * yet installed whisper.cpp or ffmpeg. We park them with status
+ * 'queued' (re-processable) and a clear notification.
+ */
+function handleMissingBinary(
+  store: ReferenceStore,
+  baseMeta: ReferenceDocMeta,
+  binary: 'whisper.cpp' | 'ffmpeg',
+  detail: string,
+  warnings: string[],
+  log: (msg: string) => void,
+): UploadResult {
+  const note = `processing_pending: ${binary} not installed. ${detail}`;
+  store.upsertDoc({
+    ...baseMeta,
+    status: 'queued',
+    warnings: [...warnings, note],
+  });
+  emitNotification({
+    severity: 'warn',
+    source: 'reference-ingest',
+    title: `Audio/video processing requires ${binary}`,
+    body: detail,
+  });
+  log(`[reference] ${baseMeta.filename}: deferred (${binary} missing)`);
+  return {
+    ok: true,
+    doc_id: baseMeta.doc_id,
+    status: 'queued',
+    warnings: [...warnings, note],
+  };
 }

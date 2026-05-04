@@ -1,13 +1,14 @@
 import { AppShell } from "@/components/AppShell";
+import { Orb } from "@/components/Orb";
 
 export default function OrbPage() {
   return (
     <AppShell>
-      <div className="px-6 py-5">
-        <div className="rounded-panel bg-surface1 hairline p-8">
-          <h1 className="font-display text-2xl font-emphasized mb-2">Orb</h1>
-          <p className="text-txt3 text-sm">Orb visualization launches in Phase 4.</p>
-        </div>
+      {/* Orb fills the main content area. AppShell already reserves space for
+       * the TopBar, ribbons, and side panels; the canvas just needs to expand
+       * inside <main>. */}
+      <div className="h-[calc(100vh-7rem)] w-full">
+        <Orb />
       </div>
     </AppShell>
   );

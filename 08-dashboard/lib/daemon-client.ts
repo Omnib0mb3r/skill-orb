@@ -264,6 +264,28 @@ export const subscribePush = (input: {
 export const unsubscribePush = (id: string) =>
   request<{ ok: boolean }>(`/push/subscribe/${id}`, { method: "DELETE" });
 
+// ── wiki graph ──────────────────────────────────────────────────
+export interface GraphNode {
+  id: string;
+  title: string;
+  status: "canonical" | "pending" | "archived";
+  project_id?: string;
+  last_modified: string;
+  promoted_at?: string;
+  weight: number;
+}
+export interface GraphEdge {
+  source: string;
+  target: string;
+  kind?: "reference" | "sibling" | "glossary";
+}
+export interface GraphResponse {
+  ok: boolean;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+export const graph = () => request<GraphResponse>("/graph");
+
 // ── reference docs ──────────────────────────────────────────────
 export interface ReferenceDoc {
   doc_id: string;

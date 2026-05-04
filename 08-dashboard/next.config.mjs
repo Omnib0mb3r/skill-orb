@@ -18,6 +18,7 @@ const DAEMON_PATHS = [
   'push',
   'search',
   'upload',
+  'graph',
 ];
 
 const nextConfig = PROD
