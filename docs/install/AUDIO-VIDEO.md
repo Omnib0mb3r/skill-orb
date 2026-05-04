@@ -44,7 +44,29 @@ If `ffmpeg` is not on PATH, set the env var so the daemon can find it:
 [Environment]::SetEnvironmentVariable('DEVNEURAL_FFMPEG_BIN', 'C:\path\to\ffmpeg.exe', 'User')
 ```
 
-## 2. Build whisper.cpp
+## 2. Get whisper.cpp
+
+Two paths. Pick one. Both end up at `C:\dev\whisper.cpp\` so the
+daemon's fallback probe list finds them.
+
+### 2a. Prebuilt binary (no Visual Studio required)
+
+```powershell
+mkdir C:\dev\whisper.cpp -Force
+cd C:\dev\whisper.cpp
+curl -L -o whisper-bin.zip https://github.com/ggerganov/whisper.cpp/releases/latest/download/whisper-bin-x64.zip
+Expand-Archive -Path whisper-bin.zip -DestinationPath . -Force
+```
+
+Result: `C:\dev\whisper.cpp\Release\main.exe`. CPU-only inference,
+which is fine for `base.en` on any modern machine.
+
+### 2b. Build from source (CUDA, fine-tuned, custom flags)
+
+Requires Visual Studio Build Tools + CMake (`winget install
+Microsoft.VisualStudio.2022.BuildTools` + `winget install
+Kitware.CMake`). Skip unless you need GPU acceleration or a custom
+build.
 
 ```powershell
 cd C:\dev
@@ -54,8 +76,8 @@ cmake -B build
 cmake --build build --config Release
 ```
 
-The build produces `build\bin\Release\whisper-cli.exe` (newer CMake
-builds) or `main.exe` (older builds). The daemon probes both.
+Result: `build\bin\Release\whisper-cli.exe` (newer CMake) or
+`main.exe` (older). The daemon probes both.
 
 ## 3. Download a model
 
@@ -86,7 +108,9 @@ If you installed elsewhere, set these in your shell profile or via a
 Example PowerShell:
 
 ```powershell
-[Environment]::SetEnvironmentVariable('DEVNEURAL_WHISPER_BIN', 'C:\dev\whisper.cpp\build\bin\Release\whisper-cli.exe', 'User')
+[Environment]::SetEnvironmentVariable('DEVNEURAL_WHISPER_BIN', 'C:\dev\whisper.cpp\Release\main.exe', 'User')
+# (or for source-build path: 'C:\dev\whisper.cpp\build\bin\Release\whisper-cli.exe')
+[Environment]::SetEnvironmentVariable('DEVNEURAL_WHISPER_MODEL_PATH', 'C:\dev\whisper.cpp\models\ggml-base.en.bin', 'User')
 [Environment]::SetEnvironmentVariable('DEVNEURAL_WHISPER_MODEL', 'base.en', 'User')
 ```
 
