@@ -23,6 +23,17 @@ const HOOK_RUNNER_DIST = path
   .resolve(__dirname, '..', '..', '..', 'dist', 'capture', 'hooks', 'hook-runner.js')
   .replace(/\\/g, '/');
 
+/**
+ * On Windows, spawning `node` directly from Claude Code's hook runner causes
+ * a console window to flash on the active desktop for every hook firing
+ * (multiple times per prompt). Wrapping the node call in a VBScript shim
+ * launched via wscript.exe with WindowStyle 0 produces zero visible flash.
+ * The shim is generated at install time and lives next to hook-runner.js.
+ */
+const SILENT_SHIM = path
+  .resolve(__dirname, '..', '..', '..', 'dist', 'capture', 'hooks', 'silent-runner.vbs')
+  .replace(/\\/g, '/');
+
 interface HookCommandEntry {
   type: 'command';
   command: string;
@@ -48,7 +59,35 @@ const HOOK_PHASES: Array<{ event: string; phase: string; matcher?: string }> = [
 ];
 
 function buildCommand(phase: string): string {
-  return `node "${HOOK_RUNNER_DIST}" ${phase}`;
+  // wscript runs VBScripts with no console window. Path uses backslashes
+  // because wscript.exe's command-line parser is fussy about forward slashes
+  // even though node accepts them.
+  const shim = SILENT_SHIM.replace(/\//g, '\\');
+  return `wscript.exe "${shim}" ${phase}`;
+}
+
+function ensureSilentShim(): void {
+  const shimDir = path.dirname(SILENT_SHIM);
+  fs.mkdirSync(shimDir, { recursive: true });
+  // The shim takes the phase as argument and runs hook-runner.js with it.
+  // WshShell.Run window-style 0 = hidden, third arg false = don't wait.
+  // On error we fall back to running visibly so failures aren't completely silent.
+  const runnerWin = HOOK_RUNNER_DIST.replace(/\//g, '\\');
+  const vbs = [
+    'Option Explicit',
+    'Dim sh, phase, cmd',
+    'Set sh = CreateObject("WScript.Shell")',
+    'If WScript.Arguments.Count > 0 Then',
+    '  phase = WScript.Arguments(0)',
+    'Else',
+    '  phase = ""',
+    'End If',
+    `cmd = "node """ & "${runnerWin.replace(/\\/g, '\\\\')}" & """ " & phase`,
+    'sh.Run cmd, 0, False',
+    'Set sh = Nothing',
+    '',
+  ].join('\r\n');
+  fs.writeFileSync(SILENT_SHIM, vbs, 'utf-8');
 }
 
 const V1_PATHS = [
@@ -70,7 +109,9 @@ function isV2Entry(entry: HookCommandEntry): boolean {
   if (typeof entry.command !== 'string') return false;
   return (
     entry.command.includes('07-daemon/dist/capture/hooks/hook-runner.js') ||
-    entry.command.includes('07-daemon\\dist\\capture\\hooks\\hook-runner.js')
+    entry.command.includes('07-daemon\\dist\\capture\\hooks\\hook-runner.js') ||
+    entry.command.includes('07-daemon/dist/capture/hooks/silent-runner.vbs') ||
+    entry.command.includes('07-daemon\\dist\\capture\\hooks\\silent-runner.vbs')
   );
 }
 
@@ -81,7 +122,12 @@ function isDevNeuralEntry(entry: HookCommandEntry): boolean {
 function loadSettings(): SettingsFile {
   if (!fs.existsSync(SETTINGS_PATH)) return {};
   try {
-    return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')) as SettingsFile;
+    let raw = fs.readFileSync(SETTINGS_PATH, 'utf-8');
+    // Strip UTF-8 BOM. PowerShell 5.1's Set-Content -Encoding UTF8 prepends
+    // one and breaks JSON.parse; tolerate it on read so we don't fight other
+    // tools that may have written the file.
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
+    return JSON.parse(raw) as SettingsFile;
   } catch (err) {
     throw new Error(
       `failed to parse ${SETTINGS_PATH}: ${(err as Error).message}`,
@@ -167,6 +213,8 @@ function main(): void {
     );
     process.exit(1);
   }
+
+  ensureSilentShim();
 
   const settings = loadSettings();
   const hooks = ensureHooksObject(settings);

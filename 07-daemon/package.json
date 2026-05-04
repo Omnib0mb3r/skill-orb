@@ -11,6 +11,7 @@
     "hook": "node dist/capture/hooks/hook-runner.js",
     "install-hooks": "node dist/capture/hooks/install-hooks.js",
     "dedupe-hooks": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dedupe-hooks.ps1",
+    "silence-hooks": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/silence-all-hooks.ps1",
     "setup": "npm run build && node dist/cli/setup.js",
     "status": "node dist/cli/status.js",
     "backup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/backup.ps1",

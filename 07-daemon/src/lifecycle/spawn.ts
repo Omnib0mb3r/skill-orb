@@ -48,6 +48,12 @@ export function ensureDaemonRunning(): { started: boolean; pid: number | null } 
     const child = spawn(process.execPath, [entry], {
       detached: true,
       stdio: ['ignore', out, err],
+      // Without windowsHide, every lazy-spawn from a hook creates a visible
+      // console window for the daemon process. That's the flash users see
+      // on every prompt. detached: true on Windows allocates a new console;
+      // windowsHide: true tells CreateProcess to set SW_HIDE so the console
+      // is created invisibly and stdio still gets redirected to the log.
+      windowsHide: true,
       env: {
         ...process.env,
         DEVNEURAL_SPAWNED_BY_HOOK: '1',

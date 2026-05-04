@@ -53,6 +53,7 @@ $pwsh = $pwshCmd.Source
 $args = @(
     "-NoProfile",
     "-NonInteractive",
+    "-WindowStyle", "Hidden",
     "-ExecutionPolicy", "Bypass",
     "-File", "`"$scriptPath`"",
     "-Target", "`"$BackupRoot`"",

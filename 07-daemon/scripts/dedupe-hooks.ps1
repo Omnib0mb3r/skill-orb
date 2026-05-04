@@ -86,5 +86,8 @@ $backup = "$settingsPath.dedupe.bak.$ts"
 Copy-Item -LiteralPath $settingsPath -Destination $backup -Force
 Write-Host "[dedupe] backed up to $backup"
 
-$settings | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $settingsPath -Encoding UTF8
+# Set-Content -Encoding UTF8 in Windows PowerShell 5.1 writes a BOM that
+# breaks downstream JSON parsers. Use a no-BOM UTF-8 writer instead.
+$noBomEncoding = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($settingsPath, ($settings | ConvertTo-Json -Depth 20), $noBomEncoding)
 Write-Host "[dedupe] wrote $settingsPath"
