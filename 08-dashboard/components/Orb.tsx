@@ -136,36 +136,31 @@ export function Orb({ compact = false }: OrbProps = {}) {
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    /* Read clientWidth/Height (integer, rounded) directly. Earlier I
+     * gated updates on w/h being non-zero, which left state at {0,0}
+     * forever if the very first RAF read happened before the parent
+     * grid resolved. Now we accept any change including transient
+     * zero values; the OrbCanvas mount is gated on size>0 so a brief
+     * 0 just keeps the skeleton visible. */
     const measure = () => {
-      const r = el.getBoundingClientRect();
-      const w = Math.floor(r.width);
-      const h = Math.floor(r.height);
-      if (w === 0 || h === 0) return;
+      const w = el.clientWidth;
+      const h = el.clientHeight;
       setSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
     };
-    /* Layout-after-paint measurement is unreliable when the orb is
-     * embedded in a CSS grid: ResizeObserver fires once at observe
-     * time, sometimes before the grid has resolved column widths. We
-     * poll clientWidth on every animation frame for the first 3
-     * seconds, then back off to ResizeObserver only. That guarantees
-     * we catch the moment layout resolves regardless of timing. */
     let stop = false;
     const start = performance.now();
     const loop = () => {
       if (stop) return;
       measure();
-      if (performance.now() - start < 3000) {
+      if (performance.now() - start < 5000) {
         requestAnimationFrame(loop);
       }
     };
     requestAnimationFrame(loop);
-    const onLoad = () => measure();
-    window.addEventListener("load", onLoad);
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => {
       stop = true;
-      window.removeEventListener("load", onLoad);
       ro.disconnect();
     };
   }, []);
@@ -305,10 +300,12 @@ export function Orb({ compact = false }: OrbProps = {}) {
         }
       }
 
-      // Custom force: extra pull on edgeless nodes toward origin. d3-force
-      // calls this every tick with the current alpha; nodes carry mutable
-      // x/y/vx/vy. We read connected-id set from the latest graphData on
-      // each call so the force tracks data refetches without a re-tune.
+      // Custom force: extra pull on edgeless nodes toward origin so
+      // they don't drift to the canvas perimeter. Strength bumped to
+      // 0.18 (from 0.06) because lonely nodes were still escaping the
+      // gathered cluster. Nodes carry mutable x/y/vx/vy on the d3-force
+      // simulation; we read connected-id set from the latest graphData
+      // on each call so a refetch doesn't require a re-tune.
       type ForceNodeWithVel = ForceNode & { vx?: number; vy?: number };
       const isolationPull = (alpha: number): void => {
         const nodes = (graphDataRef.current.nodes as ForceNodeWithVel[]) ?? [];
@@ -317,11 +314,8 @@ export function Orb({ compact = false }: OrbProps = {}) {
         for (const n of nodes) {
           if (connected.has(n.id)) continue;
           if (typeof n.x !== "number" || typeof n.y !== "number") continue;
-          // Pull toward origin; stronger when far. 0.06 chosen by feel:
-          // strong enough to gather strays in 2-3s, weak enough that a
-          // user-dragged node doesn't snap back instantly.
-          n.vx = (n.vx ?? 0) + -n.x * 0.06 * alpha;
-          n.vy = (n.vy ?? 0) + -n.y * 0.06 * alpha;
+          n.vx = (n.vx ?? 0) + -n.x * 0.18 * alpha;
+          n.vy = (n.vy ?? 0) + -n.y * 0.18 * alpha;
         }
       };
       fg.d3Force("isolation-pull", isolationPull as unknown);
@@ -507,13 +501,12 @@ export function Orb({ compact = false }: OrbProps = {}) {
         ctx.stroke();
       }
 
-      // Labels draw under three conditions: explicit toggle, hover, or
-      // very deep zoom. We never auto-paint at moderate zooms because
-      // every node would emit text simultaneously and they'd all
-      // overlap. Font scales inversely with zoom so it stays roughly
-      // the same on-screen size.
+      // Labels draw on hover or via the explicit toggle. No auto-show
+      // at deep zoom because the dashboard orb has dozens of nodes and
+      // even at 5x they overlap into a wall of text. User can flip the
+      // labels button on if they want everything visible.
       const isHovered = hoveredIdRef.current === raw.id;
-      const labelOn = showLabelsRef.current || isHovered || globalScale >= 2.6;
+      const labelOn = showLabelsRef.current || isHovered;
       if (labelOn) {
         const fontSize = Math.max(8, (isHovered ? 12 : 10) / globalScale * 1.3);
         ctx.font = `${isHovered ? "600 " : ""}${fontSize}px Inter, system-ui, sans-serif`;
@@ -547,36 +540,14 @@ export function Orb({ compact = false }: OrbProps = {}) {
     userInteractedRef.current = true;
   }, []);
 
-  if (q.isLoading) return <OrbSkeleton />;
-  if (q.isError) {
-    return (
-      <div className="h-full w-full flex items-center justify-center">
-        <div className="rounded-panel bg-surface1 hairline px-6 py-5 text-sm text-txt3">
-          Failed to load graph. The daemon may be offline.
-        </div>
-      </div>
-    );
-  }
-
-  const isEmpty = (q.data?.nodes.length ?? 0) === 0;
-  if (isEmpty) {
-    return (
-      <div className="h-full w-full flex items-center justify-center">
-        <div className="rounded-panel bg-surface1 hairline px-8 py-7 max-w-md text-center">
-          <div className="font-display text-xl font-emphasized mb-2">No wiki pages yet</div>
-          <p className="text-txt3 text-sm">
-            The orb visualizes your wiki as a graph. Pages appear here as the daemon
-            ingests transcripts and writes transferable insights.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Particles are an animated flourish along edges. With zero edges they
-  // cost nothing but also do nothing; we still gate them so the lib does
-  // not allocate per-frame particle bookkeeping it never uses. With many
-  // edges they remain on; weight controls density and speed.
+  /* Render shell unconditionally. Earlier we returned <OrbSkeleton />
+   * early on isLoading, which meant containerRef wasn't attached
+   * during the initial mount and the size-measure useEffect ran with
+   * el=null. The effect's [] deps meant it never re-ran when the real
+   * tree later took over. Now containerRef attaches on first paint
+   * regardless of state and the loading / error / empty UI overlays
+   * inside the same shell. */
+  const isEmpty = !q.isLoading && !q.isError && (q.data?.nodes.length ?? 0) === 0;
   const particlesEnabled = edgeCount > 0;
 
   return (
@@ -588,24 +559,38 @@ export function Orb({ compact = false }: OrbProps = {}) {
       onMouseDown={markInteracted}
       onTouchStart={markInteracted}
     >
-      {(
-        /* react-force-graph-2d snapshots width/height at mount and the
-         * underlying canvas element gets sized once. Subsequent prop
-         * changes don't always reflow the internal canvas, so when the
-         * lib mounts at our 320×280 fallback (because container size
-         * hasn't measured yet on first home-tab paint) it stays at that
-         * size even after ResizeObserver fires. We force a remount
-         * whenever measured size changes meaningfully (>32px buckets)
-         * so the canvas always re-creates at the real dimensions. The
-         * key uses 32px buckets so live resizes from a window drag
-         * don't thrash through 100 remounts per second.
-         */
+      {q.isLoading && <OrbSkeleton />}
+      {q.isError && (
+        <div className="absolute inset-0 grid place-items-center pointer-events-none">
+          <div className="rounded-panel bg-surface1 hairline px-6 py-5 text-sm text-txt3 pointer-events-auto">
+            Failed to load graph. The daemon may be offline.
+          </div>
+        </div>
+      )}
+      {isEmpty && (
+        <div className="absolute inset-0 grid place-items-center pointer-events-none">
+          <div className="rounded-panel bg-surface1 hairline px-8 py-7 max-w-md text-center pointer-events-auto">
+            <div className="font-display text-xl font-emphasized mb-2">No wiki pages yet</div>
+            <p className="text-txt3 text-sm">
+              The orb visualizes your wiki as a graph. Pages appear here as the daemon
+              ingests transcripts and writes transferable insights.
+            </p>
+          </div>
+        </div>
+      )}
+      {size.w > 0 && size.h > 0 && q.data && (q.data.nodes.length ?? 0) > 0 && (
+        /* Mount only after we have a real measured size. force-graph2d
+         * sizes its internal canvas from props at mount and doesn't
+         * always reflow on prop change; remount via key when size
+         * changes meaningfully so the canvas matches the container.
+         * 24px bucket so window-drag resizes don't thrash 60 remounts
+         * per second. */
         <OrbCanvas
-          key={`${Math.round((size.w || 320) / 32)}x${Math.round((size.h || 280) / 32)}`}
+          key={`${Math.round(size.w / 24)}x${Math.round(size.h / 24)}`}
           ref={fgRef}
           graphData={graphData as unknown as { nodes: object[]; links: object[] }}
-          width={size.w || 320}
-          height={size.h || 280}
+          width={size.w}
+          height={size.h}
           onEngineStop={frame as never}
           backgroundColor="rgba(0,0,0,0)"
           nodeRelSize={1}
@@ -752,18 +737,17 @@ export function Orb({ compact = false }: OrbProps = {}) {
         />
       )}
 
-      {/* Floating overlay controls. Top-right so they don't overlap
-       * the legend at bottom-left. Compact mode hides them so the
-       * embedded home-tab orb stays uncluttered. */}
+      {/* Compact controls inline with the legend at bottom so they
+       * don't visually subdivide the orb canvas. Tiny pill buttons
+       * with the same hairline styling as the legend itself. */}
       {!compact && (
-        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-pill bg-surface1/85 hairline px-2 py-1 backdrop-blur-sm">
+        <div className="absolute right-4 bottom-4 rounded-panel bg-surface1/80 hairline px-2 py-1.5 text-nano text-txt3 backdrop-blur-sm flex items-center gap-1">
           <button
             type="button"
             onClick={() => setShowLabels((v) => !v)}
             aria-pressed={showLabels}
-            aria-label={showLabels ? "Hide all labels" : "Show all labels"}
             title={showLabels ? "Hide all labels" : "Show all labels"}
-            className={`text-nano font-mono px-2 py-0.5 rounded-pill transition ${
+            className={`font-mono px-2 py-0.5 rounded-pill transition ${
               showLabels
                 ? "bg-brand/20 text-brandSoft ring-1 ring-brand/40"
                 : "text-txt3 hover:text-txt1"
@@ -777,9 +761,8 @@ export function Orb({ compact = false }: OrbProps = {}) {
               userInteractedRef.current = false;
               frame();
             }}
-            aria-label="Re-center the orb"
             title="Re-center"
-            className="text-nano font-mono px-2 py-0.5 rounded-pill text-txt3 hover:text-txt1"
+            className="font-mono px-2 py-0.5 rounded-pill text-txt3 hover:text-txt1"
           >
             recenter
           </button>

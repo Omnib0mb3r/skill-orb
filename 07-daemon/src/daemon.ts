@@ -27,6 +27,7 @@ import { decayInactivePages } from './reinforcement/index.js';
 import { runLint } from './wiki/lint.js';
 import { initLintQueue, lintQueueStatus } from './wiki/lint-queue.js';
 import { runAutoIngest, startAutoIngestInterval } from './wiki/auto-ingest.js';
+import { runBackfillWiki, getBackfillStatus } from './wiki/backfill.js';
 import { generateWhatsNew } from './wiki/whats-new.js';
 import { registerDashboardRoutes } from './dashboard/routes.js';
 import fastifyCookie from '@fastify/cookie';
@@ -545,6 +546,32 @@ async function main(): Promise<void> {
     },
     logger,
   );
+
+  /* Auto-resume an in-flight wiki backfill across daemon restarts.
+   * If the cursor file shows incomplete work, kick a new run in the
+   * background. Cursor logic skips files marked done so we never
+   * re-process completed sessions. Disabled with DEVNEURAL_AUTO_RESUME_WIKI=0. */
+  if ((process.env.DEVNEURAL_AUTO_RESUME_WIKI ?? '1') !== '0') {
+    setTimeout(() => {
+      try {
+        const status = getBackfillStatus().wiki;
+        if (status.running) return; // current process already has it
+        // Heuristic: if there is any cursor history (started_at), and not
+        // every file is done, kick off a resume. The runner will skip
+        // completed files immediately so this is cheap when fully done.
+        const everRan = status.started_at !== null;
+        const hasMore = status.files_done + status.files_skipped < status.files_total;
+        if (everRan && hasMore) {
+          logger('[backfill-wiki] auto-resuming after daemon start');
+          void runBackfillWiki(store, logger).catch((err) =>
+            logger(`[backfill-wiki] auto-resume failed: ${(err as Error).message}`),
+          );
+        }
+      } catch (err) {
+        logger(`[backfill-wiki] auto-resume check failed: ${(err as Error).message}`);
+      }
+    }, 5000);
+  }
 
   const transcripts = startTranscriptWatcher({ log: logger, store });
   const fsWatcher = startFsWatcher({ log: logger });
