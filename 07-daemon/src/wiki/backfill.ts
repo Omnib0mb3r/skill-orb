@@ -117,6 +117,15 @@ const status: Record<BackfillMode, BackfillRunStatus> = {
   wiki: emptyStatus('wiki'),
 };
 
+/* AbortController per mode so cancel can interrupt the in-flight LLM
+ * call (which can take 5-30s through ollama). Without abort, "cancel"
+ * just sets a flag and the user waits for the current blob to finish.
+ * The controller is replaced on every start. */
+const aborters: Record<BackfillMode, AbortController | null> = {
+  raw: null,
+  wiki: null,
+};
+
 export function getBackfillStatus(): { raw: BackfillRunStatus; wiki: BackfillRunStatus } {
   return { raw: { ...status.raw }, wiki: { ...status.wiki } };
 }
@@ -124,6 +133,7 @@ export function getBackfillStatus(): { raw: BackfillRunStatus; wiki: BackfillRun
 export function requestBackfillCancel(mode: BackfillMode): void {
   if (status[mode].running) {
     status[mode].cancel_requested = true;
+    aborters[mode]?.abort();
   }
 }
 
@@ -424,6 +434,8 @@ export async function runBackfillWiki(
   const files = listClaudeJsonl();
   const cursor = loadWikiCursor();
 
+  const aborter = new AbortController();
+  aborters.wiki = aborter;
   status.wiki = {
     ...emptyStatus('wiki'),
     running: true,
@@ -488,9 +500,14 @@ export async function runBackfillWiki(
               projectName: identity.name,
               newContent: blob,
               evidenceHints: [],
+              signal: aborter.signal,
             },
             log,
           );
+          if (result.skipped_reason === 'aborted' || aborter.signal.aborted) {
+            // User-driven cancel; treat as cancel, not error.
+            break;
+          }
           if (result.skipped_reason?.includes('LLM provider')) {
             // Provider down: don't mark file as done. Cancel the whole run
             // so the user fixes the provider before continuing.
@@ -536,6 +553,7 @@ export async function runBackfillWiki(
     status.wiki.running = false;
     status.wiki.completed_at = new Date().toISOString();
     status.wiki.current_file = null;
+    aborters.wiki = null;
   }
 }
 

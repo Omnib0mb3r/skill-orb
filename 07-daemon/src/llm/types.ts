@@ -26,6 +26,9 @@ export interface CallOptions {
   user: string;
   maxTokens: number;
   temperature?: number;
+  /** Optional abort signal. If aborted, in-flight HTTP request to the
+   * provider is cancelled and the call rejects with an AbortError. */
+  signal?: AbortSignal;
 }
 
 export interface CallResult {

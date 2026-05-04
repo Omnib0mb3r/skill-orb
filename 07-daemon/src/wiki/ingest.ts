@@ -46,6 +46,9 @@ export interface IngestInput {
   projectName: string;
   newContent: string;
   evidenceHints: string[]; // free-form lines that go into ## Evidence
+  /** Forwarded into the LLM provider's fetch so an in-flight ingest pass
+   * can be cancelled mid-call (used by backfill). */
+  signal?: AbortSignal;
 }
 
 export interface Pass1Output {
@@ -139,10 +142,16 @@ export async function runIngest(
       ],
       user: pass1User,
       maxTokens: 800,
+      ...(input.signal ? { signal: input.signal } : {}),
     },
     validatePass1,
     log,
   );
+
+  if (input.signal?.aborted) {
+    result.skipped_reason = 'aborted';
+    return result;
+  }
   result.cost.input_tokens += pass1Validated.totalInputTokens;
   result.cost.output_tokens += pass1Validated.totalOutputTokens;
   result.cost.cache_read += pass1Validated.totalCacheRead;
@@ -183,10 +192,16 @@ export async function runIngest(
       ],
       user: pass2User,
       maxTokens: 2500,
+      ...(input.signal ? { signal: input.signal } : {}),
     },
     validatePass2,
     log,
   );
+
+  if (input.signal?.aborted) {
+    result.skipped_reason = 'aborted';
+    return result;
+  }
   result.cost.input_tokens += pass2Validated.totalInputTokens;
   result.cost.output_tokens += pass2Validated.totalOutputTokens;
   result.cost.cache_read += pass2Validated.totalCacheRead;

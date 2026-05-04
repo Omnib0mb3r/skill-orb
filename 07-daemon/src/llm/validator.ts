@@ -35,6 +35,8 @@ export interface ValidatedCallOptions {
   user: string;
   maxTokens: number;
   temperature?: number;
+  /** Forwarded to provider.call — aborts in-flight HTTP request. */
+  signal?: AbortSignal;
 }
 
 export interface ValidatedCallResult<T> {
@@ -83,9 +85,17 @@ export async function callValidated<T>(
         user: userText,
         maxTokens: opts.maxTokens,
         temperature: opts.temperature,
+        ...(opts.signal ? { signal: opts.signal } : {}),
       });
     } catch (err) {
-      result.errors.push(`call failed: ${(err as Error).message}`);
+      const e = err as Error;
+      // AbortError: caller cancelled. Surface as a distinct error so the
+      // caller can stop retrying instead of falling into repair loops.
+      if (e.name === 'AbortError' || opts.signal?.aborted) {
+        result.errors.push('aborted');
+        return result;
+      }
+      result.errors.push(`call failed: ${e.message}`);
       return result;
     }
 

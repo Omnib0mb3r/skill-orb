@@ -183,6 +183,7 @@ export class OllamaProvider implements LlmProvider {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      ...(opts.signal ? { signal: opts.signal } : {}),
     });
 
     if (!res.ok) {
