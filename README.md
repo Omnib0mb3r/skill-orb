@@ -23,6 +23,82 @@ A second brain has six properties. DevNeural has all six.
 
 ---
 
+## Status
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | Daemon: capture, ingest, query, reinforce, lint, setup | done, shipped |
+| 2 | v1 burndown: archive 01/02/04, kill monday sync, rewrite top-level docs | done, shipped |
+| 3.1 | Daemon API extensions (auth, system metrics, services, sessions, search/all, reminders, notifications, projects/new, dashboard health) | done, shipped |
+| 3.2 | Reference corpus pipeline (PDF, image, markdown, DOCX upload + extract + chunk + embed) | done, shipped |
+| 3.3 | Session bridge VS Code extension | done, shipped |
+| 3.4 | Dashboard frontend (Next.js 15 + Tailwind v4 + Tanstack Query, PIN auth, all panels real, mobile responsive, PWA) | done, shipped |
+| 3.5 | Audio + video processing (whisper.cpp + ffmpeg wrappers) | code shipped, needs binaries installed (see below) |
+| 3.6 | Stream Deck + session detail polish | done in 3.4.2 |
+| 3.7 | Notifications + reminders + web push (VAPID) | done, shipped |
+| 3.8 | System panel + Tremor sparklines | done, shipped |
+| 3.9 | New project flow | done, shipped |
+| 3.10 | Daily brief + whats-new rendering | done, shipped |
+| 3.11 | PWA scaffold + mobile | done; needs PNG icons (design work, not blocking) |
+| 3.12 | Polish pass — sparklines, install prompt, keyboard a11y, sr-only utility | done, shipped |
+| 4 | Orb rebind to wiki data model — force-directed graph + /graph endpoint | done, shipped |
+| 5 | Settings audit + personalized recovery docs + robust backup pipeline | done, shipped |
+
+See [docs/SESSION-HANDOVER.md](docs/SESSION-HANDOVER.md) for what state the repo was in at the most recent session boundary.
+
+---
+
+## First-time setup checklist
+
+Run these once on `OTLCDEV` (the host machine) in order. Each step is idempotent; re-running does nothing harmful.
+
+```powershell
+# 1. Prereqs (one-shot, see docs/install/01-prerequisites.md for the long version)
+winget install OpenJS.NodeJS.LTS
+winget install Git.Git
+winget install Ollama.Ollama
+winget install Microsoft.VisualStudioCode
+winget install Tailscale.Tailscale
+winget install Anthropic.Claude
+winget install Gyan.FFmpeg                                  # Phase 3.5 audio/video, optional
+ollama pull qwen3:8b                                        # local LLM
+
+# 2. Clone + build the daemon
+git clone https://github.com/Omnib0mb3r/DevNeural C:\dev\Projects\DevNeural
+cd C:\dev\Projects\DevNeural\07-daemon
+npm install
+npm run setup                                               # builds, scaffolds wiki, verifies ollama
+npm run install-hooks                                       # registers v2 hooks; backs up settings.json first
+npm run dedupe-hooks                                        # optional cleanup of duplicates from other installers
+
+# 3. Build the dashboard for production serve
+cd C:\dev\Projects\DevNeural\08-dashboard
+npm install --legacy-peer-deps
+$env:NODE_ENV='production'; npx next build                  # produces 08-dashboard/out/
+
+# 4. Install the session bridge (lets the dashboard send prompts to running Claude terminals)
+cd C:\dev\Projects\DevNeural\09-bridge
+npm install
+npm run build
+npm run package
+code --install-extension devneural-bridge.vsix
+
+# 5. Schedule the daily backup (CRITICAL — your data root is the irreplaceable thing)
+cd C:\dev\Projects\DevNeural\07-daemon
+npm run install-backup-task                                 # default: daily 03:00, keep 14 snapshots locally
+# Recommended: redirect to OneDrive or an external drive for off-machine durability:
+# npm run install-backup-task -- -BackupRoot "$env:USERPROFILE\OneDrive\devneural-backups"
+
+# 6. Start the daemon
+npm run start                                               # listens on 0.0.0.0:3747, serves the dashboard at /
+```
+
+Then open `http://localhost:3747` in a browser, set a PIN on first launch, and you're in.
+
+For Tailscale remote access from your phone, follow [docs/install/TAILSCALE.md](docs/install/TAILSCALE.md). For audio/video uploads, follow [docs/install/AUDIO-VIDEO.md](docs/install/AUDIO-VIDEO.md). For full-machine recovery, follow [docs/install/08-personalized-recovery.md](docs/install/08-personalized-recovery.md).
+
+---
+
 ## Capabilities at a glance
 
 | Capability | What it does |
@@ -31,10 +107,10 @@ A second brain has six properties. DevNeural has all six.
 | **Learning wiki** | LLM-compiled markdown pages following a `[trigger] → [insight]` schema. Edges are explicit cross-references. |
 | **Recommendation engine** | At every Claude prompt, top-relevance page injected as additional context. Below threshold = silence. Better nothing than noise. |
 | **Cross-project intelligence** | Insights observed in two or more projects promote to global. The brain spans your work, not one repo. |
-| **Reference corpus** (Phase 3) | Upload manuals, books, PDFs, images, videos. Local OCR + transcription. Searchable second-brain knowledge. |
+| **Reference corpus** | Upload manuals, books, PDFs, images, DOCX. Local OCR + chunking. Audio + video pipeline ships behind whisper.cpp + ffmpeg. |
 | **Reinforcement** | Useful injections raise page weight; corrections lower it; unused pages decay. Empirical, not editorial. |
-| **Dashboard** (Phase 3) | Central hub. Sessions, projects, search, system metrics, daily brief, reminders, web push. PWA-installable on phone. Tailscale for remote access. |
-| **Orb** (Phase 4) | 3D visualization of the concept graph. The "look at the cool thing" surface. |
+| **Dashboard** | Central hub on port 3747. Sessions, projects, search, system metrics with sparklines, daily brief, reminders, web push, force-directed wiki graph (Orb). PWA-installable on phone. Tailscale for remote access. |
+| **Backup pipeline** | Daily scheduled snapshot of the data root with SQLite atomic capture, manifest, integrity verification, and rotation. |
 | **Local-first** | Default LLM is ollama (qwen3:8b). Anthropic API supported as fallback. Zero cost in default config. |
 
 ---
@@ -66,23 +142,31 @@ Claude Code session(s)
                   │   capture → embed → ingest → query      │
                   │   reinforce → lint → reconcile          │
                   │   curate at UserPromptSubmit            │
+                  │   serves dashboard on port 3747         │
                   └──┬──────────────┬──────────────┬────────┘
                      │              │              │
               POST /api/chat    in-process    on-disk
                      │              │              │
                      ▼              ▼              ▼
                 ┌──────┐     ┌──────────┐   ┌──────────────┐
-                │ollama│     │ Chroma + │   │ wiki/ + ref/ │
+                │ollama│     │ vector + │   │ wiki/ + ref/ │
                 │qwen3 │     │ SQLite   │   │ + git log    │
                 └──────┘     │ FTS5     │   └──────────────┘
                              └──────────┘
                      ▲
-              served at
+              served at 3747
                      │
               ┌──────────────────────────────────────┐
-              │  08-dashboard (Phase 3, Next.js PWA)│
+              │  08-dashboard (Next.js PWA)         │
               │  - reachable via Tailscale          │
               │  - mobile-installable                │
+              │  - statically exported, daemon serves │
+              └──────────────────────────────────────┘
+
+              ┌──────────────────────────────────────┐
+              │  09-bridge (VS Code extension)       │
+              │  watches session-bridge/ and pastes  │
+              │  queued prompts into terminals       │
               └──────────────────────────────────────┘
 ```
 
@@ -91,86 +175,47 @@ For the LLM's standing instructions on writing wiki pages, read [docs/spec/DEVNE
 
 ---
 
-## Status
-
-| Phase | Scope | Status |
-|---|---|---|
-| 1 | Daemon: capture, ingest, query, reinforce, lint, setup | done |
-| 2 | v1 burndown: archive 01/02/04, kill monday sync, rewrite top-level docs | done |
-| 3 | Central control dashboard | spec done, build queued |
-| 4 | Orb rebind to wiki data model | spec done, deferred |
-| 5 | Settings audit, finalizes personalized install docs | spec done, deferred |
-
-See [docs/SESSION-HANDOVER.md](docs/SESSION-HANDOVER.md) for current state and what comes next.
-
----
-
-## Install
-
-Read [INSTALL.md](INSTALL.md). It points to detailed step-by-step docs under [docs/install/](docs/install/).
-
-Short version:
-
-```powershell
-git clone https://github.com/Omnib0mb3r/DevNeural C:/dev/Projects/DevNeural
-cd C:/dev/Projects/DevNeural/07-daemon
-npm install
-npm run setup
-```
-
-`setup` is idempotent. It creates the data root, scaffolds the wiki, verifies ollama, installs the four hooks in `~/.claude/settings.json` (with backup), and prints status. Re-run any time.
-
-To check the state of the system at any point:
-
-```powershell
-npm run status
-```
-
----
-
-## Prerequisites
-
-- Node 20+
-- Git
-- ollama with `qwen3:8b` (or `qwen2.5:7b-instruct`)
-- VS Code (or any Claude Code-compatible editor)
-- Claude Code CLI
-- Tailscale (optional, required for Phase 3 remote dashboard)
-
-Detailed setup at [docs/install/01-prerequisites.md](docs/install/01-prerequisites.md).
-
----
-
 ## Where things live
 
 | Path | What |
 |---|---|
-| `07-daemon/` | The brain. Capture, ingest, query, lint, HTTP/WS API. |
-| `03-web-app/` | The orb (Phase 4 rebind, currently the v1 visual). |
-| `05-voice-interface/` | Voice query layer (reshapes later). |
-| `06-notebooklm-integration/` | Obsidian sync (reshapes later). |
-| `08-dashboard/` | Central control dashboard (Phase 3, not yet built). |
-| `09-bridge/` | VS Code extension for session steering (Phase 3). |
-| `archive/v1/` | v1 modules: 01-data-layer, 02-api-server, 04-session-intelligence. |
-| `docs/spec/` | System architecture and phase plans. |
-| `docs/install/` | Install, recovery, troubleshooting. |
+| `07-daemon/` | The brain. Capture, ingest, query, lint, HTTP/WS API, dashboard static serve, backup pipeline. |
+| `07-daemon/scripts/` | `backup.ps1`, `restore.ps1`, `verify-backup.ps1`, `install-backup-task.ps1`, `dedupe-hooks.ps1`. |
+| `08-dashboard/` | Next.js 15 + Tailwind v4 + Tanstack Query. Statically exported; daemon serves the build. |
+| `09-bridge/` | VS Code extension that pastes queued prompts into terminals. Phase 3.3. |
+| `03-web-app/` | The orb (legacy v1 visual; superseded by `/orb` route in dashboard). |
+| `archive/v1/` | Archived v1 modules (01-data-layer, 02-api-server, 04-session-intelligence). |
+| `docs/spec/` | System architecture, schema, phase plans (3, 4, 5). |
+| `docs/install/` | Install (01–04), coexistence audit (05), recovery (06, 08), troubleshooting (07), Tailscale, audio/video. |
+| `docs/SESSION-HANDOVER.md` | Current state at most recent session boundary. |
 | `INSTALL.md` | Top-level install entry point. |
-| `start.bat` | Quick launcher for the daemon. |
-| `devneural.jsonc` | Project metadata for DevNeural itself. |
+| `SHIP-CHECKLIST.md` | Production-readiness gate before declaring a build deployable. |
 
 ---
 
-## What's not here anymore
+## Operations cheat sheet
 
-If you came from v1, the following are gone or moved:
+```powershell
+cd C:\dev\Projects\DevNeural\07-daemon
 
-- **monday.com sync.** The `/sync` endpoint returns `410 Gone`. Project status is going into the Phase 3 dashboard as a real Kanban board.
-- **`01-data-layer/`** (PostToolUse weights tracker). Moved to `archive/v1/`. Replaced by capture in 07-daemon.
-- **`02-api-server/`** (Fastify weights server). Moved to `archive/v1/`. Replaced by 07-daemon's HTTP surface.
-- **`04-session-intelligence/`** (one-shot SessionStart context inject). Moved to `archive/v1/`. Replaced by per-prompt curator.
-- **`requirements.md`, `project-manifest.md`, `devneural.md`, `deep_project_*`** at repo root. Moved to `archive/v1/`.
+npm run start                       # daemon on :3747 (serves dashboard)
+npm run status                      # health check across daemon, ollama, hooks, data root
+npm run install-hooks               # re-register hooks (idempotent, backs up settings)
+npm run dedupe-hooks                # remove duplicate hooks from other installers
+npm run backup                      # one-shot snapshot
+npm run verify-backup               # PRAGMA integrity_check + JSON parse on latest snapshot
+npm run restore                     # restore latest (refuses while daemon is up)
+npm run install-backup-task         # daily 03:00, retain 14
+npm test                            # 53 unit tests
+```
 
-The orb in `03-web-app/` still references the old data model; it gets rebuilt in Phase 4.
+Dashboard:
+
+```powershell
+cd C:\dev\Projects\DevNeural\08-dashboard
+npm run dev                         # localhost:3000 with rewrite proxy to daemon for development
+$env:NODE_ENV='production'; npx next build       # static export to out/, daemon serves it
+```
 
 ---
 

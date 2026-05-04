@@ -23,7 +23,7 @@ This file is the table of contents. The detailed instructions live under [docs/i
    The actual install procedure. Sequenced. Verifiable at each step.
 
 5. [docs/install/05-coexistence-with-claude-setup.md](docs/install/05-coexistence-with-claude-setup.md)
-   How DevNeural fits alongside the existing Claude setup (https://github.com/Omnib0mb3r/Claude-Setup) and other plugins (superpowers, GSD, deep-implement, etc.) without nuking them. **Personalized contents are completed in Phase 5 once the system stabilizes.** This file holds the structure now.
+   How DevNeural fits alongside the existing Claude setup (https://github.com/Omnib0mb3r/Claude-Setup) and other plugins (superpowers, GSD, deep-implement, etc.) without nuking them. Includes the Phase 5 audit of the actual `~/.claude/settings.json` on `OTLCDEV` with hooks categorized by owner.
 
 6. [docs/install/06-recovery-and-reconstruction.md](docs/install/06-recovery-and-reconstruction.md)
    "I lost my machine" / "I want to start fresh." Order of operations to restore.
@@ -31,21 +31,38 @@ This file is the table of contents. The detailed instructions live under [docs/i
 7. [docs/install/07-troubleshooting.md](docs/install/07-troubleshooting.md)
    Common failures and how to fix them.
 
+8. [docs/install/08-personalized-recovery.md](docs/install/08-personalized-recovery.md)
+   `OTLCDEV`-specific recovery checklist tying Claude-Setup, dev-template, and DevNeural together. Includes the backup-pipeline section (install-backup-task, snapshot rotation, verify, restore).
+
+Plus topic-specific docs:
+
+- [docs/install/TAILSCALE.md](docs/install/TAILSCALE.md) — remote access from your phone
+- [docs/install/AUDIO-VIDEO.md](docs/install/AUDIO-VIDEO.md) — whisper.cpp + ffmpeg for audio/video uploads
+
 ---
 
 ## At-a-glance checklist
 
-This is the short version. The detailed steps are in `04-step-by-step.md`.
+This is the short version. The detailed steps are in `04-step-by-step.md` and the production gate is in `../SHIP-CHECKLIST.md`.
 
 ```
-[ ] Prereqs installed (Node 20+, Git, ollama, VS Code, Tailscale)
+[ ] Prereqs installed (Node 20+, Git, ollama, VS Code, Tailscale; ffmpeg if you want audio/video)
 [ ] Repo cloned to C:/dev/Projects/DevNeural/
 [ ] Default model pulled (`ollama pull qwen3:8b`)
 [ ] cd 07-daemon && npm install && npm run setup
+[ ] cd 07-daemon && npm run install-hooks       # registers v2 hooks; backs up settings.json
+[ ] cd 08-dashboard && npm install --legacy-peer-deps && NODE_ENV=production npx next build
+[ ] cd 09-bridge && npm install && npm run build && npm run package
+[ ]   code --install-extension devneural-bridge.vsix
+[ ] cd 07-daemon && npm run install-backup-task # CRITICAL — your data root is irreplaceable
+[ ] cd 07-daemon && npm run start               # daemon on :3747; dashboard at /
+[ ] Open http://localhost:3747, set a PIN, verify the home view loads
 [ ] Verify: npm run status returns all green or actionable warnings
-[ ] Test: open a Claude session, type a substantive prompt, see injection appear
-[ ] Optional autostart wired (Phase 3 dashboard or Phase 8 polish)
+[ ] Optional: install Tailscale on phone + sign into same tailnet (docs/install/TAILSCALE.md)
+[ ] Optional: install whisper.cpp + ffmpeg for audio/video (docs/install/AUDIO-VIDEO.md)
 ```
+
+For the full ship gate (auth, backup, push, hooks, PWA, etc.), walk [`../SHIP-CHECKLIST.md`](../SHIP-CHECKLIST.md) before declaring production-ready.
 
 ---
 

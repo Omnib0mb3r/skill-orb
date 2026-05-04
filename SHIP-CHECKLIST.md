@@ -1,0 +1,134 @@
+# Ship checklist
+
+> Production-readiness gate. Walk this top-to-bottom before declaring a build deployable to `OTLCDEV` and reachable to your phone via Tailscale. Everything here is a real check; nothing is filler.
+>
+> Last refreshed: 2026-05-04 (Phase 5 complete).
+
+---
+
+## A. Code health
+
+- [x] Daemon `npm run build` passes (tsc clean)
+- [x] Daemon `npm test` passes (53/53 unit tests)
+- [x] Dashboard `NODE_ENV=production npx next build` passes (13 static routes prerender)
+- [x] Dashboard `npx tsc --noEmit` clean
+- [x] Bridge `npm run build` passes
+- [x] No `TODO` markers blocking ship (one in `CommandPalette.tsx` for "open specific search hit"; non-blocking, navigates to /wiki for now)
+- [x] No `console.log` debug noise in client code
+- [x] No hex literals or `rgba()` in CSS — every value resolves through `tokens.css` (audit lives in `08-dashboard/VERIFICATION.md`)
+
+## B. Auth surface
+
+- [x] PIN flow: first-run redirects to `/set-pin`; subsequent loads redirect to `/unlock` until cookie present
+- [x] HMAC-signed cookie (`dn_session`), 12-hour TTL, refreshes on use
+- [x] 5 wrong PINs in 60s lock the dashboard for 5 minutes
+- [x] Daemon's `authMiddleware` gates only API prefixes; HTML pages serve publicly so the dashboard can render its own redirect-to-unlock state
+- [x] CLI reset path: delete `c:/dev/data/skill-connections/dashboard/auth.json` from `OTLCDEV` to clear
+
+## C. Tailscale + remote access
+
+- [ ] Tailscale running on `OTLCDEV` (`tailscale status` shows the node with a `100.x.y.z` IP)
+- [ ] MagicDNS enabled in admin console so `http://otlcdev:3747` resolves
+- [ ] Tailscale running on phone, signed into the same tailnet
+- [ ] First load on the phone redirects to `/set-pin`, PIN sets cleanly
+- [ ] PWA install on iOS via Share → Add to Home Screen (required for push to work)
+
+## D. Backup
+
+- [x] `npm run backup` produces a timestamped snapshot under the configured backup root
+- [x] `npm run verify-backup` passes (manifest parses, JSON state files parse, JSONL line-by-line parse)
+- [x] Daemon `/flush` endpoint responds 200 with `{ok:true,flushed_at:...}` so SQLite WAL is checkpointed before the snapshot
+- [ ] `npm run install-backup-task` registered on `OTLCDEV` (run once; verify with `Get-ScheduledTask -TaskName DevNeural-Backup`)
+- [ ] Recommended: backup root pointed at OneDrive or an external drive (default lives on the same disk; same disk = same fire)
+- [x] Snapshots written as `<ts>.partial` then atomically renamed; rotation prunes anything beyond `-Keep` (default 14)
+
+## E. Hooks (`~/.claude/settings.json`)
+
+- [x] DevNeural v2 entries present: `node "07-daemon/dist/capture/hooks/hook-runner.js" {pre|post|prompt|stop}`
+- [x] No orphan v1 entries (`01-data-layer/dist/hook-runner.js` or `04-session-intelligence/dist/session-start.js`); v2 install-hooks purges these across all events
+- [x] No duplicate hook entries from other installers (run `npm run dedupe-hooks` if drift creeps back)
+- [x] Backup of pre-edit settings exists at `~/.claude/settings.json.devneural.bak` (and `.dedupe.bak.<ts>` per dedupe run)
+
+## F. Data root
+
+- [x] `c:/dev/data/skill-connections/` exists and is writable
+- [x] Subdirs scaffolded: `wiki/`, `projects/`, `global/`, `dashboard/`, `reference/{docs,images,audio,video,queue}`, `session-state/`, `session-bridge/`, `models/`
+- [x] Daemon log at `daemon.log` rotates only on manual intervention (acceptable for single-user box; backup excludes it)
+- [x] SQLite WAL mode enabled (configured in `07-daemon/src/store/index.ts`)
+
+## G. Dashboard surface
+
+- [x] `/` serves home with daily brief + InstallPrompt + summary cards
+- [x] `/wiki` serves search across wiki/transcripts/reference + reference upload modal (drag-drop + keyboard accessible)
+- [x] `/sessions` lists sessions; `/sessions/detail?id=<sid>` shows transcript + send-prompt + focus-window
+- [x] `/projects` shows registered projects + new-project modal
+- [x] `/system` shows CPU/mem/disk bars + Tremor sparklines + service rollup
+- [x] `/reminders` CRUD + push subscribe button
+- [x] `/orb` shows force-directed graph from `/graph` endpoint
+- [x] `/unlock` and `/set-pin` work with Suspense-wrapped client form
+- [x] Cmd+K command palette: nav actions + per-session "open" + inline search
+- [x] Mobile bottom tab bar appears below `md` breakpoint
+- [x] VitalsRibbon stays pinned to viewport bottom (`h-[100dvh]` layout)
+- [x] Service worker registered in production; push handler renders incoming notifications
+
+## H. Push notifications
+
+- [x] VAPID keypair generated on first daemon launch (persisted at `dashboard/vapid.json`)
+- [x] `/push/vapid-public-key`, `/push/subscribe`, `/push/subscribe/:id` endpoints respond
+- [x] Push subscribe button on `/reminders` requests permission + posts subscription
+- [x] `emitNotification()` autopushes severity `warn` and `alert`; `info` stays in-feed only
+- [x] 410/404 responses from the push service prune the subscription so a stale subscription doesn't keep failing forever
+- [ ] iOS PWA push verified end-to-end (requires Add to Home Screen; iOS-only)
+- [ ] Android push verified end-to-end (works in Chrome before install)
+
+## I. Audio + video pipeline (Phase 3.5)
+
+- [x] `audio.ts` and `video.ts` implementations shipped, fall back gracefully when binaries are missing
+- [x] `process.ts` kind detection extended for mp3/wav/m4a/ogg/flac/mp4/mov/mkv/webm/avi/wmv
+- [x] Missing-binary case parks the upload as `queued` and emits a warn-level notification (does not fail the upload)
+- [ ] `whisper.cpp` cloned + built on `OTLCDEV` per `docs/install/AUDIO-VIDEO.md`
+- [ ] `Gyan.FFmpeg` installed on `OTLCDEV`
+- [ ] `DEVNEURAL_WHISPER_BIN` set to the actual binary path (or whisper-cli on PATH)
+- [ ] Test: upload an mp3 to `/upload`, see "transcript extracted: N chars" in `daemon.log`
+
+## J. PWA
+
+- [x] `public/manifest.json` references icon-192 and icon-512 with `purpose: "any maskable"`
+- [x] Service worker (`public/sw.js`) registers in production; install/activate/push/notificationclick handlers present
+- [x] iOS standalone detection in `InstallPrompt` shows the Share → Add to Home Screen hint instead of the prompt button
+- [ ] Real PNG icons created at `08-dashboard/public/icons/icon-192.png` and `icon-512.png` (currently referenced but not present; iOS will fall back to a screenshot of the page)
+
+## K. Documentation
+
+- [x] README has a first-time setup checklist near the top
+- [x] INSTALL.md points at the detailed walkthrough docs
+- [x] `docs/install/05-coexistence-with-claude-setup.md` filled in with the actual `OTLCDEV` audit
+- [x] `docs/install/08-personalized-recovery.md` written: backup section, recovery sequence, refresh triggers
+- [x] `docs/install/TAILSCALE.md` covers tailnet install, MagicDNS, mobile install
+- [x] `docs/install/AUDIO-VIDEO.md` covers whisper.cpp + ffmpeg
+- [x] `docs/SESSION-HANDOVER.md` reflects current phase status
+
+## L. What this checklist intentionally skips
+
+- **Multi-user auth.** Out of scope by design; Tailscale + PIN is the perimeter.
+- **TLS certificates.** Tailscale handles end-to-end encryption on the wire; no certs to renew.
+- **Public exposure.** Don't. Use Tailscale Funnel only if you ever need a public URL, and even then prefer not to.
+- **CI/CD.** This is a single-user box; the build is local. If you set up CI later, run the same `npm run build` + `npm test` + `next build` gates that this checklist references.
+- **Performance budgets.** Lighthouse a11y 95 + best-practices 100 + LCP 223ms are documented in `08-dashboard/VERIFICATION.md`; nothing more rigorous is required for a single-user dashboard inside a tailnet.
+
+---
+
+## How to use this file
+
+Re-walk this checklist:
+
+1. After every fresh install on a new `OTLCDEV` instance.
+2. After any Phase 5 settings audit refresh (the `~/.claude/` inventory drifts as plugins are added).
+3. After Tailscale or DNS changes.
+4. Before declaring a release "shipped."
+
+Anything still unchecked is real risk. Resolve or document the deferral inline before declaring done.
+
+---
+
+*Michael Collins. Stay on the level.*
