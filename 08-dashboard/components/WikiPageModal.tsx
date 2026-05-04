@@ -23,6 +23,24 @@ import { StatusDot } from "./StatusDot";
 const SESSION_UUID_RE =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
 
+/* Pick a distinctive ~6-word phrase out of a chunk's preview to use
+ * as the highlight query when navigating to /sessions/detail. The
+ * server-side scan does a case-insensitive substring match, so we
+ * want a phrase long enough to be unique within the session but
+ * short enough to survive minor punctuation differences. */
+function pickHighlightPhrase(text: string): string {
+  if (!text) return "";
+  // Prefer a quoted span if one exists; high-info and naturally
+  // distinctive.
+  const quoted = text.match(/[\"'`]([^\"'`]{8,80})[\"'`]/);
+  if (quoted?.[1]) return quoted[1].trim();
+  // Otherwise take first ~6 words after any leading boilerplate.
+  const stripped = text.replace(/^[\s\W]+/, "").trim();
+  const words = stripped.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "";
+  return words.slice(0, 6).join(" ").slice(0, 80);
+}
+
 interface Props {
   id: string;
   onClose: () => void;
@@ -71,10 +89,18 @@ export function WikiPageModal({ id, onClose }: Props) {
     const meta = hit.metadata ?? {};
     const sid = typeof meta.session_id === "string" ? meta.session_id : null;
     if (!sid) return;
-    // Use a stable phrase from the page title as highlight query so
-    // the session view scrolls to the matching chunk.
-    const queryHint = q.data?.page?.trigger ?? q.data?.page?.title ?? "";
-    openSession(sid, queryHint.slice(0, 80));
+    // The page trigger / title are LLM-abstracted strings that rarely
+    // appear verbatim in the transcript, so passing them as the
+    // highlight query produced "no matches" on the session detail.
+    // Use a chunk-grounded phrase instead: pull a distinctive ~6-word
+    // window from the matched chunk's own text. That guarantees the
+    // session view scrolls to the actual hit and highlights it.
+    const previewSrc =
+      typeof meta.text_preview === "string"
+        ? meta.text_preview
+        : (hit.preview ?? "");
+    const phrase = pickHighlightPhrase(previewSrc);
+    openSession(sid, phrase);
   }
 
   function renderEvidenceLine(line: string): React.ReactNode {
