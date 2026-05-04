@@ -31,7 +31,8 @@
 - [x] MagicDNS resolving (live access confirmed)
 - [x] Tailscale running on phone, signed into the same tailnet
 - [x] Remote load redirects to `/set-pin` cleanly; PIN flow works end-to-end
-- [ ] PWA install on iOS via Share -> Add to Home Screen (required for push to work)
+- [x] **`tailscale serve --bg --https=443 http://localhost:3747` registered**: HTTPS reverse proxy live at `https://otlcdev.tail27b46b.ts.net` (tailnet-only, real Let's Encrypt cert). Verified: `/health`, `/`, `/sw.js` all 200 over HTTPS. Required for service worker registration and web push (browsers disable both APIs over plain HTTP off-localhost).
+- [ ] PWA install on iOS via Share -> Add to Home Screen at the HTTPS URL (required for push to fire when dashboard is closed)
 
 ## D. Backup
 

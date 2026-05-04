@@ -92,11 +92,14 @@ npm run install-backup-task                                 # default: daily 03:
 
 # 6. Start the daemon
 npm run start                                               # listens on 0.0.0.0:3747, serves the dashboard at /
+
+# 7. Optional: HTTPS via Tailscale Serve (required for service worker + push notifications + PWA install)
+tailscale serve --bg --https=443 http://localhost:3747      # phones hit https://otlcdev.tail-XXXXX.ts.net
 ```
 
 Then open `http://localhost:3747` in a browser, set a PIN on first launch, and you're in.
 
-For Tailscale remote access from your phone, follow [docs/install/TAILSCALE.md](docs/install/TAILSCALE.md). For audio/video uploads, follow [docs/install/AUDIO-VIDEO.md](docs/install/AUDIO-VIDEO.md). For full-machine recovery, follow [docs/install/08-personalized-recovery.md](docs/install/08-personalized-recovery.md).
+For Tailscale remote access from your phone, follow [docs/install/TAILSCALE.md](docs/install/TAILSCALE.md). The HTTPS step (7) is required for push and PWA install; plain HTTP works for everything else. For audio/video uploads, follow [docs/install/AUDIO-VIDEO.md](docs/install/AUDIO-VIDEO.md). For full-machine recovery, follow [docs/install/08-personalized-recovery.md](docs/install/08-personalized-recovery.md).
 
 ---
 

@@ -1,6 +1,8 @@
 # Tailscale: remote access to the dashboard
 
 > One-time setup so you can hit the DevNeural Hub from your phone, laptop, or any other device that's on the same Tailscale tailnet as `OTLCDEV`.
+>
+> **HTTPS is required for service workers, push notifications, and PWA install.** Browsers refuse to register a service worker over plain HTTP unless the origin is `localhost`. Plain HTTP over Tailscale (`http://otlcdev:3747`) loads the dashboard fine but silently disables push. The fix is `tailscale serve` (free Let's Encrypt cert at the tailnet hostname). Setup below.
 
 ## What's already done on the daemon side
 
@@ -49,6 +51,30 @@ http://otlcdev:3747
 
 instead of the numeric IP. This is the friendliest form.
 
+## Step 3.5 — Enable HTTPS via Tailscale Serve (required for push + PWA install)
+
+Tailscale provisions a real Let's Encrypt cert for your tailnet hostname automatically. Run on `OTLCDEV`:
+
+```powershell
+tailscale serve --bg --https=443 http://localhost:3747
+tailscale serve status                    # verify it took
+```
+
+Expected output:
+
+```
+https://otlcdev.tail-XXXXX.ts.net (tailnet only)
+  |-- /  proxy  http://localhost:3747
+```
+
+Tailscale provisions the cert in the background (15-30 seconds first time). Once it's up, every device on your tailnet can reach the dashboard at the HTTPS URL on port 443 (no explicit port needed).
+
+If `tailscale serve` reports HTTPS isn't enabled for your tailnet, go to https://login.tailscale.com/admin/dns, scroll to **HTTPS Certificates**, click **Enable HTTPS**. MagicDNS must already be on (it usually is by default).
+
+`(tailnet only)` means the URL is reachable only from devices on your tailnet. Don't promote to Funnel unless you specifically want public exposure (you almost certainly don't).
+
+The plain HTTP path on `http://otlcdev:3747` keeps working for hooks and local dev. Tailscale Serve is an additive HTTPS reverse proxy in front of it; nothing on the daemon changes.
+
 ## Step 4 — Build the dashboard once so the daemon serves it
 
 In dev, the dashboard runs on a separate Next.js port (3000). For remote access via the daemon's port, run a production build first:
@@ -71,13 +97,15 @@ Now `http://otlcdev:3747/` serves the dashboard, and every API call from the das
 
 ## Step 5 — On the remote device
 
-Open the URL in the browser:
+Open the HTTPS URL in the browser (substitute your tailnet name from `tailscale serve status`):
 
 ```
-http://otlcdev:3747
+https://otlcdev.tail-XXXXX.ts.net
 ```
 
-First load redirects to `/set-pin` (if you haven't set one yet on this install) or `/unlock`. After unlock, the dashboard loads, the cookie is set on the `otlcdev:3747` origin, and subsequent loads on that device skip the unlock until the cookie expires (12 hours of inactivity).
+First load redirects to `/set-pin` (if you haven't set one yet on this install) or `/unlock`. After unlock, the dashboard loads, the cookie is set on that origin, and subsequent loads on that device skip the unlock until the cookie expires (12 hours of inactivity).
+
+Plain HTTP (`http://otlcdev:3747`) still works on the tailnet for read/write but **does not** allow service worker registration or push subscription. Always use the HTTPS URL on phones and tablets.
 
 ## Step 6 — Install as a PWA on the phone
 
@@ -93,6 +121,9 @@ After install, push notifications opt-in is available on the Reminders tab via t
 | Symptom | Diagnosis |
 |---|---|
 | `http://otlcdev:3747` times out from phone | Tailscale not connected on the phone, or both devices not on the same tailnet. Run `tailscale status` on each. |
+| HTTPS URL gives `ERR_CERT_AUTHORITY_INVALID` | Tailscale's HTTPS cert hasn't propagated to the device yet. Wait 30 seconds and retry; or run `tailscale up` on the device. |
+| `tailscale serve --https=443` says HTTPS not enabled | Visit https://login.tailscale.com/admin/dns and toggle on **HTTPS Certificates**. |
+| Push button missing on /reminders even on HTTPS | Hard-refresh the page (browser caches the HTTP version's missing-button state in service worker scope). On iOS, you must Add to Home Screen first. |
 | 200 from `/health` but 404 on `/` | You haven't run `npm run build` in `08-dashboard/`, or `08-dashboard/out/` doesn't exist. Daemon log will say so. |
 | Dashboard loads but API calls fail with CORS errors | You're hitting the dev port (3000) remotely, not the daemon (3747). Use the daemon URL only for tailnet access. The Next dev server is for local development only. |
 | Login form keeps bouncing back to /unlock | Cookie isn't being set on the right origin. Make sure you're hitting the daemon port (3747), not the Next dev port (3000), from remote devices. |
