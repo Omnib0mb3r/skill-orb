@@ -56,6 +56,51 @@ let watchTimer: NodeJS.Timeout | undefined;
 let lastOffsets = new Map<string, number>();
 let enabled = true;
 
+/* Per-window offset persistence so VS Code reloads don't replay the
+ * entire bridge inbox backlog (which can fire stale mic toggles or
+ * key presses queued hours ago). The offsets file is keyed by
+ * workspace folder so multiple VS Code windows don't trample each
+ * other's cursors. */
+function getOffsetsFile(): string {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  const folderKey = folders[0]?.uri.fsPath?.replace(/[\\/:*?"<>|]/g, '_') ?? 'no-workspace';
+  const dir = path.posix.join(getDataRoot(), 'session-bridge', '.offsets');
+  if (!fs.existsSync(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch {
+      /* ignore */
+    }
+  }
+  return path.posix.join(dir, `${folderKey}.json`);
+}
+
+function loadOffsets(): void {
+  const file = getOffsetsFile();
+  if (!fs.existsSync(file)) return;
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf-8')) as Record<string, number>;
+    lastOffsets = new Map(Object.entries(raw));
+  } catch {
+    /* ignore */
+  }
+}
+
+let offsetsSaveTimer: NodeJS.Timeout | undefined;
+function saveOffsetsDebounced(): void {
+  if (offsetsSaveTimer) return;
+  offsetsSaveTimer = setTimeout(() => {
+    offsetsSaveTimer = undefined;
+    try {
+      const obj: Record<string, number> = {};
+      for (const [k, v] of lastOffsets) obj[k] = v;
+      fs.writeFileSync(getOffsetsFile(), JSON.stringify(obj), 'utf-8');
+    } catch {
+      /* ignore */
+    }
+  }, 500);
+}
+
 function getDataRoot(): string {
   const cfg = vscode.workspace.getConfiguration('devneural.bridge');
   const raw = (cfg.get<string>('dataRoot') ?? 'C:/dev/data/skill-connections')
@@ -84,15 +129,15 @@ function isEnabled(): boolean {
 }
 
 function findTargetTerminal(): vscode.Terminal | undefined {
-  /* Strict matching: only return a terminal whose name actually
-   * contains the configured pattern (default "claude"). The previous
-   * fallback to "any active terminal" silently delivered the prompt
-   * into an unrelated shell when no Claude terminal was open in this
-   * window, so the user saw nothing in their real Claude session and
-   * couldn't tell why. With strict matching, we return undefined and
-   * the message is skipped (without advancing the per-window offset
-   * cursor would be ideal but that's another bridge instance's
-   * problem; per-window cursors are independent). */
+  /* Strict, explicit-only matching. We never auto-pick a terminal
+   * the user did not map, even if exactly one exists in the window.
+   * Auto-picking can dump a queued prompt into an unrelated project's
+   * shell and corrupt or trigger work the user didn't intend.
+   *
+   * The user maps a terminal via:
+   *   DevNeural: Pick Claude Terminal for This Window
+   * which writes the pattern into workspace settings. Until that
+   * runs, no message gets delivered from this window. */
   const pattern = getTerminalPattern();
   const terminals = vscode.window.terminals;
   if (terminals.length === 0) return undefined;
@@ -240,17 +285,35 @@ $inputs[3].type = 1; $inputs[3].u.ki.wVk = ${modifier}; $inputs[3].u.ki.dwFlags 
 
 /* Throttle the "no terminal" notice. Without this the user sees a
  * popup every time the daemon writes another prompt to the bridge
- * inbox, even though the warning content never changes. We log every
- * skip to the output channel for diagnostics; the user-facing
- * notice fires at most once per 60 seconds and goes to the status
- * bar (auto-hides in 3s) instead of the modal-toast layer. */
+ * inbox, even though the warning content never changes. The first
+ * occurrence shows an actionable info message (with "Pick Terminal"
+ * button) so the user can fix the mapping. Subsequent occurrences
+ * within 5 minutes go to the status bar only (auto-hide). */
 let lastNoTerminalNoticeMs = 0;
+let firstNoticeShown = false;
 function noticeNoTerminal(): void {
   const now = Date.now();
-  if (now - lastNoTerminalNoticeMs < 60_000) return;
+  if (now - lastNoTerminalNoticeMs < 5 * 60_000) return;
   lastNoTerminalNoticeMs = now;
+  if (!firstNoticeShown) {
+    firstNoticeShown = true;
+    void vscode.window
+      .showInformationMessage(
+        'DevNeural Bridge: no Claude terminal mapped in this window. Map one to receive prompts here.',
+        'Pick Terminal',
+        'Dismiss',
+      )
+      .then((choice) => {
+        if (choice === 'Pick Terminal') {
+          void vscode.commands.executeCommand(
+            'devneural.bridge.openClaudeTerminal',
+          );
+        }
+      });
+    return;
+  }
   vscode.window.setStatusBarMessage(
-    'DevNeural Bridge: no Claude terminal in this window; another VS Code window will handle it.',
+    'DevNeural Bridge: no terminal mapped; prompt skipped.',
     3000,
   );
 }
@@ -427,6 +490,7 @@ function processFile(file: string): void {
       }
     }
     lastOffsets.set(file, lastOffset + consumed);
+    saveOffsetsDebounced();
   } finally {
     fs.closeSync(fd);
   }
@@ -451,8 +515,38 @@ function tick(): void {
 
 function startWatching(): void {
   if (watchTimer) return;
+  loadOffsets();
   channel.appendLine(`[start] bridge dir: ${getBridgeDir()}`);
   channel.appendLine(`[start] terminal pattern: ${getTerminalPattern()}`);
+  channel.appendLine(`[start] offsets restored: ${lastOffsets.size} files`);
+
+  /* On first start in a new workspace (no offsets file yet), advance
+   * the cursor to current end-of-file for every existing inbox file
+   * so we don't replay backlog from before the bridge was installed
+   * or before the user mapped their terminal. */
+  if (lastOffsets.size === 0) {
+    const dir = getBridgeDir();
+    if (fs.existsSync(dir)) {
+      try {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (!e.isFile() || !e.name.endsWith('.in')) continue;
+          const full = path.posix.join(dir, e.name);
+          try {
+            const stat = fs.statSync(full);
+            lastOffsets.set(full, stat.size);
+          } catch {
+            /* ignore */
+          }
+        }
+        channel.appendLine(
+          `[start] first run: skipped ${lastOffsets.size} backlog files`,
+        );
+        saveOffsetsDebounced();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
   watchTimer = setInterval(tick, 750);
 }
 
