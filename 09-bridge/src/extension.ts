@@ -312,18 +312,30 @@ function focusWindow(): void {
   // Windows' SetForegroundWindow refuses to honour calls from a process
   // that doesn't currently own focus or didn't receive the most recent
   // input event. Browser-originated focus requests trip both rules. The
-  // documented workaround is to fire a synthetic key event (Alt down +
-  // up) from this PowerShell first; that registers our thread as the
-  // most recent input source and unlocks SetForegroundWindow for one
-  // call. The Alt is harmless because it's the same key combo used by
-  // legitimate window managers.
+  // belt-and-braces strategy here:
+  //   1. fire a synthetic Alt down/up so the calling thread is recorded
+  //      as the most recent input source
+  //   2. AttachThreadInput between the calling thread and the foreground
+  //      thread so we share input-state and become eligible for focus
+  //   3. SwitchToThisWindow with fAltTab=true (the API used by Alt-Tab
+  //      itself; fewer foreground-lock restrictions than SetForegroundWindow)
+  //   4. fall through to ShowWindow + BringWindowToTop + SetForegroundWindow
+  //      so the window is restored if minimised even when SwitchToThisWindow
+  //      no-ops on the foreground swap
+  // The script also writes a one-line breadcrumb to %TEMP%\\devneural-bridge-focus.log
+  // so we can tell after the fact which call returned what.
   const ps = `
 $ErrorActionPreference = 'SilentlyContinue'
 $sig = @'
 [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
 [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int n);
 [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
 [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, IntPtr extra);
+[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint procId);
+[DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+[DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
 '@
 Add-Type -MemberDefinition $sig -Name W -Namespace DN -ErrorAction SilentlyContinue
 [DN.W]::keybd_event(0x12, 0, 0, [IntPtr]::Zero)
@@ -331,9 +343,19 @@ Add-Type -MemberDefinition $sig -Name W -Namespace DN -ErrorAction SilentlyConti
 $proc = Get-Process Code -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and (${titleFilter}) } | Select-Object -First 1
 if (-not $proc) { $proc = Get-Process Code -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1 }
 if ($proc) {
-  [DN.W]::ShowWindow($proc.MainWindowHandle, 9) | Out-Null
-  [DN.W]::BringWindowToTop($proc.MainWindowHandle) | Out-Null
-  [DN.W]::SetForegroundWindow($proc.MainWindowHandle) | Out-Null
+  $h = $proc.MainWindowHandle
+  $fg = [DN.W]::GetForegroundWindow()
+  $junk = 0
+  $fgThread = [DN.W]::GetWindowThreadProcessId($fg, [ref]$junk)
+  $myThread = [DN.W]::GetCurrentThreadId()
+  $attached = [DN.W]::AttachThreadInput($myThread, $fgThread, $true)
+  [DN.W]::ShowWindow($h, 9) | Out-Null
+  [DN.W]::BringWindowToTop($h) | Out-Null
+  [DN.W]::SwitchToThisWindow($h, $true)
+  $r = [DN.W]::SetForegroundWindow($h)
+  if ($attached) { [DN.W]::AttachThreadInput($myThread, $fgThread, $false) | Out-Null }
+  $logLine = "$([DateTime]::Now.ToString('HH:mm:ss.fff')) pid=$($proc.Id) title='$($proc.MainWindowTitle)' fgThread=$fgThread myThread=$myThread attached=$attached SetForegroundWindow=$r"
+  try { Add-Content -LiteralPath "$env:TEMP\\devneural-bridge-focus.log" -Value $logLine } catch {}
 }
 `.trim();
   try {
