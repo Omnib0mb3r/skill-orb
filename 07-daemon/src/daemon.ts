@@ -25,6 +25,7 @@ import { pickProvider, providerStatus } from './llm/index.js';
 import { curate, updateSummary, updateGlossary, updateCurrentTask } from './curation/index.js';
 import { decayInactivePages } from './reinforcement/index.js';
 import { runLint } from './wiki/lint.js';
+import { initLintQueue, lintQueueStatus } from './wiki/lint-queue.js';
 import { generateWhatsNew } from './wiki/whats-new.js';
 import { registerDashboardRoutes } from './dashboard/routes.js';
 import fastifyCookie from '@fastify/cookie';
@@ -102,6 +103,11 @@ async function main(): Promise<void> {
     .then(() => logger('embedder warmed'))
     .catch((err) => logger(`embedder warm failed: ${(err as Error).message}`));
 
+  // Always-on lint: every ingest that touches a page schedules a debounced
+  // lint cycle. Replaces the weekly mental model so promotions and decay
+  // land within minutes of the session that produced them.
+  initLintQueue(store, logger);
+
   const app = Fastify({ logger: false });
   await app.register(fastifyCookie);
   await app.register(fastifyMultipart, {
@@ -176,6 +182,7 @@ async function main(): Promise<void> {
     raw_chunks: store.rawChunks.size(),
     wiki_pages: store.wikiPages.size(),
     llm: providerStatus(),
+    lint_queue: lintQueueStatus(),
   }));
 
   app.get('/projects', async () => {

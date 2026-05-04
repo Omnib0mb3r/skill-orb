@@ -240,6 +240,24 @@ export async function runIngest(
   );
   commitWiki(`ingest ${input.source}`);
 
+  // Always-on lint: any page touched in this pass schedules a debounced
+  // lint cycle so promote/archive/decay/whats-new run within minutes of
+  // the activity that produced the page, not weekly. Debounce collapses
+  // bursts; single-flight + rerunRequested handles activity during a
+  // running cycle.
+  if (
+    result.pages_created.length > 0 ||
+    result.pages_updated.length > 0 ||
+    result.pages_flagged.length > 0
+  ) {
+    try {
+      const { scheduleLint } = await import('./lint-queue.js');
+      scheduleLint(`ingest:${input.source}`);
+    } catch {
+      /* lint queue not initialized yet (early ingest during boot); fine. */
+    }
+  }
+
   return result;
 }
 
