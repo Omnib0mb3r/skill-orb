@@ -138,12 +138,41 @@ export function Orb({ compact = false }: OrbProps = {}) {
     if (!el) return;
     const measure = () => {
       const r = el.getBoundingClientRect();
-      setSize({ w: Math.floor(r.width), h: Math.floor(r.height) });
+      const w = Math.floor(r.width);
+      const h = Math.floor(r.height);
+      setSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
     };
+    /* Multi-stage measurement.
+     *
+     * On the home tab the orb panel is inside a CSS grid that doesn't
+     * lay out until after the first paint. ResizeObserver fires once on
+     * observe(), but at that moment the parent grid has often not
+     * resolved column widths yet, so we read 0x0 and gate the canvas off.
+     * Then nothing changes (stable layout, no resize event) and the orb
+     * never mounts until the user navigates away + back, which forces a
+     * fresh layout pass.
+     *
+     * Defense in depth: measure now, on the next animation frame, on
+     * the load event (covers webfont/JS chunks finishing), AND keep
+     * the ResizeObserver for live resizes.
+     */
     measure();
+    const raf1 = requestAnimationFrame(measure);
+    const raf2 = requestAnimationFrame(() => {
+      requestAnimationFrame(measure);
+    });
+    const t = setTimeout(measure, 120);
+    const onLoad = () => measure();
+    window.addEventListener("load", onLoad);
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      clearTimeout(t);
+      window.removeEventListener("load", onLoad);
+      ro.disconnect();
+    };
   }, []);
 
   const q = useQuery({

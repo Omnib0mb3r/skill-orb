@@ -438,7 +438,7 @@ function applyPageUpdate(
     for (const e of update.evidence_add) {
       if (e && !sections.evidence.includes(e)) sections.evidence.push(e);
     }
-    while (sections.evidence.length > 20) sections.evidence.shift();
+    while (sections.evidence.length > EVIDENCE_MAX) sections.evidence.shift();
   }
 
   if (update.log_add) sections.log.push(update.log_add);
@@ -448,6 +448,7 @@ function applyPageUpdate(
       const id = sanitizeCrossRefId(rawId);
       if (!id) continue;
       if (sections.crossRefs.includes(id)) continue;
+      if (sections.crossRefs.length >= CROSS_REFS_MAX) break;
       sections.crossRefs.push(id);
       sections.crossRefsRaw.push({
         label: id.replace(/-/g, ' '),
@@ -465,10 +466,10 @@ function applyPageUpdate(
   }
 
   if (update.pattern_rewrite && !fm.human_edited) {
-    sections.pattern = update.pattern_rewrite;
+    sections.pattern = clipString(update.pattern_rewrite, BODY_MAX);
   }
   if (update.summary_rewrite && !fm.human_edited) {
-    fm.summary = update.summary_rewrite;
+    fm.summary = clipString(update.summary_rewrite, SUMMARY_MAX);
   }
   if (update.flag_for_review) fm.flag_for_review = true;
 
@@ -488,25 +489,66 @@ async function rewritePage(
   await indexPage(store, page);
 }
 
+/* qwen3:8b validation failure modes seen in the wild:
+ *   - title missing the → separator
+ *   - summary > 600 chars (it loves long restatements)
+ *   - cross_refs > 8
+ *   - evidence > 20
+ *   - pattern_body > 6000 chars
+ *
+ * All of these are recoverable: clip the lists, truncate the strings,
+ * synthesise a `→` from trigger + insight when missing. We prefer
+ * "save a slightly clipped page" over "throw + retry + abandon" because
+ * the LLM's drift on these is non-deterministic and re-running burns
+ * minutes of ollama time per attempt. */
+const SUMMARY_MAX = 600;
+const BODY_MAX = 6000;
+const CROSS_REFS_MAX = 8;
+const EVIDENCE_MAX = 20;
+
+function ensureArrowTitle(title: string, trigger: string, insight: string): string {
+  if (title.includes('→')) return title;
+  if (trigger && insight) return `${trigger.trim()} → ${insight.trim()}`;
+  // last resort: split title on " - " or " then " or first sentence break
+  const sep = title.match(/\s+(then|->|to)\s+/i);
+  if (sep && sep.index !== undefined) {
+    const before = title.slice(0, sep.index).trim();
+    const after = title.slice(sep.index + sep[0].length).trim();
+    if (before && after) return `${before} → ${after}`;
+  }
+  return `${title.trim()} → (insight pending)`;
+}
+
+function clipString(s: string, max: number): string {
+  if (s.length <= max) return s;
+  // Soft-clip on the last sentence boundary before max so we don't cut
+  // mid-word. Falls back to hard clip if no sentence end exists.
+  const slice = s.slice(0, max);
+  const lastEnd = Math.max(slice.lastIndexOf('. '), slice.lastIndexOf('\n'));
+  if (lastEnd > max * 0.6) return slice.slice(0, lastEnd + 1).trim();
+  return slice.trim() + '…';
+}
+
 async function writeNewPendingPage(
   store: Store,
   newPage: Pass2NewPage,
   input: IngestInput,
 ): Promise<string | null> {
   if (!newPage.id) return null;
-  if (!newPage.title.includes('→')) {
-    throw new Error(`new page missing → in title: ${newPage.title}`);
-  }
   if (!newPage.evidence || newPage.evidence.length === 0) {
     throw new Error(`new page has no evidence: ${newPage.id}`);
   }
 
+  const title = ensureArrowTitle(newPage.title, newPage.trigger, newPage.insight);
+  const summary = clipString(newPage.summary ?? '', SUMMARY_MAX);
+  const patternBody = clipString(newPage.pattern_body ?? '', BODY_MAX);
+
   const fm: PageFrontmatter = {
     id: newPage.id,
-    title: newPage.title,
+    title,
     trigger: newPage.trigger,
     insight: newPage.insight,
-    summary: newPage.summary,
+    summary,
     status: 'pending',
     weight: 0.3,
     hits: 0,
@@ -519,15 +561,17 @@ async function writeNewPendingPage(
 
   const cleanRefs = (newPage.cross_refs ?? [])
     .map(sanitizeCrossRefId)
-    .filter((id): id is string => Boolean(id));
+    .filter((id): id is string => Boolean(id))
+    .slice(0, CROSS_REFS_MAX);
+  const evidence = newPage.evidence.slice(0, EVIDENCE_MAX);
   const sections: PageSections = {
-    pattern: newPage.pattern_body,
+    pattern: patternBody,
     crossRefs: cleanRefs,
     crossRefsRaw: cleanRefs.map((id) => ({
       label: id.replace(/-/g, ' '),
       href: `./${id}.md`,
     })),
-    evidence: newPage.evidence,
+    evidence,
     openQuestions: [],
     log: [
       `${new Date().toISOString().slice(0, 10)} ingest: page created from ${input.source}`,
