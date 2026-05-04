@@ -1,8 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { queuePrompt, focusSession } from "@/lib/daemon-client";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  queuePrompt,
+  focusSession,
+  bridgeStatus,
+  DaemonError,
+} from "@/lib/daemon-client";
 import { Icon } from "./Icon";
 
 interface Props {
@@ -12,12 +17,32 @@ interface Props {
 export function SendPromptForm({ sessionId }: Props) {
   const [text, setText] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
+  const [failMsg, setFailMsg] = useState<string | null>(null);
+
+  // Poll bridge liveness so the user sees the form go red and the send
+  // button disable when no VS Code window is running the bridge. Saves
+  // them from typing a prompt that would fail anyway.
+  const bridge = useQuery({
+    queryKey: ["bridge-status"],
+    queryFn: bridgeStatus,
+    refetchInterval: 5_000,
+  });
 
   const sendM = useMutation({
     mutationFn: (t: string) => queuePrompt(sessionId, t),
-    onSuccess: (_data, vars) => {
-      setRecent((r) => [vars, ...r].slice(0, 3));
-      setText("");
+    onSuccess: (data, vars) => {
+      if (data.ok) {
+        setRecent((r) => [vars, ...r].slice(0, 3));
+        setText("");
+        setFailMsg(null);
+      } else {
+        setFailMsg(data.error ?? "queue refused");
+      }
+    },
+    onError: (err) => {
+      const e = err as DaemonError;
+      const payload = e.payload as { error?: string } | undefined;
+      setFailMsg(payload?.error ?? e.message);
     },
   });
 
@@ -31,6 +56,22 @@ export function SendPromptForm({ sessionId }: Props) {
         <div className="flex items-center gap-2">
           <Icon name="Send" className="text-brandSoft" size={16} />
           <h2 className="font-display text-sm font-emphasized">Steer this session</h2>
+          <span
+            className={`text-nano font-mono ml-2 ${
+              bridge.data?.alive ? "text-promoted" : "text-err"
+            }`}
+            title={
+              bridge.data?.alive
+                ? `bridge alive (last seen ${Math.round((bridge.data.age_ms ?? 0) / 1000)}s ago)`
+                : "bridge offline. Reload your VS Code DevNeural window."
+            }
+          >
+            {bridge.isLoading
+              ? "bridge ?"
+              : bridge.data?.alive
+                ? "bridge live"
+                : "bridge offline"}
+          </span>
         </div>
         <button
           onClick={() => focusM.mutate()}
@@ -38,7 +79,7 @@ export function SendPromptForm({ sessionId }: Props) {
           className="text-xs font-mono text-txt3 hover:text-txt1 flex items-center gap-1"
         >
           <Icon name="Focus" size={14} />{" "}
-          {focusM.isPending ? "focusing…" : "focus window"}
+          {focusM.isPending ? "focusing..." : "focus window"}
         </button>
       </div>
       <form
@@ -72,15 +113,15 @@ export function SendPromptForm({ sessionId }: Props) {
           </div>
           <button
             type="submit"
-            disabled={!text.trim() || sendM.isPending}
+            disabled={!text.trim() || sendM.isPending || bridge.data?.alive === false}
             className="h-9 px-4 rounded-input bg-brand hover:bg-brand/90 text-base text-sm font-emphasized disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {sendM.isPending ? "queuing…" : "send"}
+            {sendM.isPending ? "queuing..." : "send"}
           </button>
         </div>
-        {sendM.isError && (
+        {failMsg && (
           <div className="text-xs text-err font-mono">
-            Failed to queue: {(sendM.error as Error).message}
+            Failed to queue: {failMsg}
           </div>
         )}
       </form>

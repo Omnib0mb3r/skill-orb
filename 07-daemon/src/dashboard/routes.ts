@@ -20,6 +20,7 @@ import {
   queueSessionFocus,
   queueSessionKey,
   isNavKey,
+  bridgeStatus,
 } from './sessions.js';
 import { setPhase, type SessionPhase } from './session-phase.js';
 import { lintQueueStatus } from '../wiki/lint-queue.js';
@@ -321,8 +322,19 @@ export async function registerDashboardRoutes(
       return { ok: false, error: 'text required' };
     }
     const r = queueSessionPrompt(id, body.text);
+    if (!r.ok) {
+      // Bridge offline: refuse the queue and surface the reason so the
+      // dashboard can show a fail toast instead of silently buffering.
+      reply.code(503);
+      log(`[dashboard] prompt rejected for session ${id}: ${r.error}`);
+      return r;
+    }
     log(`[dashboard] prompt queued for session ${id}`);
     return r;
+  });
+
+  app.get('/dashboard/bridge-status', async () => {
+    return { ok: true, ...bridgeStatus() };
   });
 
   app.post('/sessions/:id/focus', async (req) => {

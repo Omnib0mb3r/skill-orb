@@ -299,11 +299,25 @@ export const sessionDetail = (id: string, query?: string) =>
     `/sessions/${id}${query ? `?q=${encodeURIComponent(query)}` : ""}`,
   );
 
+export interface BridgeStatus {
+  alive: boolean;
+  last_seen_ms: number | null;
+  age_ms: number | null;
+}
+export const bridgeStatus = () =>
+  request<{ ok: boolean } & BridgeStatus>("/dashboard/bridge-status");
+
+export interface QueuePromptResult {
+  ok: boolean;
+  queued_at?: string;
+  error?: string;
+  bridge?: BridgeStatus;
+}
 export const queuePrompt = (id: string, text: string) =>
-  request<{ ok: boolean; queued_at?: string }>(
-    `/sessions/${id}/prompt`,
-    { method: "POST", body: { text } },
-  );
+  request<QueuePromptResult>(`/sessions/${id}/prompt`, {
+    method: "POST",
+    body: { text },
+  });
 
 export const focusSession = (id: string) =>
   request<{ ok: boolean }>(`/sessions/${id}/focus`, { method: "POST" });

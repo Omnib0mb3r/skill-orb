@@ -234,23 +234,67 @@ function extractText(obj: { message?: { content?: unknown } }): string {
   return '';
 }
 
+/* Bridge liveness window. The bridge writes a heartbeat file every
+ * tick (~750ms). If the heartbeat is missing or older than this, the
+ * dashboard treats the bridge as offline and refuses to queue anything,
+ * so messages don't accumulate for hours and then dump all at once
+ * when a stale window finally reloads. */
+const BRIDGE_HEARTBEAT_FILE = path.posix.join(BRIDGE_DIR, '.heartbeat');
+const BRIDGE_HEARTBEAT_STALE_MS = 30_000;
+
+export interface BridgeStatus {
+  alive: boolean;
+  last_seen_ms: number | null;
+  age_ms: number | null;
+}
+
+export function bridgeStatus(): BridgeStatus {
+  try {
+    const stat = fs.statSync(BRIDGE_HEARTBEAT_FILE);
+    const age = Date.now() - stat.mtimeMs;
+    return {
+      alive: age <= BRIDGE_HEARTBEAT_STALE_MS,
+      last_seen_ms: stat.mtimeMs,
+      age_ms: age,
+    };
+  } catch {
+    return { alive: false, last_seen_ms: null, age_ms: null };
+  }
+}
+
 /**
  * Queue a prompt for delivery to a running session. The 09-bridge VS
  * Code extension (Phase 3.3) watches this directory and pastes the
  * message into the matching terminal.
+ *
+ * Refuses to queue if no bridge has written a heartbeat within the
+ * stale window. Without this, a closed VS Code window left users with
+ * messages silently sitting in the inbox for hours, then all dumping
+ * into the terminal when the bridge eventually came back online.
  */
 export function queueSessionPrompt(
   sessionId: string,
   text: string,
-): { ok: true; queued_at: string } {
+):
+  | { ok: true; queued_at: string }
+  | { ok: false; error: string; bridge: BridgeStatus } {
+  const status = bridgeStatus();
+  if (!status.alive) {
+    return {
+      ok: false,
+      error:
+        status.last_seen_ms === null
+          ? 'bridge offline: no heartbeat ever recorded'
+          : `bridge offline: last heartbeat ${Math.round((status.age_ms ?? 0) / 1000)}s ago`,
+      bridge: status,
+    };
+  }
   ensureDir(BRIDGE_DIR);
   const file = path.posix.join(BRIDGE_DIR, `${sessionId}.in`);
-  const entry = JSON.stringify({
-    queued_at: new Date().toISOString(),
-    text,
-  });
+  const queued_at = new Date().toISOString();
+  const entry = JSON.stringify({ queued_at, text });
   fs.appendFileSync(file, entry + '\n', 'utf-8');
-  return { ok: true, queued_at: new Date().toISOString() };
+  return { ok: true, queued_at };
 }
 
 export function queueSessionFocus(sessionId: string): { ok: true } {

@@ -626,6 +626,18 @@ function processFile(file: string): void {
       if (!trimmed) continue;
       try {
         const message = JSON.parse(trimmed) as BridgeMessage;
+        // Drop stale messages so a queue that piled up while the bridge
+        // was down does not flood the terminal hours later. Threshold
+        // matches the daemon's bridge-offline window plus a buffer for
+        // tick latency; anything older was almost certainly queued
+        // against a dead bridge.
+        const queuedMs = Date.parse(message.queued_at);
+        if (Number.isFinite(queuedMs) && Date.now() - queuedMs > 90_000) {
+          channel.appendLine(
+            `[skip-stale] queued_at=${message.queued_at} age=${Math.round((Date.now() - queuedMs) / 1000)}s text=${(message.text ?? message.action ?? '').toString().slice(0, 60)}`,
+          );
+          continue;
+        }
         void handleMessage(message);
       } catch (err) {
         channel.appendLine(
@@ -641,8 +653,31 @@ function processFile(file: string): void {
   }
 }
 
+/* Liveness heartbeat. The daemon refuses to queue prompts unless this
+ * file's mtime is recent (default <30s), so we touch it on every tick.
+ * Without this, a closed VS Code window left messages buffering in the
+ * bridge inbox for hours and dumped them all at once on next reload. */
+function writeHeartbeat(): void {
+  const dir = getBridgeDir();
+  if (!fs.existsSync(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch {
+      return;
+    }
+  }
+  const file = path.posix.join(dir, '.heartbeat');
+  try {
+    const now = Date.now();
+    fs.writeFileSync(file, String(now), 'utf-8');
+  } catch {
+    /* ignore */
+  }
+}
+
 function tick(): void {
   if (!enabled || !isEnabled()) return;
+  writeHeartbeat();
   const dir = getBridgeDir();
   if (!fs.existsSync(dir)) return;
   let entries: fs.Dirent[];
