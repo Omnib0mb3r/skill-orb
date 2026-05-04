@@ -60,12 +60,26 @@ const CORRECTION_PATTERNS = [
   /\bundo\b/i,
 ];
 
+/* `kind: 'wiki'` is the original path: a wiki page was injected, on a
+ * hit we bump its weight and on three corrections we archive it.
+ *
+ * `kind: 'raw'` covers the bestRaw fallback that fires when no canonical
+ * wiki page covers the prompt. There is no page to weight, so on a hit
+ * we instead schedule a wiki distillation pass with the chunk text as
+ * source material. The next time a similar prompt arrives the wiki
+ * version should win and reinforcement collapses back to the wiki path.
+ * Without this, transcript-only matches never produced reinforcement
+ * events and the wiki could not grow from real conversation evidence. */
 interface Pending {
   sessionId: string;
+  kind: 'wiki' | 'raw';
   pageId: string;
   pagePath: string;
   injectedAt: number;
   summary: string;
+  // raw-only:
+  projectId?: string;
+  rawText?: string;
 }
 
 const pending = new Map<string, Pending>();
@@ -99,10 +113,29 @@ export function recordInjection(
 ): void {
   pending.set(sessionId, {
     sessionId,
+    kind: 'wiki',
     pageId,
     pagePath,
     injectedAt: Date.now(),
     summary,
+  });
+}
+
+export function recordRawInjection(
+  sessionId: string,
+  chunkId: string,
+  rawText: string,
+  projectId: string,
+): void {
+  pending.set(sessionId, {
+    sessionId,
+    kind: 'raw',
+    pageId: chunkId,
+    pagePath: '',
+    injectedAt: Date.now(),
+    summary: rawText,
+    projectId,
+    rawText,
   });
 }
 
@@ -167,6 +200,63 @@ function moveTo(page: PageOnDisk, targetDir: string): string {
   return target;
 }
 
+/* Fire-and-forget wiki distillation triggered by a raw-injection hit.
+ * Pulls projectName from the registry so runIngest has the metadata it
+ * needs; if the project is missing or the chunk text is too short, log
+ * the skip reason and bail. Any throw during ingest surfaces to stderr
+ * via appendReinforcementLog's diagnostic path — we never let the
+ * reinforcement evaluator throw to the transcript watcher. */
+async function scheduleRawHitIngest(
+  store: Store,
+  p: Pending,
+  log: (msg: string) => void,
+): Promise<void> {
+  try {
+    const text = (p.rawText ?? p.summary ?? '').trim();
+    if (text.length < 40) {
+      log(`[reinforce] raw-hit ingest skipped: text too short (${text.length}b)`);
+      return;
+    }
+    if (!p.projectId) {
+      log(`[reinforce] raw-hit ingest skipped: no projectId on pending`);
+      return;
+    }
+    const { getProject } = await import('../identity/registry.js');
+    const project = getProject(p.projectId);
+    const projectName = project?.name ?? p.projectId;
+    const { runIngest } = await import('../wiki/ingest.js');
+    const result = await runIngest(
+      store,
+      {
+        source: `raw-hit:${p.pageId}`,
+        projectId: p.projectId,
+        projectName,
+        newContent: text,
+        evidenceHints: [
+          `raw transcript chunk ${p.pageId} matched assistant reply at hit cosine`,
+        ],
+      },
+      log,
+    );
+    appendReinforcementLog({
+      kind: 'raw-hit-ingest',
+      session: p.sessionId,
+      chunk: p.pageId,
+      project: p.projectId,
+      pages_created: result.pages_created.length,
+      pages_updated: result.pages_updated.length,
+      skipped_reason: result.skipped_reason,
+    });
+    log(
+      `[reinforce] raw-hit ingest done: created=${result.pages_created.length} updated=${result.pages_updated.length}${result.skipped_reason ? ' skip=' + result.skipped_reason : ''}`,
+    );
+  } catch (err) {
+    process.stderr.write(
+      `[reinforcement] raw-hit ingest failed: ${(err as Error).message}\n`,
+    );
+  }
+}
+
 async function reindexPage(store: Store, page: PageOnDisk): Promise<void> {
   const fm = page.frontmatter;
   const tsMs = Date.now();
@@ -223,7 +313,7 @@ export async function evaluateAssistantReply(
 
   if (cosine < HIT_COSINE) {
     appendReinforcementLog({
-      kind: 'no-hit',
+      kind: p.kind === 'raw' ? 'raw-no-hit' : 'no-hit',
       session: sessionId,
       page: p.pageId,
       cosine,
@@ -231,7 +321,24 @@ export async function evaluateAssistantReply(
     return;
   }
 
-  // HIT
+  // HIT path. Raw injections do not have a page to weight; instead we
+  // schedule a wiki ingest pass so the chunk can crystallize into a
+  // page. Future identical prompts will then match the wiki and
+  // reinforcement collapses back to the canonical wiki path.
+  if (p.kind === 'raw') {
+    appendReinforcementLog({
+      kind: 'raw-hit',
+      session: sessionId,
+      chunk: p.pageId,
+      project: p.projectId,
+      cosine,
+    });
+    log(`[reinforce] raw-hit on chunk ${p.pageId} (cosine ${cosine.toFixed(2)}); scheduling wiki ingest`);
+    pending.delete(sessionId);
+    void scheduleRawHitIngest(store, p, log);
+    return;
+  }
+
   const page = loadPage(p.pageId);
   if (!page) return;
   const fm = { ...page.frontmatter };
@@ -280,6 +387,20 @@ export function evaluateCorrection(
   if (!p) return;
   const looksLikeCorrection = CORRECTION_PATTERNS.some((re) => re.test(userText));
   if (!looksLikeCorrection) return;
+
+  // Raw injections have no page; record a soft-correction event and drop
+  // the pending so the chunk does not get distilled into a wiki page on
+  // a follow-up hit (user just told us the match was wrong).
+  if (p.kind === 'raw') {
+    appendReinforcementLog({
+      kind: 'raw-correction',
+      session: sessionId,
+      chunk: p.pageId,
+      project: p.projectId,
+    });
+    pending.delete(sessionId);
+    return;
+  }
 
   const page = loadPage(p.pageId);
   if (!page) return;

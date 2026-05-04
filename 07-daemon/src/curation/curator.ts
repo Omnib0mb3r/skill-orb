@@ -35,7 +35,7 @@ import {
   type LlmProvider,
 } from '../llm/index.js';
 import type { Validator } from '../llm/validator.js';
-import { recordInjection } from '../reinforcement/index.js';
+import { recordInjection, recordRawInjection } from '../reinforcement/index.js';
 import * as path from 'node:path';
 import { wikiPagesDir, wikiPendingDir } from '../paths.js';
 
@@ -224,7 +224,9 @@ export async function curate(
   injection = capByBudget(injection, TOKEN_BUDGET);
 
   // Record the injection for reinforcement: we want to know after the
-  // assistant replies whether the page actually got used.
+  // assistant replies whether the page actually got used. bestWiki uses
+  // the canonical wiki path; bestRaw seeds a raw-pending so a follow-up
+  // hit can promote the chunk into a wiki distillation pass.
   if (bestWiki) {
     const pagePath = path.posix.join(
       bestWiki.metadata.status === 'canonical' ? wikiPagesDir() : wikiPendingDir(),
@@ -232,6 +234,16 @@ export async function curate(
     );
     const summary = `${bestWiki.metadata.title}\n\n${bestWiki.metadata.trigger} → ${bestWiki.metadata.insight}`;
     recordInjection(input.sessionId, bestWiki.id, pagePath, summary);
+  } else if (bestRaw) {
+    const meta = bestRaw.metadata;
+    const text = typeof meta.text_preview === 'string' ? meta.text_preview : '';
+    const projectId =
+      typeof meta.project_id === 'string' && meta.project_id
+        ? meta.project_id
+        : input.projectId;
+    if (text.length >= 40) {
+      recordRawInjection(input.sessionId, bestRaw.id, text, projectId);
+    }
   }
 
   return {
