@@ -94,9 +94,14 @@ interface OrbProps {
   compact?: boolean;
 }
 
+interface FGHandle {
+  zoomToFit: (durationMs?: number, padding?: number) => void;
+}
+
 export function Orb({ compact = false }: OrbProps = {}) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const fgRef = useRef<FGHandle | null>(null);
   const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const [hovered, setHovered] = useState<ForceNode | null>(null);
   const [pointer, setPointer] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -155,6 +160,21 @@ export function Orb({ compact = false }: OrbProps = {}) {
   const onNodeHover = useCallback((n: ForceNode | null) => {
     setHovered(n ?? null);
   }, []);
+
+  /* Auto-frame the graph whenever the data set or container size changes.
+   * Without this the force layout stabilizes at whatever zoom the canvas
+   * happened to render at first paint, which is usually too zoomed in
+   * for a small embed and leaves nodes off-screen. zoomToFit re-centers
+   * with padding and is cheap because the layout is already converged. */
+  const nodeCount = q.data?.nodes.length ?? 0;
+  useEffect(() => {
+    if (!fgRef.current || nodeCount === 0 || size.w === 0 || size.h === 0) return;
+    const padding = compact ? 24 : 40;
+    const t = setTimeout(() => {
+      fgRef.current?.zoomToFit(600, padding);
+    }, 200);
+    return () => clearTimeout(t);
+  }, [nodeCount, size.w, size.h, compact]);
 
   const drawNode = useCallback(
     (raw: ForceNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -234,9 +254,15 @@ export function Orb({ compact = false }: OrbProps = {}) {
         // accessor callbacks would not type-check against our richer
         // ForceNode. Casts are localized to this prop set.
         <ForceGraph2D
+          ref={fgRef as never}
           graphData={graphData as unknown as { nodes: object[]; links: object[] }}
           width={size.w}
           height={size.h}
+          onEngineStop={(() => {
+            if (fgRef.current) {
+              fgRef.current.zoomToFit(600, compact ? 24 : 40);
+            }
+          }) as never}
           backgroundColor="rgba(0,0,0,0)"
           nodeRelSize={1}
           nodeId="id"
@@ -294,12 +320,13 @@ export function Orb({ compact = false }: OrbProps = {}) {
             ((l: object) =>
               edgeHeatColor(((l as ForceLink).weight ?? 0.5) * 1.0)) as never
           }
-          /* Layout never fully cools, so the orb keeps a gentle ambient
-           * drift the way the v1 Three.js orb did. The d3-force tick is
-           * cheap relative to the canvas redraw, so this costs ~nothing. */
-          cooldownTicks={Number.POSITIVE_INFINITY}
-          d3AlphaDecay={0.02}
+          /* Long but finite cooldown so the orb keeps gentle drift without
+           * tripping force-graph internals that reject Infinity. d3-force
+           * tick is cheap relative to canvas redraw, so this costs ~nothing. */
+          cooldownTicks={100000}
+          d3AlphaDecay={0.005}
           d3VelocityDecay={0.18}
+          warmupTicks={20}
           onNodeClick={((n: object) => onNodeClick(n as ForceNode)) as never}
           onNodeHover={((n: object | null) => onNodeHover(n as ForceNode | null)) as never}
           enableNodeDrag={!compact}
