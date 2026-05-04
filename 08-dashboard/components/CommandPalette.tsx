@@ -10,7 +10,7 @@ interface Action {
   id: string;
   label: string;
   hint: string;
-  icon: "Home" | "BookOpen" | "Terminal" | "FolderGit2" | "Cpu" | "BellRing" | "Orbit" | "Plus" | "Upload" | "Lock" | "Search";
+  icon: "Home" | "BookOpen" | "Terminal" | "FolderGit2" | "Cpu" | "BellRing" | "Brain" | "Plus" | "Upload" | "Lock" | "Search";
   run: () => void;
 }
 
@@ -78,7 +78,7 @@ export function CommandPalette() {
       { id: "go-projects",  label: "Go to Projects",  hint: "/projects",  icon: "FolderGit2" as const,  run: () => router.push("/projects") },
       { id: "go-system",    label: "Go to System",    hint: "/system",    icon: "Cpu" as const,         run: () => router.push("/system") },
       { id: "go-reminders", label: "Go to Reminders", hint: "/reminders", icon: "BellRing" as const,    run: () => router.push("/reminders") },
-      { id: "go-orb",       label: "Go to Orb",       hint: "/orb",       icon: "Orbit" as const,       run: () => router.push("/orb") },
+      { id: "go-orb",       label: "Go to Neural network", hint: "/orb",  icon: "Brain" as const,       run: () => router.push("/orb") },
       { id: "new-project",  label: "New project",     hint: "scaffold",   icon: "Plus" as const,        run: () => router.push("/projects?new=1") },
       { id: "upload-ref",   label: "Upload reference",hint: "PDF/img/md", icon: "Upload" as const,      run: () => router.push("/wiki?upload=1") },
       { id: "lock",         label: "Lock dashboard",  hint: "log out",    icon: "Lock" as const,        run: () => lock().then(() => router.replace("/unlock")) },

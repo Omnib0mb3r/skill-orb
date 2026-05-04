@@ -36,12 +36,12 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Orb mini panel embedded force graph */}
+          {/* Neural network mini panel: force-directed graph of wiki + sessions */}
           <div className="rounded-panel bg-surface1 hairline overflow-hidden">
             <div className="px-5 py-3 border-b border-border1 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Icon name="Orbit" className="text-brandSoft" size={16} />
-                <h2 className="font-display text-sm font-emphasized">Orb</h2>
+                <Icon name="Brain" className="text-brandSoft" size={16} />
+                <h2 className="font-display text-sm font-emphasized">Neural network</h2>
               </div>
               <Link
                 href="/orb"
