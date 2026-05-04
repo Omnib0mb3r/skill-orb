@@ -44,6 +44,7 @@ const CLAUDE_PROJECTS_ROOT = path.posix.join(
 
 const RAW_CURSOR_FILE = path.posix.join(DATA_ROOT, '.backfill-raw.json');
 const WIKI_CURSOR_FILE = path.posix.join(DATA_ROOT, '.backfill-wiki.json');
+const STATUS_FILE = path.posix.join(DATA_ROOT, '.backfill-status.json');
 
 interface RawCursorFile {
   /** Map of jsonl absolute path -> end-byte already processed. */
@@ -112,10 +113,94 @@ function emptyStatus(mode: BackfillMode): BackfillRunStatus {
   };
 }
 
-const status: Record<BackfillMode, BackfillRunStatus> = {
-  raw: emptyStatus('raw'),
-  wiki: emptyStatus('wiki'),
-};
+/** Persisted status so the dashboard remembers the last run across daemon
+ * restarts. Without this, killing the daemon (intentional or not) would
+ * make the UI show "never run" even though chunks/pages are still on
+ * disk and the cursor knows otherwise. */
+function reconstructFromCursor(): Record<BackfillMode, BackfillRunStatus> {
+  /* Bootstrap status from cursor files when STATUS_FILE doesn't exist
+   * yet (first run after this fix lands). Without this, prior backfills
+   * would show "never run" until the user kicks off another pass. */
+  const out = { raw: emptyStatus('raw'), wiki: emptyStatus('wiki') };
+  try {
+    const rawCursor = loadRawCursor();
+    const fileCount = Object.keys(rawCursor.files).length;
+    if (fileCount > 0) {
+      out.raw.files_total = fileCount;
+      out.raw.files_done = fileCount;
+      out.raw.bytes_processed = Object.values(rawCursor.files).reduce(
+        (a, b) => a + b,
+        0,
+      );
+      out.raw.completed_at = rawCursor.last_run_at;
+      out.raw.started_at = rawCursor.last_run_at;
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const wikiCursor = loadWikiCursor();
+    const fileCount = Object.keys(wikiCursor.files).length;
+    if (fileCount > 0) {
+      out.wiki.files_total = fileCount;
+      out.wiki.files_done = Object.values(wikiCursor.files).filter(
+        (v) => v === 'done',
+      ).length;
+      out.wiki.errors = Object.values(wikiCursor.files).filter(
+        (v) => v === 'failed',
+      ).length;
+      out.wiki.completed_at = wikiCursor.last_run_at;
+      out.wiki.started_at = wikiCursor.last_run_at;
+    }
+  } catch {
+    /* ignore */
+  }
+  return out;
+}
+
+function loadPersistedStatus(): Record<BackfillMode, BackfillRunStatus> {
+  if (!fs.existsSync(STATUS_FILE)) return reconstructFromCursor();
+  try {
+    const raw = JSON.parse(fs.readFileSync(STATUS_FILE, 'utf-8')) as {
+      raw?: BackfillRunStatus;
+      wiki?: BackfillRunStatus;
+    };
+    // Anything claimed running at load time is stale (we just restarted).
+    // Treat as cancelled so the UI surfaces last error/last completion.
+    const sanitize = (s: BackfillRunStatus, mode: BackfillMode): BackfillRunStatus => {
+      const out = { ...emptyStatus(mode), ...s, mode };
+      if (out.running) {
+        out.running = false;
+        out.cancel_requested = false;
+        out.completed_at = out.completed_at ?? new Date().toISOString();
+        out.last_error = out.last_error ?? 'daemon restarted mid-run';
+        out.current_file = null;
+      }
+      return out;
+    };
+    const fallback = reconstructFromCursor();
+    return {
+      raw: raw.raw ? sanitize(raw.raw, 'raw') : fallback.raw,
+      wiki: raw.wiki ? sanitize(raw.wiki, 'wiki') : fallback.wiki,
+    };
+  } catch {
+    return reconstructFromCursor();
+  }
+}
+
+function savePersistedStatus(): void {
+  try {
+    fs.writeFileSync(
+      STATUS_FILE,
+      JSON.stringify({ raw: status.raw, wiki: status.wiki }, null, 2),
+      'utf-8',
+    );
+  } catch {
+    /* non-fatal */
+  }
+}
+
+const status: Record<BackfillMode, BackfillRunStatus> = loadPersistedStatus();
 
 /* AbortController per mode so cancel can interrupt the in-flight LLM
  * call (which can take 5-30s through ollama). Without abort, "cancel"
@@ -134,6 +219,7 @@ export function requestBackfillCancel(mode: BackfillMode): void {
   if (status[mode].running) {
     status[mode].cancel_requested = true;
     aborters[mode]?.abort();
+    savePersistedStatus();
   }
 }
 
@@ -309,9 +395,11 @@ export async function runBackfillRaw(
         cursor.files[file] = stat.size;
         cursor.last_run_at = new Date().toISOString();
         // Persist cursor after every file so a kill loses at most one file
-        // of progress.
+        // of progress. Also persist status so the dashboard remembers
+        // last-completion across daemon restarts.
         saveRawCursor(cursor);
         status.raw.files_done += 1;
+        savePersistedStatus();
         if (status.raw.files_done % 10 === 0) {
           log(
             `[backfill-raw] progress ${status.raw.files_done}/${files.length} files, ${status.raw.chunks_or_pages} chunks`,
@@ -331,16 +419,19 @@ export async function runBackfillRaw(
       log(`[backfill-raw] final flush failed: ${(err as Error).message}`);
     }
 
-    // Post-run verification: confirm the index actually grew and is
-    // queryable end-to-end. Sample query is a real turn from the last
-    // file we touched, which by definition was just embedded into
-    // store.rawChunks; the top hit should land at near-1.0 cosine.
-    if (!status.raw.cancel_requested && status.raw.files_done > 0) {
-      const lastFile = files[Math.min(status.raw.files_total - 1, files.length - 1)];
-      // Pick a file we definitely just processed (any non-skipped one).
-      const sample = files.find(
-        (f) => cursor.files[f] && cursor.files[f]! > 0,
-      ) ?? lastFile ?? null;
+    // Post-run verification: confirm the index is queryable end-to-end.
+    // Runs whenever any file has a recorded cursor (this run OR a prior
+    // run that the cursor file remembers), so a re-click after a daemon
+    // restart still re-confirms the embed -> store -> search loop is
+    // intact instead of leaving the UI showing "never run".
+    if (
+      !status.raw.cancel_requested &&
+      (status.raw.files_done > 0 || status.raw.files_skipped > 0)
+    ) {
+      const sample =
+        files.find((f) => cursor.files[f] && cursor.files[f]! > 0) ??
+        files[files.length - 1] ??
+        null;
       status.raw.verification = await verifyRawSearchable(store, sample, log);
     }
 
@@ -351,6 +442,7 @@ export async function runBackfillRaw(
     status.raw.running = false;
     status.raw.completed_at = new Date().toISOString();
     status.raw.current_file = null;
+    savePersistedStatus();
   }
 }
 
@@ -529,6 +621,7 @@ export async function runBackfillWiki(
         cursor.last_run_at = new Date().toISOString();
         saveWikiCursor(cursor);
         status.wiki.files_done += 1;
+        savePersistedStatus();
         log(
           `[backfill-wiki] ${path.basename(file)} -> ${ingested} blobs, ${status.wiki.chunks_or_pages} pages so far`,
         );
@@ -554,6 +647,7 @@ export async function runBackfillWiki(
     status.wiki.completed_at = new Date().toISOString();
     status.wiki.current_file = null;
     aborters.wiki = null;
+    savePersistedStatus();
   }
 }
 
