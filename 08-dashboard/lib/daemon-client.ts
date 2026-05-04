@@ -247,6 +247,30 @@ export const createProject = (input: {
     { method: "POST", body: input },
   );
 
+// ── graph (orb) ────────────────────────────────────────────────
+export type GraphNodeStatus = "canonical" | "pending" | "archived";
+export interface GraphNode {
+  id: string;
+  title: string;
+  status: GraphNodeStatus;
+  project_id?: string;
+  last_modified: string;
+  promoted_at?: string;
+  weight: number;
+}
+export interface GraphEdge {
+  source: string;
+  target: string;
+  kind?: "reference" | "sibling" | "glossary";
+  weight: number;
+}
+export interface GraphResponse {
+  ok: boolean;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+export const graph = () => request<GraphResponse>("/graph");
+
 // ── push (VAPID) ──────────────────────────────────────────────
 export const vapidPublicKey = () =>
   request<{ ok: boolean; public_key: string }>("/push/vapid-public-key");
@@ -263,28 +287,6 @@ export const subscribePush = (input: {
 
 export const unsubscribePush = (id: string) =>
   request<{ ok: boolean }>(`/push/subscribe/${id}`, { method: "DELETE" });
-
-// ── wiki graph ──────────────────────────────────────────────────
-export interface GraphNode {
-  id: string;
-  title: string;
-  status: "canonical" | "pending" | "archived";
-  project_id?: string;
-  last_modified: string;
-  promoted_at?: string;
-  weight: number;
-}
-export interface GraphEdge {
-  source: string;
-  target: string;
-  kind?: "reference" | "sibling" | "glossary";
-}
-export interface GraphResponse {
-  ok: boolean;
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-}
-export const graph = () => request<GraphResponse>("/graph");
 
 // ── reference docs ──────────────────────────────────────────────
 export interface ReferenceDoc {

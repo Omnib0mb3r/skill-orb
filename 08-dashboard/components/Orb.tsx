@@ -23,9 +23,40 @@ const COLOR_ACCENT     = "oklch(64% 0.20 295)";
 const COLOR_AI         = "oklch(72% 0.13 270)";
 const COLOR_DISABLED   = "oklch(46% 0.011 263)";
 const COLOR_PROMOTED   = "oklch(82% 0.15 80)";
-const COLOR_EDGE       = "oklch(96% 0.005 250 / 0.08)";
-const COLOR_EDGE_HOVER = "oklch(96% 0.005 250 / 0.28)";
+const COLOR_EDGE_HOVER = "oklch(96% 0.005 250 / 0.55)";
 const COLOR_LABEL      = "oklch(85% 0.012 250)";
+
+/* Edge heat gradient (cool to warm). Lifted from the v1 orb's visuals.ts:
+ * weak edges are deep blue, medium are cyan, strong are gold, hottest are
+ * red-orange. v1 weight = co-occurrence count; v2 weight = average of
+ * endpoint page weights, so visually-prominent edges connect visually-
+ * prominent pages. Same heat language, new data driving it. */
+function lerpHex(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
+  const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+  return (
+    (Math.round(ar + (br - ar) * t) << 16) |
+    (Math.round(ag + (bg - ag) * t) << 8) |
+    Math.round(ab + (bb - ab) * t)
+  );
+}
+function hexToRgba(hex: number, alpha: number): string {
+  const r = (hex >> 16) & 0xff;
+  const g = (hex >> 8) & 0xff;
+  const b = hex & 0xff;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+function edgeHeatColor(normalized: number): string {
+  const w = Math.max(0, Math.min(1, normalized));
+  let hex: number;
+  if (w < 0.25)      hex = lerpHex(0x0d1f5c, 0x1a5faa, w / 0.25);
+  else if (w < 0.5)  hex = lerpHex(0x1a5faa, 0x22bbcc, (w - 0.25) / 0.25);
+  else if (w < 0.75) hex = lerpHex(0x22bbcc, 0xeecc22, (w - 0.5)  / 0.25);
+  else               hex = lerpHex(0xeecc22, 0xff4411, (w - 0.75) / 0.25);
+  // Cooler edges are dimmer so the eye gravitates to hot ones.
+  const alpha = 0.32 + w * 0.55;
+  return hexToRgba(hex, alpha);
+}
 
 interface ForceNode extends GraphNode {
   x?: number;
@@ -36,6 +67,7 @@ interface ForceLink {
   source: string | ForceNode;
   target: string | ForceNode;
   kind?: GraphEdge["kind"];
+  weight?: number;
 }
 
 function statusColor(status: GraphNode["status"]): string {
@@ -87,10 +119,26 @@ export function Orb({ compact = false }: OrbProps = {}) {
   });
 
   const graphData = useMemo(() => {
+    const rawEdges = q.data?.edges ?? [];
+    // Normalize edge weights against the max in this snapshot. With only
+    // a handful of pages early on, even the "hottest" edge has low absolute
+    // weight; relative normalization keeps the heat gradient meaningful at
+    // every wiki size. Falls back to absolute if the daemon ever omits
+    // weight (older deploy).
+    const maxW = rawEdges.reduce(
+      (m, e) => Math.max(m, typeof e.weight === "number" ? e.weight : 0),
+      0,
+    );
+    const norm = (w: number | undefined): number => {
+      if (typeof w !== "number") return 0.5;
+      if (maxW <= 0) return 0;
+      return w / maxW;
+    };
     const nodes: ForceNode[] = (q.data?.nodes ?? []).map((n) => ({ ...n }));
-    const links: ForceLink[] = (q.data?.edges ?? []).map((e) => ({
+    const links: ForceLink[] = rawEdges.map((e) => ({
       source: e.source,
       target: e.target,
+      weight: norm(e.weight),
       ...(e.kind ? { kind: e.kind } : {}),
     }));
     return { nodes, links };
@@ -209,12 +257,49 @@ export function Orb({ compact = false }: OrbProps = {}) {
                 (typeof src === "object" && (src as ForceNode).id === hovered.id) ||
                 (typeof tgt === "object" && (tgt as ForceNode).id === hovered.id)
               );
-              return hit ? COLOR_EDGE_HOVER : COLOR_EDGE;
+              if (hit) return COLOR_EDGE_HOVER;
+              return edgeHeatColor(link.weight ?? 0.5);
             }) as never
           }
-          linkWidth={0.8}
-          linkDirectionalParticles={0}
-          cooldownTicks={120}
+          linkWidth={
+            ((l: object) => {
+              const w = (l as ForceLink).weight ?? 0.5;
+              // Cold edges 0.6px hairlines, hot edges scale up to 2.4px.
+              return 0.6 + Math.max(0, Math.min(1, w)) * 1.8;
+            }) as never
+          }
+          /* Animated particles flowing along each edge. Density and speed
+           * scale with weight so the eye follows the most active pathways.
+           * Source-to-target direction comes from the cross-reference graph;
+           * particles visually convey "this insight points to that one." */
+          linkDirectionalParticles={
+            ((l: object) => {
+              const w = (l as ForceLink).weight ?? 0.5;
+              return Math.max(1, Math.round(w * 4));
+            }) as never
+          }
+          linkDirectionalParticleSpeed={
+            ((l: object) => {
+              const w = (l as ForceLink).weight ?? 0.5;
+              return 0.0035 + w * 0.008;
+            }) as never
+          }
+          linkDirectionalParticleWidth={
+            ((l: object) => {
+              const w = (l as ForceLink).weight ?? 0.5;
+              return 1.2 + w * 1.6;
+            }) as never
+          }
+          linkDirectionalParticleColor={
+            ((l: object) =>
+              edgeHeatColor(((l as ForceLink).weight ?? 0.5) * 1.0)) as never
+          }
+          /* Layout never fully cools, so the orb keeps a gentle ambient
+           * drift the way the v1 Three.js orb did. The d3-force tick is
+           * cheap relative to the canvas redraw, so this costs ~nothing. */
+          cooldownTicks={Number.POSITIVE_INFINITY}
+          d3AlphaDecay={0.02}
+          d3VelocityDecay={0.18}
           onNodeClick={((n: object) => onNodeClick(n as ForceNode)) as never}
           onNodeHover={((n: object | null) => onNodeHover(n as ForceNode | null)) as never}
           enableNodeDrag={!compact}

@@ -34,6 +34,9 @@ export interface GraphEdge {
   source: string;
   target: string;
   kind?: 'reference' | 'sibling' | 'glossary';
+  /** Average of endpoint node weights; orb maps this to a cool→warm
+   * heat gradient and to line width. Range [0,1]. */
+  weight: number;
 }
 
 export interface GraphPayload {
@@ -117,8 +120,15 @@ export function buildGraph(): GraphPayload {
     }
   }
 
-  // Edge collection first so weight can incorporate edge count.
-  const edges: GraphEdge[] = [];
+  // First pass: collect edges as endpoint pairs, compute per-node degrees.
+  // Weight assignment needs node weights, which depend on degree, so this
+  // is a three-pass walk: edges (untyped), nodes, then back-fill edge weights.
+  interface EdgeStub {
+    source: string;
+    target: string;
+    kind: 'reference' | 'sibling' | 'glossary';
+  }
+  const edgeStubs: EdgeStub[] = [];
   const incomingCount = new Map<string, number>();
   for (const entry of idToEntry.values()) {
     const sourceId = entry.page.frontmatter.id;
@@ -129,7 +139,7 @@ export function buildGraph(): GraphPayload {
       if (!idToEntry.has(ref)) continue;
       if (seen.has(ref)) continue;
       seen.add(ref);
-      edges.push({ source: sourceId, target: ref, kind: 'reference' });
+      edgeStubs.push({ source: sourceId, target: ref, kind: 'reference' });
       incomingCount.set(ref, (incomingCount.get(ref) ?? 0) + 1);
     }
 
@@ -143,21 +153,23 @@ export function buildGraph(): GraphPayload {
       if (!idToEntry.has(target)) continue;
       if (seen.has(target)) continue;
       seen.add(target);
-      edges.push({ source: sourceId, target, kind: 'reference' });
+      edgeStubs.push({ source: sourceId, target, kind: 'reference' });
       incomingCount.set(target, (incomingCount.get(target) ?? 0) + 1);
     }
   }
 
   const nodes: GraphNode[] = [];
+  const idToNodeWeight = new Map<string, number>();
   for (const entry of idToEntry.values()) {
     const fm = entry.page.frontmatter;
     const inDeg = incomingCount.get(fm.id) ?? 0;
-    const outDeg = edges.filter((e) => e.source === fm.id).length;
+    const outDeg = edgeStubs.filter((e) => e.source === fm.id).length;
     const edgeWeight = Math.min(1, (inDeg + outDeg) / 8);
     const weight = Math.max(
       0.05,
       Math.min(1, fm.weight * 0.5 + edgeWeight * 0.3 + recencyBoost(entry.mtime) * 0.2),
     );
+    idToNodeWeight.set(fm.id, weight);
 
     const node: GraphNode = {
       id: fm.id,
@@ -173,6 +185,15 @@ export function buildGraph(): GraphPayload {
     if (promoted) node.promoted_at = promoted;
     nodes.push(node);
   }
+
+  // Edge weight = average of endpoint node weights. Old orb used
+  // co-occurrence count; v2 graph uses page weight as the heat signal so
+  // visually-prominent edges connect visually-prominent nodes.
+  const edges: GraphEdge[] = edgeStubs.map((s) => {
+    const sw = idToNodeWeight.get(s.source) ?? 0;
+    const tw = idToNodeWeight.get(s.target) ?? 0;
+    return { ...s, weight: (sw + tw) / 2 };
+  });
 
   return { ok: true, nodes, edges };
 }
