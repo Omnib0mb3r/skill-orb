@@ -571,9 +571,14 @@ function shouldHandleSession(sessionId: string): boolean {
   const sessionCwd = resolveSessionCwd(sessionId);
   const folders = vscode.workspace.workspaceFolders ?? [];
   if (!sessionCwd || folders.length === 0) return true;
+  // Windows paths are case-insensitive on disk but the casing recorded
+  // in the Claude Code transcript ("C:\dev\...") often differs from the
+  // casing VS Code uses for its workspace fsPath ("c:\dev\..."), which
+  // turned a case mismatch into a silent "skip every prompt".
+  const sessionCwdLower = sessionCwd.toLowerCase();
   return folders.some((f) => {
-    const folder = f.uri.fsPath.replace(/\\/g, '/');
-    return sessionCwd === folder || sessionCwd.startsWith(`${folder}/`);
+    const folder = f.uri.fsPath.replace(/\\/g, '/').toLowerCase();
+    return sessionCwdLower === folder || sessionCwdLower.startsWith(`${folder}/`);
   });
 }
 
