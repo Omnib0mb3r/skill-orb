@@ -80,8 +80,14 @@ function appendReinforcementLog(entry: Record<string, unknown>): void {
       JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n',
       'utf-8',
     );
-  } catch {
-    /* ignore */
+  } catch (err) {
+    // Surface I/O failures to the daemon log instead of swallowing them.
+    // A silent reinforcement.log.jsonl write failure was indistinguishable
+    // from "no events fired yet" in the dashboard digest, which made
+    // diagnosing a dead reinforcement loop impossible.
+    process.stderr.write(
+      `[reinforcement] append failed: ${(err as Error).message}\n`,
+    );
   }
 }
 

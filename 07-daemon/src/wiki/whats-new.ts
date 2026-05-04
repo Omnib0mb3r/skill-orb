@@ -152,7 +152,7 @@ function narrate(
 ): string {
   const window = daysWindow === 1 ? '24 hours' : `${daysWindow} days`;
   const date = new Date().toISOString().slice(0, 10);
-  const head = `# Brief — ${date}`;
+  const head = `# Brief (${date})`;
   const sentences: string[] = [];
 
   if (created === 0 && promoted === 0 && archived === 0) {
@@ -171,7 +171,7 @@ function narrate(
 
   if (reinforcement === 0) {
     sentences.push(
-      `The reinforcement signal is still quiet — no captured pages have surfaced in conversation yet, so weights have nothing to lean on.`,
+      `The reinforcement signal is still quiet. No captured pages have surfaced in conversation yet, so weights have nothing to lean on.`,
     );
   } else {
     sentences.push(
