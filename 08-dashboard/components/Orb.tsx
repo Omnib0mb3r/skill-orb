@@ -113,10 +113,9 @@ function isRecentlyPromoted(node: GraphNode): boolean {
 }
 
 function nodeRadius(weight: number): number {
-  // Tuned against linkWidth (1.2 + w*3) so the cluster reads as a
-  // network, not a field of disks connected by hairlines. Smaller base
-  // so labels have somewhere to land without overlapping the dot.
-  return 3 + Math.max(0, Math.min(1, weight)) * 7;
+  // Tuned to balance against edge widths so clusters read as graphs,
+  // not blobs. Smaller base so adjacent nodes don't merge halos.
+  return 2.5 + Math.max(0, Math.min(1, weight)) * 5;
 }
 
 interface OrbProps {
@@ -456,24 +455,20 @@ export function Orb({ compact = false }: OrbProps = {}) {
       const phase = strHash(raw.id);
       const r = nodeRadius(raw.weight);
 
-      // Soft outer glow that breathes. Canonical pages glow strongest,
-      // pending half as much, archived stays flat. Render glow with
-      // explicit rgba() so the canvas API renders it on every browser
-      // instead of relying on inconsistent oklch() alpha-channel support
-      // in Canvas2D.
+      // Soft outer glow that breathes. Tight halo so adjacent nodes
+      // don't merge into a blob; canonical pages glow strongest,
+      // pending half as much, archived stays flat.
       const glowMul =
-        raw.status === "canonical" ? 1.0 : raw.status === "pending" ? 0.65 : 0;
+        raw.status === "canonical" ? 1.0 : raw.status === "pending" ? 0.55 : 0;
       if (glowMul > 0) {
-        const glowR = r * 3.2 * breathe(phase, 0.9, 1.2);
-        const grad = ctx.createRadialGradient(x, y, r * 0.5, x, y, glowR);
-        // Match status colors (oklch() in CSS, RGB approximation here so
-        // gradients render reliably). Accent ~ violet, AI ~ indigo.
+        const glowR = r * 1.7 * breathe(phase, 0.92, 1.08);
+        const grad = ctx.createRadialGradient(x, y, r * 0.85, x, y, glowR);
         const rgb =
           raw.status === "canonical"
             ? "168, 116, 240"   // accent (violet)
             : "150, 150, 230";  // ai (indigo)
-        grad.addColorStop(0, `rgba(${rgb}, ${(0.42 * glowMul).toFixed(3)})`);
-        grad.addColorStop(0.55, `rgba(${rgb}, ${(0.18 * glowMul).toFixed(3)})`);
+        grad.addColorStop(0, `rgba(${rgb}, ${(0.22 * glowMul).toFixed(3)})`);
+        grad.addColorStop(0.6, `rgba(${rgb}, ${(0.08 * glowMul).toFixed(3)})`);
         grad.addColorStop(1, `rgba(${rgb}, 0)`);
         ctx.fillStyle = grad;
         ctx.beginPath();
@@ -649,10 +644,11 @@ export function Orb({ compact = false }: OrbProps = {}) {
           linkWidth={
             ((l: object) => {
               const w = (l as ForceLink).weight ?? 0.5;
-              // Thicker overall so the network reads through the
-              // breathing-glow halos around nodes. Cold edges 1.2px,
-              // hot edges 4.2px.
-              return 1.2 + Math.max(0, Math.min(1, w)) * 3;
+              // Cold edges 0.8px hairlines, hot edges 2.2px. The
+              // additive bloom underlay (linkCanvasObject) provides
+              // the warmth on top connections; main line stays thin
+              // so the graph reads as a network.
+              return 0.8 + Math.max(0, Math.min(1, w)) * 1.4;
             }) as never
           }
           /* Curved edges (cubic bezier sag) instead of straight lines.
@@ -675,10 +671,12 @@ export function Orb({ compact = false }: OrbProps = {}) {
               return sign * mag;
             }) as never
           }
-          /* Soft additive glow under each edge so hot edges visibly
-           * bloom into the background. Two passes per edge: a wide,
-           * blurred halo (this prop) plus the sharp main line that
-           * linkColor + linkWidth render on top. */
+          /* Subtle additive glow ONLY on the hottest edges. Earlier pass
+           * fired on weight >= 0.4 with 4x line width; that turned half
+           * the graph into chunky orange tubes that buried the real
+           * structure. New: weight >= 0.7, 2x line width, lower alpha.
+           * Reads as a delicate halo on the top connections, not a
+           * highlighter swipe across the whole network. */
           linkCanvasObjectMode={(() => "before") as never}
           linkCanvasObject={
             ((raw: object, ctx: CanvasRenderingContext2D) => {
@@ -691,20 +689,20 @@ export function Orb({ compact = false }: OrbProps = {}) {
                 typeof link.source !== "object" ||
                 typeof link.target !== "object"
               ) return;
+              const w = link.weight ?? 0.5;
+              if (w < 0.7) return;
               const sx = link.source.x ?? 0;
               const sy = link.source.y ?? 0;
               const tx = link.target.x ?? 0;
               const ty = link.target.y ?? 0;
-              const w = link.weight ?? 0.5;
-              if (w < 0.4) return; // only bloom on warmer edges
               const base = edgeHeatColor(w);
               const m = base.match(/^rgba\((\d+), (\d+), (\d+), ([0-9.]+)\)$/);
               if (!m) return;
-              const haloAlpha = Math.min(0.35, w * 0.4);
+              const haloAlpha = Math.min(0.18, (w - 0.7) * 0.5);
               ctx.save();
               ctx.globalCompositeOperation = "lighter";
               ctx.strokeStyle = `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${haloAlpha.toFixed(3)})`;
-              ctx.lineWidth = (1.2 + w * 3) * 4;
+              ctx.lineWidth = (1.2 + w * 3) * 2;
               ctx.lineCap = "round";
               ctx.beginPath();
               if (link.__controlPoints && link.__controlPoints.length >= 2) {
