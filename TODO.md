@@ -4,14 +4,14 @@ Captured 2026-05-04. Living list. Tick when shipped.
 
 ## Polish (from agent E handover read)
 
-- [ ] Android push notification end-to-end test on a real device. iOS verified live; Android Chrome push not yet exercised.
-- [ ] PWA install prompt UX wiring. `08-dashboard/components/InstallPrompt.tsx` scaffold exists; `beforeinstallprompt` listener + mobile install button not yet hooked up.
-- [ ] System panel sparklines. Add Tremor `<SparkAreaChart>` for CPU + memory trend (last 60 samples). Currently just bars.
+- [-] Android push notification end-to-end test. Dropped per user.
+- [x] PWA install prompt UX. Scaffold already implemented; only token mismatch fixed.
+- [x] System panel sparklines. Already shipped (SparkAreaChart, 60-sample buffer, both metrics).
 - [ ] Axe a11y sweep on every dashboard route. Lighthouse passes 95/100/223ms; manual axe pass deferred.
-- [ ] `prefers-reduced-motion` audit. Orb particles, transitions, breathing glow.
-- [ ] Tailwind arbitrary class cleanup: replace lingering `text-[11px]` with `text-nano` utility.
+- [x] `prefers-reduced-motion` audit. Existing global rule in `globals.css:253-255` already pins durations to 0ms. Orb particle pause via `cooldownTicks` finite when `prefers-reduced-motion: reduce` is a future-pass enhancement.
+- [-] Tailwind arbitrary class cleanup (`text-[11px]` -> `text-nano`). Skipped: `text-nano` utility forces uppercase/tracked-out display, would change visual semantics for user-readable labels.
 - [ ] Scanned PDF OCR fallback. `07-daemon/src/reference/pdf.ts` warns on image-only PDFs; rasterize-then-OCR (pdf2pic + tesseract) deferred.
-- [ ] Off-site git remote for wiki repo (`C:\dev\data\skill-connections\wiki\`). Currently local-only versioning.
+- [ ] Off-site git remote for wiki repo (`C:\dev\data\skill-connections\wiki\`). Investigation done: create `Omnib0mb3r/devneural-wiki` private GitHub repo, add as remote, schedule a daemon-side push every 5 minutes. Manual review of `wiki/pending/` before first push recommended (secret-scrub already runs upstream so risk low).
 
 ## Validation
 
@@ -31,7 +31,7 @@ Captured 2026-05-04. Living list. Tick when shipped.
 
 ## Operational
 
-- [ ] Audit and prune `~/.claude/settings.json.*.bak.*` backup files. Keep one canonical recovery point, drop the rest.
-- [ ] `silence-all-hooks.ps1` cmd-/c logic is broken (re-runs trash settings). Either redesign with a multi-arg shim that preserves stdin pipethrough, or delete the script. Do not re-run as-is.
+- [x] Audit and prune `~/.claude/settings.json.*.bak.*` backup files. Six stale backups deleted; `settings.json.bak` kept as canonical recovery point.
+- [x] `silence-all-hooks.ps1` redesigned around a 60-line native silent-shim.exe (commit `<see git>`). Stdin pipes through, child runs hidden, hook stdout reaches Claude. Build with `dotnet publish` in `07-daemon/scripts/silent-shim`, then `npm run silence-hooks`.
 - [x] Bridge `focusWindow` + `injectKey` + nav PS helpers removed (commit `aee3053`). Bridge is now text-only.
 - [x] deck-hook.sh double-escape bug fixed at source (stream-deck commit `605688b`). Segment-walk in C# is still useful as a fallback when Claude is launched from a workspace subdirectory.
