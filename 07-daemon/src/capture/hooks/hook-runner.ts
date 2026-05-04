@@ -35,6 +35,33 @@ const CURATE_TIMEOUT_MS = Number(
 );
 const DAEMON_PORT = Number(process.env.DEVNEURAL_PORT ?? 3747);
 
+/* Push the live phase to the daemon so the dashboard's stream-deck
+ * tile colour reflects what Claude is doing right now. Without this
+ * ping every active session sat at "unknown" and the rail showed
+ * green/idle for sessions that were actively running tools or
+ * thinking. Bounded timeout; daemon-down silently skips. */
+async function pingPhase(
+  sessionId: string,
+  phase: 'thinking' | 'tool' | 'idle',
+): Promise<void> {
+  if (!sessionId || sessionId === 'unknown') return;
+  const url = `http://127.0.0.1:${DAEMON_PORT}/sessions/${encodeURIComponent(sessionId)}/phase`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 800);
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phase }),
+      signal: ctrl.signal,
+    });
+  } catch {
+    /* daemon down or timeout; phase ping silently skipped */
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function curateAndPrint(
   prompt: string,
   sessionId: string,
@@ -235,6 +262,18 @@ async function main(): Promise<void> {
   } catch {
     /* ignore */
   }
+
+  // Push current phase so the dashboard tile reflects what Claude is
+  // doing right now. Mapping: pre_tool = tool running, post_tool = idle
+  // between tool calls, user_prompt = thinking on the new prompt,
+  // session_stop = idle.
+  const phaseMap: Record<HookPhase, 'thinking' | 'tool' | 'idle'> = {
+    pre_tool: 'tool',
+    post_tool: 'idle',
+    user_prompt: 'thinking',
+    session_stop: 'idle',
+  };
+  void pingPhase(obs.session, phaseMap[phase]);
 
   // P4: on UserPromptSubmit, fetch curated injection from daemon and print
   // to stdout so Claude Code includes it as additional context. Bounded
