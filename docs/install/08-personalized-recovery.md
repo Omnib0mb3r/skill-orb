@@ -178,6 +178,70 @@ The `c:/dev/data/skill-connections/` data root is the irreplaceable thing. Back 
 
 ---
 
+## Backup automation
+
+The data root at `c:/dev/data/skill-connections/` is the only irreversible thing on `OTLCDEV`. Phase 5 ships a robust backup pipeline. Run it once to install the scheduled task; it then runs daily without intervention.
+
+### One-time install
+
+```powershell
+cd C:\dev\Projects\DevNeural\07-daemon
+npm run install-backup-task                 # daily at 03:00, keep 14 snapshots
+```
+
+Override the schedule or retention if you want:
+
+```powershell
+npm run install-backup-task -- -Time 04:30 -Keep 30 -BackupRoot D:\backups
+```
+
+### What gets captured
+
+Every snapshot at `<backup-root>/<timestamp>/`:
+
+| Folder | What | Method |
+|---|---|---|
+| `sqlite/` | Every `.sqlite` and `.db` under the data root | `sqlite3 .backup` (atomic point-in-time clone) if sqlite3 is on PATH; falls back to a file copy |
+| `files/` | Wiki, vector-store, reference corpus, session-state, dashboard state (auth.json, vapid.json, push-subscriptions.jsonl, reminders.jsonl, notifications.jsonl) | `robocopy /MIR` excluding sqlite (handled separately), models, daemon log |
+| `MANIFEST.json` | timestamps, file count, byte total, sqlite count, daemon git commit | written last |
+
+Models (embedder, whisper) are excluded by default since they re-download. Pass `-IncludeModels` to `npm run backup` if you want them inside snapshots (adds ~500 MB per snapshot).
+
+### What gets pruned
+
+The script keeps the last `-Keep` snapshots (default 14) and deletes the rest after a successful run. Snapshots are written as `<timestamp>.partial` first, then atomically renamed to `<timestamp>` once everything succeeds, so a crashed run never leaves a partial snapshot in the rotation.
+
+### Manual operations
+
+```powershell
+npm run backup                                  # one-shot snapshot (also called by the scheduled task)
+npm run verify-backup                           # PRAGMA integrity_check on every captured sqlite + JSON parse on every state file
+npm run restore                                 # picks the most recent; prompts for confirmation; saves a pre-restore safety copy
+npm run restore -- -Snapshot 2026-05-04T03-00-00 # restore a specific timestamp
+```
+
+`restore` refuses to run while the daemon is up (in-process state would diverge from on-disk). Stop the daemon first or pass `-Force` if you really mean it.
+
+### Daemon hand-shake
+
+`backup.ps1` POSTs `/flush` before reading files. The daemon flushes the in-memory vector buffer to disk and runs `PRAGMA wal_checkpoint(TRUNCATE)` so the snapshot captures the consistent state. Best-effort: if the daemon is down or the endpoint isn't there, the script proceeds cold.
+
+### Verify the schedule landed
+
+```powershell
+Get-ScheduledTask -TaskName DevNeural-Backup
+Get-ScheduledTaskInfo -TaskName DevNeural-Backup
+Start-ScheduledTask -TaskName DevNeural-Backup    # trigger it now to confirm
+```
+
+In the Task Scheduler UI: `taskschd.msc` → Task Scheduler Library → DevNeural-Backup.
+
+### What this does NOT cover
+
+- **Off-machine backups.** The default backup root is `C:\dev\backups\skill-connections` on the same machine. Same disk, same fire. Set `-BackupRoot` to a network share, an external disk, or a cloud-synced folder if you want true durability. A common setup is OneDrive: `-BackupRoot "$env:USERPROFILE\OneDrive\devneural-backups"`.
+- **The repo source.** Everything under `C:/dev/Projects/DevNeural/` is in git already. Push regularly and you're covered for that. Backup pipeline does not include the repo because it would add hundreds of MB of node_modules and build artifacts that re-create.
+- **`~/.claude/`.** Claude-Setup is the canonical recovery source for that. The hooks audit in `05-coexistence-with-claude-setup.md` plus a regular push of redacted settings.json into Claude-Setup keeps that in sync.
+
 ## When to re-run this audit
 
 Phase 5 is a snapshot, not a one-time event. Re-run when any of these happen:

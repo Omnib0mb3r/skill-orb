@@ -10,8 +10,13 @@
     "start": "node dist/daemon.js",
     "hook": "node dist/capture/hooks/hook-runner.js",
     "install-hooks": "node dist/capture/hooks/install-hooks.js",
+    "dedupe-hooks": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dedupe-hooks.ps1",
     "setup": "npm run build && node dist/cli/setup.js",
     "status": "node dist/cli/status.js",
+    "backup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/backup.ps1",
+    "restore": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restore.ps1",
+    "verify-backup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-backup.ps1",
+    "install-backup-task": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-backup-task.ps1",
     "test": "vitest run",
     "build:check": "tsc --noEmit"
   },

@@ -260,7 +260,28 @@ async function main(): Promise<void> {
   });
 
   // /graph is now registered by registerDashboardRoutes (see dashboard/graph.ts).
-  // Kept this comment as a breadcrumb so future edits know where to find it.
+
+  /* /flush is the backup script's hand-shake so a snapshot is internally
+   * consistent. It flushes the in-memory vector buffer to disk and asks
+   * SQLite to checkpoint its WAL. Best-effort; backup.ps1 tolerates a
+   * missing or failing daemon. */
+  app.post('/flush', async () => {
+    await store.flush();
+    try {
+      const sqlite = (
+        store as unknown as {
+          rawChunks: { db?: { exec?: (sql: string) => unknown } };
+        }
+      ).rawChunks?.db;
+      if (sqlite?.exec) {
+        sqlite.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+      }
+    } catch {
+      /* best-effort; the file copy will still be readable even if WAL is
+       * not truncated since SQLite's WAL format is forward-compatible */
+    }
+    return { ok: true, flushed_at: new Date().toISOString() };
+  });
 
   app.get('/page/:id', async (req) => {
     const id = (req.params as { id: string }).id;

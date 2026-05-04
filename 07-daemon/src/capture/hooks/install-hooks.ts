@@ -132,6 +132,34 @@ function addHook(
   hooks[event] = cleaned;
 }
 
+/**
+ * Walk every hook event in the settings and strip any v1 DevNeural entries.
+ * The four HOOK_PHASES events get explicit re-installation by addHook; this
+ * pass cleans up v1 entries that landed under events we no longer claim
+ * (e.g. v1 SessionStart entries that v2 doesn't replace because v2 absorbs
+ * startup-context loading into the daemon's polling).
+ */
+function purgeOrphanedV1Entries(hooks: Record<string, HookGroup[]>): number {
+  let purged = 0;
+  for (const [event, groups] of Object.entries(hooks)) {
+    if (!Array.isArray(groups)) continue;
+    const cleaned: HookGroup[] = [];
+    for (const group of groups) {
+      const before = (group.hooks ?? []).length;
+      const remaining = (group.hooks ?? []).filter((h) => !isV1Entry(h));
+      purged += before - remaining.length;
+      if (remaining.length > 0) {
+        cleaned.push({ ...group, hooks: remaining });
+      } else if (group.matcher) {
+        // preserve empty matcher-bearing group so other tools' future entries land cleanly
+        cleaned.push({ ...group, hooks: [] });
+      }
+    }
+    hooks[event] = cleaned;
+  }
+  return purged;
+}
+
 function main(): void {
   if (!fs.existsSync(HOOK_RUNNER_DIST)) {
     console.error(
@@ -142,6 +170,11 @@ function main(): void {
 
   const settings = loadSettings();
   const hooks = ensureHooksObject(settings);
+
+  const purged = purgeOrphanedV1Entries(hooks);
+  if (purged > 0) {
+    console.log(`[install-hooks] purged ${purged} orphaned v1 entr${purged === 1 ? 'y' : 'ies'}`);
+  }
 
   for (const { event, phase, matcher } of HOOK_PHASES) {
     const command = buildCommand(phase);
