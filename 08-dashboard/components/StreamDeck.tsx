@@ -23,20 +23,55 @@ import { StatusDot } from "./StatusDot";
 
 const STALE_HIDE_MS = 7 * 24 * 60 * 60 * 1000;
 
-type TileState = "active" | "idle" | "permission" | "stale";
+/* TileState collapses (active boolean × phase enum) into one display
+ * state. Phase comes from the daemon's hook-driven session-phase tracker,
+ * so the LED matches what's actually happening on the host:
+ *
+ *   thinking   = Claude generating response
+ *   tool       = tool running (Pre fired, Post hasn't)
+ *   permission = waiting on user OK
+ *   idle       = active but quiet
+ *   inactive   = no recent file activity (>10 min)
+ *   stale      = >7d no activity (filtered out by default) */
+type TileState =
+  | "thinking"
+  | "tool"
+  | "permission"
+  | "idle"
+  | "inactive"
+  | "stale";
 
 function tileState(s: SessionSummary): TileState {
-  if (s.active) return "active";
-  if (Date.now() - s.last_modified_ms > STALE_HIDE_MS) return "stale";
+  if (!s.active) {
+    if (Date.now() - s.last_modified_ms > STALE_HIDE_MS) return "stale";
+    return "inactive";
+  }
+  if (s.phase === "permission") return "permission";
+  if (s.phase === "thinking") return "thinking";
+  if (s.phase === "tool") return "tool";
   return "idle";
 }
 
-function ledStatus(state: TileState): "live" | "ok" | "fail" | "idle" {
+function ledStatus(
+  state: TileState,
+): "live" | "ok" | "fail" | "ai" | "promoted" | "idle" {
   switch (state) {
-    case "active":     return "live";
-    case "permission": return "fail";
-    case "idle":       return "idle";
-    case "stale":      return "idle";
+    case "thinking":   return "ai";        // indigo, pulse
+    case "tool":       return "ok";        // green, pulse
+    case "permission": return "fail";      // red, blink
+    case "idle":       return "live";      // cyan steady
+    case "inactive":   return "idle";      // gray
+    case "stale":      return "idle";      // gray
+  }
+}
+
+function ringClass(state: TileState): string {
+  switch (state) {
+    case "thinking":   return "ring-ai";
+    case "tool":       return "ring-ok";
+    case "permission": return "ring-warn";
+    case "idle":       return "ring-live";
+    default:           return "";
   }
 }
 
@@ -119,12 +154,19 @@ function DeckTile({ session: s }: { session: SessionSummary }) {
   const state = tileState(s);
   const led = ledStatus(state);
   const project = projectFromSlug(s.project_slug);
-  const ring =
-    state === "active"
-      ? "ring-live"
-      : state === "permission"
-        ? "ring-warn"
-        : "";
+  const ring = ringClass(state);
+  const pulseOnLed =
+    state === "thinking" ||
+    state === "tool" ||
+    state === "permission" ||
+    state === "idle";
+  const stateLabel =
+    state === "thinking" ? "thinking" :
+    state === "tool" ? "running tool" :
+    state === "permission" ? "needs input" :
+    state === "idle" ? "idle" :
+    state === "inactive" ? "inactive" :
+    "stale";
   const focusM = useMutation({
     mutationFn: () => focusSession(s.session_id),
   });
@@ -142,10 +184,11 @@ function DeckTile({ session: s }: { session: SessionSummary }) {
         <div className="font-display text-sm font-emphasized truncate text-txt1">
           {project}
         </div>
-        <StatusDot status={led} pulse={state === "active" || state === "permission"} />
+        <StatusDot status={led} pulse={pulseOnLed} />
       </div>
-      <div className="text-xs text-txt3 truncate font-mono">
-        {s.session_id.slice(0, 8)}
+      <div className="flex items-center justify-between text-xs text-txt3 font-mono">
+        <span className="truncate">{s.session_id.slice(0, 8)}</span>
+        <span className="text-txt2 text-[11px]">{stateLabel}</span>
       </div>
       <div className="mt-1.5 flex items-center justify-between text-[11px] font-mono text-txt3">
         <span>

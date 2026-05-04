@@ -139,6 +139,12 @@ export const services = () =>
 
 // ── sessions ────────────────────────────────────────────────────
 // Shape mirrors 07-daemon/src/dashboard/sessions.ts SessionListItem exactly.
+export type SessionPhase =
+  | "thinking"
+  | "tool"
+  | "permission"
+  | "idle"
+  | "unknown";
 export interface SessionSummary {
   session_id: string;
   project_slug: string;
@@ -148,6 +154,7 @@ export interface SessionSummary {
   active: boolean;
   has_summary: boolean;
   has_task: boolean;
+  phase: SessionPhase;
 }
 export const sessions = () =>
   request<{ ok: boolean; sessions: SessionSummary[] }>("/sessions");

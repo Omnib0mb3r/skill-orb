@@ -11,6 +11,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { DATA_ROOT, ensureDir } from '../paths.js';
 import { readSummary, readCurrentTask } from '../curation/index.js';
+import { getPhase } from './session-phase.js';
 
 const SESSIONS_ROOT = path
   .join(os.homedir(), '.claude', 'projects')
@@ -27,6 +28,10 @@ export interface SessionListItem {
   active: boolean;
   has_summary: boolean;
   has_task: boolean;
+  /** Live state from hook events; used by Stream Deck tile coloring.
+   * 'unknown' means no hook has fired yet for this session in this
+   * daemon's lifetime (e.g. stale jsonl from before the daemon started). */
+  phase: 'thinking' | 'tool' | 'permission' | 'idle' | 'unknown';
 }
 
 export function listSessions(): SessionListItem[] {
@@ -62,6 +67,7 @@ export function listSessions(): SessionListItem[] {
         active: now - stat.mtimeMs < ACTIVE_THRESHOLD_MS,
         has_summary: Boolean(readSummary(sessionId)),
         has_task: Boolean(readCurrentTask(sessionId)),
+        phase: getPhase(sessionId),
       });
     }
   }

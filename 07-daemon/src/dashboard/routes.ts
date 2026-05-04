@@ -19,6 +19,7 @@ import {
   queueSessionPrompt,
   queueSessionFocus,
 } from './sessions.js';
+import { setPhase, type SessionPhase } from './session-phase.js';
 import { getDailyBrief } from './daily-brief.js';
 import { searchAll } from './search-all.js';
 import {
@@ -170,6 +171,20 @@ export async function registerDashboardRoutes(
   app.post('/sessions/:id/focus', async (req) => {
     const id = (req.params as { id: string }).id;
     return queueSessionFocus(id);
+  });
+
+  /* Phase ping. Hook-runner POSTs here on every Pre/Post/Prompt/Stop so
+   * the dashboard's Stream Deck rail can paint the live tile color. */
+  app.post('/sessions/:id/phase', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const body = req.body as { phase?: string };
+    const valid: SessionPhase[] = ['thinking', 'tool', 'permission', 'idle', 'unknown'];
+    const phase = (valid as string[]).includes(body.phase ?? '')
+      ? (body.phase as SessionPhase)
+      : 'idle';
+    setPhase(id, phase);
+    reply.code(200);
+    return { ok: true };
   });
 
   // ── Search across all collections ────────────────────────────────

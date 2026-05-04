@@ -94,13 +94,36 @@ export function startFsWatcher(options: FsWatcherOptions = {}): FsWatcher {
     ignored: (file: string) => shouldIgnore(file),
     awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 200 },
     depth: 8,
+    /* ignorePermissionErrors lets chokidar skip dirs the daemon process
+     * can't read (system folders, OneDrive locked dirs, etc) instead of
+     * emitting EPERM events. Was flooding daemon.log with one error per
+     * unreadable subdirectory at startup. */
+    ignorePermissionErrors: true,
   });
 
   watcher.on('add', (f: string) => recordChange('add', f));
   watcher.on('change', (f: string) => recordChange('change', f));
   watcher.on('unlink', (f: string) => recordChange('unlink', f));
+
+  /* Throttle error logging. With ignorePermissionErrors:true the EPERM
+   * flood goes away, but other transient errors (file truncated mid-watch,
+   * antivirus locks) can still arrive in bursts. Coalesce identical
+   * messages within a 30s window into a single log line with a count. */
+  const errCounts = new Map<string, number>();
+  let errFlushTimer: NodeJS.Timeout | null = null;
+  const flushErrors = () => {
+    for (const [msg, count] of errCounts.entries()) {
+      log(`[fs-watcher] error: ${msg}${count > 1 ? ` (x${count})` : ''}`);
+    }
+    errCounts.clear();
+    errFlushTimer = null;
+  };
   watcher.on('error', (err: unknown) => {
-    log(`[fs-watcher] error: ${(err as Error)?.message ?? err}`);
+    const msg = (err as Error)?.message ?? String(err);
+    errCounts.set(msg, (errCounts.get(msg) ?? 0) + 1);
+    if (!errFlushTimer) {
+      errFlushTimer = setTimeout(flushErrors, 30_000);
+    }
   });
 
   log(`[fs-watcher] watching ${root}`);
