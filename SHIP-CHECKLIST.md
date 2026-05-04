@@ -16,6 +16,7 @@
 - [x] No `TODO` markers blocking ship (one in `CommandPalette.tsx` for "open specific search hit"; non-blocking, navigates to /wiki for now)
 - [x] No `console.log` debug noise in client code
 - [x] No hex literals or `rgba()` in CSS — every value resolves through `tokens.css` (audit lives in `08-dashboard/VERIFICATION.md`)
+- [x] Every `child_process.spawn` / `execSync` / `spawnSync` in 07-daemon passes `windowsHide: true`. Without this, dashboard polling (system-metrics every 4s + services every 8s) flashes a powershell console window onto the desktop ~15 times per minute. Verified silent 2026-05-04.
 
 ## B. Auth surface
 
