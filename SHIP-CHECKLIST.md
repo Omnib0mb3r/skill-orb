@@ -98,7 +98,7 @@
 - [x] `public/manifest.json` references icon-192 and icon-512 with `purpose: "any maskable"`
 - [x] Service worker (`public/sw.js`) registers in production; install/activate/push/notificationclick handlers present
 - [x] iOS standalone detection in `InstallPrompt` shows the Share → Add to Home Screen hint instead of the prompt button
-- [ ] Real PNG icons created at `08-dashboard/public/icons/icon-192.png` and `icon-512.png` (currently referenced but not present; iOS will fall back to a screenshot of the page)
+- [x] Real PNG icons created at `08-dashboard/public/icons/icon-192.png` and `icon-512.png`. Generated via `08-dashboard/scripts/generate-icons.ps1` (System.Drawing brand-mark: dark panel + violet halo + DN wordmark, masked-safe inner content for `purpose: "any maskable"`).
 
 ## K. Documentation
 
@@ -118,9 +118,9 @@ These are intentionally not blockers, but they are *decisions* that warrant anot
 - **Backup retention.** 14 snapshots at ~25MB each is ~350MB ceiling. If your data root grows past 1GB (likely once the wiki and reference corpus mature), revisit `-Keep` to balance retention vs storage. Daily granularity may also be excessive once the rate-of-change drops.
 - **Off-site backup beyond OneDrive.** OneDrive going down or being deleted out from under you would lose every snapshot. Consider a second target on an external drive run weekly via a separate scheduled task.
 - **PIN strength.** Currently 4-8 digits. The lockout (5 wrong in 60s -> 5 minutes locked) provides enough deterrent for tailnet-only access. If you ever expose this beyond the tailnet, this is a different threat model and the PIN flow needs upgrading to TOTP or WebAuthn.
-- **Daemon autostart.** Currently lazy-spawned via Claude Code hooks. If you reboot OTLCDEV and don't open Claude Code, the dashboard is offline. Consider a Task Scheduler entry (similar to the backup task) that runs `node dist/daemon.js` at logon.
+- **Daemon autostart.** Resolved: install with `npm run install-daemon-autostart` (in `07-daemon`). Registers a logon-triggered Task Scheduler entry that calls `start-daemon.ps1`, which spawns `node dist/daemon.js` detached. 30s post-logon delay so login session warmup wins, restart-on-fail policy 3 retries × 5min. Disable via `npm run uninstall-daemon-autostart`. With this in place a reboot of OTLCDEV brings the dashboard back online without any app needing to open.
 - **Wiki repo remote.** `c:/dev/data/skill-connections/wiki/` is git-versioned locally. If you push it to a private repo, you get full version history off-site for free. Currently unconfigured; nice-to-have rather than blocking.
-- **PNG icons for the PWA.** Manifest references icon-192.png and icon-512.png that don't exist yet. iOS will use a screenshot of the page as the home-screen icon until real ones are designed. Not a functional blocker; visual blocker only.
+- ~~**PNG icons for the PWA.**~~ Resolved: brand-mark icons generated, see J above.
 
 ## M. What this checklist intentionally skips
 
