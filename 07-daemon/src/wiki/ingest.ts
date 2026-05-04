@@ -40,6 +40,23 @@ import { appendLog, commitWiki } from './scaffolding.js';
 import * as fs2 from 'node:fs';
 import { wikiSchemaFile } from '../paths.js';
 
+/* qwen3:8b routinely emits cross-ref entries as `./name.md`, `name.md`,
+ * `name with spaces`, or with stray `#frag` / `?q` suffixes. Templating
+ * `./${id}.md` against those produced on-disk garbage like
+ * `././name.md.md` that the orb couldn't resolve. Slugify defensively
+ * so future writes are clean even when the LLM drifts. */
+function sanitizeCrossRefId(raw: string): string {
+  let s = (raw ?? '').trim();
+  if (!s) return '';
+  s = s.replace(/[#?].*$/, '');
+  s = s.replace(/^(?:\.\/+)+/, '');
+  s = s.split('/').pop() ?? s;
+  while (s.toLowerCase().endsWith('.md')) {
+    s = s.slice(0, -3);
+  }
+  return s.toLowerCase().trim().replace(/\s+/g, '-');
+}
+
 export interface IngestInput {
   source: string; // identifier (session id, "corpus:<kind>", "gap:<id>")
   projectId: string;
@@ -427,7 +444,9 @@ function applyPageUpdate(
   if (update.log_add) sections.log.push(update.log_add);
 
   if (update.cross_refs_add) {
-    for (const id of update.cross_refs_add) {
+    for (const rawId of update.cross_refs_add) {
+      const id = sanitizeCrossRefId(rawId);
+      if (!id) continue;
       if (sections.crossRefs.includes(id)) continue;
       sections.crossRefs.push(id);
       sections.crossRefsRaw.push({
@@ -498,10 +517,13 @@ async function writeNewPendingPage(
     human_edited: false,
   };
 
+  const cleanRefs = (newPage.cross_refs ?? [])
+    .map(sanitizeCrossRefId)
+    .filter((id): id is string => Boolean(id));
   const sections: PageSections = {
     pattern: newPage.pattern_body,
-    crossRefs: newPage.cross_refs ?? [],
-    crossRefsRaw: (newPage.cross_refs ?? []).map((id) => ({
+    crossRefs: cleanRefs,
+    crossRefsRaw: cleanRefs.map((id) => ({
       label: id.replace(/-/g, ' '),
       href: `./${id}.md`,
     })),

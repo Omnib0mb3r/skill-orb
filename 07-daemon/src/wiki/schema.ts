@@ -387,8 +387,20 @@ function parseSections(body: string): PageSections {
   }
 
   const pattern = sections['pattern'] ?? '';
-  const crossRefsRaw = parseCrossRefs(sections['cross-references'] ?? '');
-  const crossRefs = crossRefsRaw.map((r) => extractIdFromHref(r.href));
+  const rawRefs = parseCrossRefs(sections['cross-references'] ?? '');
+  // Rebuild crossRefsRaw from the cleaned ids so a parse + write
+  // roundtrip normalises any historical garbage (e.g. ./name.md.md from
+  // qwen3:8b drift) into the canonical ./id.md form. Dedup as well.
+  const seen = new Set<string>();
+  const crossRefs: string[] = [];
+  const crossRefsRaw: { label: string; href: string }[] = [];
+  for (const r of rawRefs) {
+    const id = extractIdFromHref(r.href);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    crossRefs.push(id);
+    crossRefsRaw.push({ label: id.replace(/-/g, ' '), href: `./${id}.md` });
+  }
   const evidence = parseList(sections['evidence'] ?? '');
   const openQuestions = parseList(sections['open questions'] ?? '');
   const log = parseList(sections['log'] ?? '');
@@ -408,8 +420,23 @@ function parseCrossRefs(text: string): { label: string; href: string }[] {
 }
 
 function extractIdFromHref(href: string): string {
-  const base = href.split('/').pop() ?? href;
-  return base.replace(/\.md$/, '');
+  // The local LLM (qwen3:8b) routinely emits malformed cross-ref hrefs:
+  //   ./page-name.md.md            (double extension)
+  //   ./././page-name.md           (extra ./ prefixes)
+  //   page name.md                 (spaces instead of hyphens, sometimes)
+  //   #anchor / ?query             (fragments / queries on local refs)
+  // Be lenient: strip any leading ./ chunks, drop fragment/query, take the
+  // basename, strip ALL trailing .md, and slugify whitespace. The page id
+  // on disk is always lowercase-kebab so we lower + replace spaces with -.
+  let s = href.trim();
+  s = s.replace(/[#?].*$/, '');
+  s = s.replace(/^(?:\.\/+)+/, '');
+  s = s.split('/').pop() ?? s;
+  while (s.toLowerCase().endsWith('.md')) {
+    s = s.slice(0, -3);
+  }
+  s = s.toLowerCase().trim().replace(/\s+/g, '-');
+  return s;
 }
 
 function parseList(text: string): string[] {
