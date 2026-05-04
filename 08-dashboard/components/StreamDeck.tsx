@@ -1,30 +1,25 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { sessions as sessionsClient, type SessionSummary } from "@/lib/daemon-client";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { focusSession, sessions as sessionsClient, type SessionSummary } from "@/lib/daemon-client";
 import { projectFromSlug, relTime } from "@/lib/session-helpers";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
 
-/* Stream Deck rail.
+/* Stream Deck rail = remote analog of the physical Elgato deck.
  *
- * Visuals: long card-per-session with a status LED dot. Same look as the
- * pre-redesign rail; only the data/code changed.
+ * Tap a tile = POST /sessions/:id/focus, which writes to the session-bridge
+ * queue. The 09-bridge VS Code extension on OTLCDEV picks it up and brings
+ * the matching VSCode window forward, exactly like the hardware deck does.
  *
- * What's new under the hood vs the v1 card:
- *  - state derives from a single tileState() helper (active / idle /
- *    permission / stale) so future logic (LED blink on permission, color
- *    change on tool-use waiting, etc.) lives in one place
- *  - "stale" filter still hides sessions older than 7d behind a toggle so
- *    the rail doesn't fill with months of dead jsonl files
- *  - active/total counter in the header makes the rail's at-a-glance
- *    answer honest (used to imply 0 active when there were stale tiles)
+ * No navigation: the rail is a remote control surface, not a navigation
+ * affordance. Sessions tab is where you go to read transcripts and send
+ * prompts; this rail is just "make this window the active one on my PC."
  *
- * Tap a tile -> opens session detail (the dashboard analog of "focus the
- * VSCode window," since the dashboard runs over Tailscale and can't
- * focus a window on the host remotely). */
+ * Visual feedback: the tile briefly pulses brand color while the focus
+ * request is in flight so the user knows their tap was registered even
+ * when they can't see the host monitor (e.g. on phone over Tailscale). */
 
 const STALE_HIDE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -91,46 +86,17 @@ export function StreamDeck() {
         </div>
       )}
 
-      {visible.map((s) => {
-        const state = tileState(s);
-        const led = ledStatus(state);
-        const project = projectFromSlug(s.project_slug);
-        const ring =
-          state === "active"
-            ? "ring-live"
-            : state === "permission"
-              ? "ring-warn"
-              : "";
-        return (
-          <Link
-            key={s.session_id}
-            href={`/sessions/detail?id=${encodeURIComponent(s.session_id)}`}
-            className={`block text-left p-3 rounded-card bg-surface1 hairline lift ${ring}`}
-            aria-label={`Session ${project} (${state})`}
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="font-display text-sm font-emphasized truncate text-txt1">
-                {project}
-              </div>
-              <StatusDot status={led} pulse={state === "active" || state === "permission"} />
-            </div>
-            <div className="text-xs text-txt3 truncate font-mono">
-              {s.session_id.slice(0, 8)}
-            </div>
-            <div className="mt-1.5 flex items-center justify-between text-[11px] font-mono text-txt3">
-              <span>last {relTime(s.last_modified_ms)} ago</span>
-              <span className="flex items-center gap-1">
-                {s.has_task && <Icon name="ListTodo" size={11} />}
-                {s.has_summary && <Icon name="ScrollText" size={11} />}
-              </span>
-            </div>
-          </Link>
-        );
-      })}
+      {visible.map((s) => (
+        <DeckTile key={s.session_id} session={s} />
+      ))}
 
-      <button className="mt-1 lift p-3 rounded-card bg-surface1 hairline border-dashed text-txt2 hover:text-txt1 flex items-center justify-center gap-2 text-sm font-medium">
+      <a
+        href="/sessions"
+        className="mt-1 lift p-3 rounded-card bg-surface1 hairline border-dashed text-txt2 hover:text-txt1 flex items-center justify-center gap-2 text-sm font-medium"
+        aria-label="Manage sessions on the Sessions tab"
+      >
         <Icon name="Plus" size={16} /> new session
-      </button>
+      </a>
 
       {inactive.length > 0 && (
         <button
@@ -144,5 +110,56 @@ export function StreamDeck() {
         </button>
       )}
     </aside>
+  );
+}
+
+/* Single deck tile. Encapsulates the focus mutation so each tile manages
+ * its own pulse state independently of siblings. */
+function DeckTile({ session: s }: { session: SessionSummary }) {
+  const state = tileState(s);
+  const led = ledStatus(state);
+  const project = projectFromSlug(s.project_slug);
+  const ring =
+    state === "active"
+      ? "ring-live"
+      : state === "permission"
+        ? "ring-warn"
+        : "";
+  const focusM = useMutation({
+    mutationFn: () => focusSession(s.session_id),
+  });
+  return (
+    <button
+      type="button"
+      onClick={() => focusM.mutate()}
+      disabled={focusM.isPending}
+      className={`block text-left p-3 rounded-card bg-surface1 hairline lift transition-shadow ${ring} ${
+        focusM.isPending ? "ring-1 ring-brand/60" : ""
+      }`}
+      aria-label={`Focus VS Code window for ${project} (${state})`}
+    >
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="font-display text-sm font-emphasized truncate text-txt1">
+          {project}
+        </div>
+        <StatusDot status={led} pulse={state === "active" || state === "permission"} />
+      </div>
+      <div className="text-xs text-txt3 truncate font-mono">
+        {s.session_id.slice(0, 8)}
+      </div>
+      <div className="mt-1.5 flex items-center justify-between text-[11px] font-mono text-txt3">
+        <span>
+          {focusM.isPending
+            ? "focusing…"
+            : focusM.isSuccess
+              ? "focused ✓"
+              : `last ${relTime(s.last_modified_ms)} ago`}
+        </span>
+        <span className="flex items-center gap-1">
+          {s.has_task && <Icon name="ListTodo" size={11} />}
+          {s.has_summary && <Icon name="ScrollText" size={11} />}
+        </span>
+      </div>
+    </button>
   );
 }
