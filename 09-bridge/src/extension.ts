@@ -84,23 +84,29 @@ function isEnabled(): boolean {
 }
 
 function findTargetTerminal(): vscode.Terminal | undefined {
+  /* Strict matching: only return a terminal whose name actually
+   * contains the configured pattern (default "claude"). The previous
+   * fallback to "any active terminal" silently delivered the prompt
+   * into an unrelated shell when no Claude terminal was open in this
+   * window, so the user saw nothing in their real Claude session and
+   * couldn't tell why. With strict matching, we return undefined and
+   * the message is skipped (without advancing the per-window offset
+   * cursor would be ideal but that's another bridge instance's
+   * problem; per-window cursors are independent). */
   const pattern = getTerminalPattern();
   const terminals = vscode.window.terminals;
   if (terminals.length === 0) return undefined;
-  // Prefer the active terminal if it matches the pattern
   const active = vscode.window.activeTerminal;
   if (active && active.name.toLowerCase().includes(pattern)) {
     return active;
   }
-  // Otherwise, the most-recently created terminal whose name matches
   for (let i = terminals.length - 1; i >= 0; i--) {
     const t = terminals[i];
     if (t && t.name.toLowerCase().includes(pattern)) {
       return t;
     }
   }
-  // Fallback: active terminal
-  return active ?? terminals[terminals.length - 1];
+  return undefined;
 }
 
 function focusWindow(): void {
@@ -232,6 +238,23 @@ $inputs[3].type = 1; $inputs[3].u.ki.wVk = ${modifier}; $inputs[3].u.ki.dwFlags 
 `.trim();
 }
 
+/* Throttle the "no terminal" notice. Without this the user sees a
+ * popup every time the daemon writes another prompt to the bridge
+ * inbox, even though the warning content never changes. We log every
+ * skip to the output channel for diagnostics; the user-facing
+ * notice fires at most once per 60 seconds and goes to the status
+ * bar (auto-hides in 3s) instead of the modal-toast layer. */
+let lastNoTerminalNoticeMs = 0;
+function noticeNoTerminal(): void {
+  const now = Date.now();
+  if (now - lastNoTerminalNoticeMs < 60_000) return;
+  lastNoTerminalNoticeMs = now;
+  vscode.window.setStatusBarMessage(
+    'DevNeural Bridge: no Claude terminal in this window; another VS Code window will handle it.',
+    3000,
+  );
+}
+
 async function handleMessage(message: BridgeMessage): Promise<void> {
   if (message.action === 'focus') {
     focusWindow();
@@ -249,11 +272,9 @@ async function handleMessage(message: BridgeMessage): Promise<void> {
   const terminal = findTargetTerminal();
   if (!terminal) {
     channel.appendLine(
-      `[skip] no terminal in this window. Open Claude Code first.`,
+      '[skip] no terminal in this window; another bridge instance is expected to handle it',
     );
-    vscode.window.showWarningMessage(
-      'DevNeural Bridge has a queued prompt but no Claude terminal is open in this window.',
-    );
+    noticeNoTerminal();
     return;
   }
   channel.appendLine(
@@ -265,34 +286,99 @@ async function handleMessage(message: BridgeMessage): Promise<void> {
   terminal.sendText(message.text, true);
 }
 
-function shouldHandleSession(sessionId: string): boolean {
-  // Map the session-id to its cwd via the daemon's session-state metadata.
-  // If the cwd starts with this window's workspace folder, we own it.
+/* Cache: session_id -> resolved cwd (or '' if unresolvable). Keyed by
+ * the path of the source we read it from so cache invalidates when
+ * the user moves session-state. */
+const cwdCache = new Map<string, string>();
+
+function resolveSessionCwd(sessionId: string): string {
+  const cached = cwdCache.get(sessionId);
+  if (cached !== undefined) return cached;
+
   const dataRoot = getDataRoot();
   const metaFile = path.posix.join(
     dataRoot,
     'session-state',
     `${sessionId}.meta.json`,
   );
-  if (!fs.existsSync(metaFile)) {
-    return true; // No mapping; let everyone try (last-writer-wins on file truncation)
+  if (fs.existsSync(metaFile)) {
+    try {
+      const meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8')) as SessionMapping;
+      const cwd = (meta.cwd ?? meta.project_root ?? '').replace(/\\/g, '/');
+      cwdCache.set(sessionId, cwd);
+      return cwd;
+    } catch {
+      /* fall through to jsonl scan */
+    }
   }
-  try {
-    const meta = JSON.parse(fs.readFileSync(metaFile, 'utf-8')) as SessionMapping;
-    const folders = vscode.workspace.workspaceFolders ?? [];
-    if (folders.length === 0) return true;
-    const sessionPath = (meta.cwd ?? meta.project_root ?? '').replace(
-      /\\/g,
-      '/',
-    );
-    if (!sessionPath) return true;
-    return folders.some((f) => {
-      const folder = f.uri.fsPath.replace(/\\/g, '/');
-      return sessionPath === folder || sessionPath.startsWith(`${folder}/`);
-    });
-  } catch {
-    return true;
+
+  // Fallback: scan ~/.claude/projects/<slug>/<sessionId>.jsonl for the
+  // first record carrying a cwd. The summarizer might not have run yet
+  // for this session, so the meta file is missing; the actual
+  // transcript on disk is the canonical source either way.
+  const claudeRoot = path.posix.join(
+    os.homedir().replace(/\\/g, '/'),
+    '.claude',
+    'projects',
+  );
+  if (fs.existsSync(claudeRoot)) {
+    try {
+      const slugs = fs.readdirSync(claudeRoot, { withFileTypes: true });
+      for (const slug of slugs) {
+        if (!slug.isDirectory()) continue;
+        const file = path.posix.join(claudeRoot, slug.name, `${sessionId}.jsonl`);
+        if (!fs.existsSync(file)) continue;
+        const fd = fs.openSync(file, 'r');
+        try {
+          const buf = Buffer.alloc(8 * 1024);
+          const n = fs.readSync(fd, buf, 0, buf.length, 0);
+          const text = buf.toString('utf-8', 0, n);
+          for (const line of text.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              const rec = JSON.parse(trimmed) as { cwd?: string };
+              if (typeof rec.cwd === 'string' && rec.cwd) {
+                const cwd = rec.cwd.replace(/\\/g, '/');
+                cwdCache.set(sessionId, cwd);
+                return cwd;
+              }
+            } catch {
+              /* skip */
+            }
+          }
+        } finally {
+          fs.closeSync(fd);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
   }
+
+  cwdCache.set(sessionId, '');
+  return '';
+}
+
+function shouldHandleSession(sessionId: string): boolean {
+  /* Decide whether THIS VS Code window should process the bridge
+   * message for this session. A session belongs to whichever window
+   * has the matching workspace folder open; multiple windows with
+   * independent bridges otherwise all try and clobber each other.
+   *
+   * Resolution chain:
+   *   1. session-state meta file (written by summarizer)
+   *   2. ~/.claude/projects/<slug>/<sessionId>.jsonl first cwd record
+   * If both fail, we bail to "true" so SOME window handles it; the
+   * strict terminal match in handleMessage protects against
+   * delivering to an unrelated shell. */
+  const sessionCwd = resolveSessionCwd(sessionId);
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  if (!sessionCwd || folders.length === 0) return true;
+  return folders.some((f) => {
+    const folder = f.uri.fsPath.replace(/\\/g, '/');
+    return sessionCwd === folder || sessionCwd.startsWith(`${folder}/`);
+  });
 }
 
 function processFile(file: string): void {
