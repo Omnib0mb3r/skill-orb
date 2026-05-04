@@ -83,11 +83,12 @@ npm run build
 npm run package
 code --install-extension devneural-bridge.vsix
 
-# 5. Schedule the daily backup (CRITICAL — your data root is the irreplaceable thing)
+# 5. Schedule the daily backup (CRITICAL: your data root is the irreplaceable thing)
 cd C:\dev\Projects\DevNeural\07-daemon
 npm run install-backup-task                                 # default: daily 03:00, keep 14 snapshots locally
-# Recommended: redirect to OneDrive or an external drive for off-machine durability:
+# Recommended: redirect to OneDrive, an external drive, or a NAS share for off-machine durability:
 # npm run install-backup-task -- -BackupRoot "$env:USERPROFILE\OneDrive\devneural-backups"
+# Inspect what's currently set: npm run backup-where
 
 # 6. Start the daemon
 npm run start                                               # listens on 0.0.0.0:3747, serves the dashboard at /
@@ -205,9 +206,32 @@ npm run dedupe-hooks                # remove duplicate hooks from other installe
 npm run backup                      # one-shot snapshot
 npm run verify-backup               # PRAGMA integrity_check + JSON parse on latest snapshot
 npm run restore                     # restore latest (refuses while daemon is up)
-npm run install-backup-task         # daily 03:00, retain 14
+npm run install-backup-task         # daily 03:00, retain 14, configurable target
+npm run backup-where                # show current backup target + schedule + last run + snapshots on disk
 npm test                            # 53 unit tests
 ```
+
+### Current backup configuration
+
+This install's backup target is set to `C:\Users\michael\OneDrive\devneural-backups` (off-machine via OneDrive sync). Daily at 03:00, keep last 14, scheduled task `DevNeural-Backup`.
+
+To inspect what's currently set without opening Task Scheduler:
+
+```powershell
+cd C:\dev\Projects\DevNeural\07-daemon
+npm run backup-where
+```
+
+To change the target (idempotent, replaces the existing task):
+
+```powershell
+npm run install-backup-task -- -BackupRoot "D:\backups\devneural"             # external drive
+npm run install-backup-task -- -BackupRoot "\\nas\share\devneural-backups"     # NAS share
+npm run install-backup-task -- -BackupRoot "$env:USERPROFILE\Dropbox\devneural" # other cloud sync
+npm run install-backup-task -- -Time 04:30 -Keep 30                            # change cadence + retention
+```
+
+Also adjustable: `-Source` (data root, default `C:\dev\data\skill-connections`) and `-Time` (HH:mm 24-hour, default `03:00`).
 
 Dashboard:
 

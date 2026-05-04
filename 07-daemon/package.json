@@ -17,6 +17,7 @@
     "restore": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restore.ps1",
     "verify-backup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-backup.ps1",
     "install-backup-task": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-backup-task.ps1",
+    "backup-where": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/show-backup-target.ps1",
     "test": "vitest run",
     "build:check": "tsc --noEmit"
   },

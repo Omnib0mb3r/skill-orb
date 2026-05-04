@@ -108,7 +108,19 @@
 - [x] `docs/install/AUDIO-VIDEO.md` covers whisper.cpp + ffmpeg
 - [x] `docs/SESSION-HANDOVER.md` reflects current phase status
 
-## L. What this checklist intentionally skips
+## L. Deferred decisions to revisit before declaring shipped
+
+These are intentionally not blockers, but they are *decisions* that warrant another look before you call this production. None require code changes; they're judgment calls about deployment posture.
+
+- **Backup target.** Currently set to `C:\Users\michael\OneDrive\devneural-backups`. OneDrive personal account sync handles cloud durability. Confirm this is the right account (vs `OneDrive - onthelevelconcepts.com` work account) given the data root may contain transcripts that touch client work. Inspect with `npm run backup-where`. Change with `npm run install-backup-task -- -BackupRoot "<new-path>"`. The README's "Current backup configuration" section should track whatever you decide.
+- **Backup retention.** 14 snapshots at ~25MB each is ~350MB ceiling. If your data root grows past 1GB (likely once the wiki and reference corpus mature), revisit `-Keep` to balance retention vs storage. Daily granularity may also be excessive once the rate-of-change drops.
+- **Off-site backup beyond OneDrive.** OneDrive going down or being deleted out from under you would lose every snapshot. Consider a second target on an external drive run weekly via a separate scheduled task.
+- **PIN strength.** Currently 4-8 digits. The lockout (5 wrong in 60s -> 5 minutes locked) provides enough deterrent for tailnet-only access. If you ever expose this beyond the tailnet, this is a different threat model and the PIN flow needs upgrading to TOTP or WebAuthn.
+- **Daemon autostart.** Currently lazy-spawned via Claude Code hooks. If you reboot OTLCDEV and don't open Claude Code, the dashboard is offline. Consider a Task Scheduler entry (similar to the backup task) that runs `node dist/daemon.js` at logon.
+- **Wiki repo remote.** `c:/dev/data/skill-connections/wiki/` is git-versioned locally. If you push it to a private repo, you get full version history off-site for free. Currently unconfigured; nice-to-have rather than blocking.
+- **PNG icons for the PWA.** Manifest references icon-192.png and icon-512.png that don't exist yet. iOS will use a screenshot of the page as the home-screen icon until real ones are designed. Not a functional blocker; visual blocker only.
+
+## M. What this checklist intentionally skips
 
 - **Multi-user auth.** Out of scope by design; Tailscale + PIN is the perimeter.
 - **TLS certificates.** Tailscale handles end-to-end encryption on the wire; no certs to renew.
