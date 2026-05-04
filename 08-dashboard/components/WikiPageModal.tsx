@@ -1,15 +1,27 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { wikiPage } from "@/lib/daemon-client";
+import { useRouter } from "next/navigation";
+import { wikiPage, searchAll, type SearchHit } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
 
 /* Modal for previewing a wiki page from the search results.
  * The wiki has no dedicated detail route yet; this overlay lets the
  * user read the full Pattern + Evidence + Cross-refs without leaving
- * the search context. Esc / click outside / ✕ closes. */
+ * the search context. Esc / click outside / ✕ closes.
+ *
+ * Two integrations with sessions:
+ *  1. Evidence lines that contain a session UUID become clickable
+ *     deep links to /sessions/detail (precise, page-cited source).
+ *  2. A "Related transcripts" section runs a vector search using the
+ *     page's summary against raw_chunks, surfacing the top 5
+ *     semantically-related session chunks. Catches transcripts the
+ *     page itself never cited but still shares the same insight. */
+
+const SESSION_UUID_RE =
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
 
 interface Props {
   id: string;
@@ -17,10 +29,28 @@ interface Props {
 }
 
 export function WikiPageModal({ id, onClose }: Props) {
+  const router = useRouter();
   const q = useQuery({
     queryKey: ["wiki-page", id],
     queryFn: () => wikiPage(id),
     retry: false,
+  });
+
+  /* Vector search using the loaded page's title+summary as query.
+   * Runs only after the page resolves; falls back to silence if the
+   * page didn't return summary (e.g. parse failure). */
+  const queryText = useMemo(() => {
+    const p = q.data?.page;
+    if (!p) return "";
+    return `${p.title}\n\n${p.summary}\n\n${p.pattern.slice(0, 500)}`;
+  }, [q.data]);
+
+  const related = useQuery({
+    queryKey: ["wiki-page-related", id, queryText],
+    queryFn: () =>
+      searchAll(queryText, { collections: ["raw_chunk"], limit: 5 }),
+    enabled: queryText.length > 0,
+    staleTime: 60_000,
   });
 
   useEffect(() => {
@@ -30,6 +60,44 @@ export function WikiPageModal({ id, onClose }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  function openSession(sessionId: string, query?: string): void {
+    const params = new URLSearchParams({ id: sessionId });
+    if (query) params.set("q", query);
+    router.push(`/sessions/detail?${params.toString()}`);
+  }
+
+  function openRelated(hit: SearchHit): void {
+    const meta = hit.metadata ?? {};
+    const sid = typeof meta.session_id === "string" ? meta.session_id : null;
+    if (!sid) return;
+    // Use a stable phrase from the page title as highlight query so
+    // the session view scrolls to the matching chunk.
+    const queryHint = q.data?.page?.trigger ?? q.data?.page?.title ?? "";
+    openSession(sid, queryHint.slice(0, 80));
+  }
+
+  function renderEvidenceLine(line: string): React.ReactNode {
+    const m = line.match(SESSION_UUID_RE);
+    if (!m) return line;
+    const sid = m[0];
+    const before = line.slice(0, m.index ?? 0);
+    const after = line.slice((m.index ?? 0) + sid.length);
+    return (
+      <>
+        {before}
+        <button
+          type="button"
+          onClick={() => openSession(sid, q.data?.page?.trigger ?? "")}
+          className="font-mono text-brandSoft hover:underline"
+          title="Open this session"
+        >
+          {sid.slice(0, 12)}
+        </button>
+        {after}
+      </>
+    );
+  }
 
   return (
     <div
@@ -116,11 +184,70 @@ export function WikiPageModal({ id, onClose }: Props) {
                 </div>
                 <ul className="text-txt2 text-xs space-y-1 list-disc pl-5">
                   {q.data.page.evidence.map((e, i) => (
-                    <li key={i} className="font-mono">{e}</li>
+                    <li key={i} className="font-mono">
+                      {renderEvidenceLine(e)}
+                    </li>
                   ))}
                 </ul>
               </section>
             )}
+
+            <section>
+              <div className="text-nano text-txt3 uppercase tracking-wider mb-1 flex items-center gap-2">
+                <Icon name="Terminal" size={11} className="text-brandSoft" />
+                Related transcripts
+                <span className="text-txt3">
+                  {related.isPending
+                    ? "searching…"
+                    : `${related.data?.results?.length ?? 0} hit(s)`}
+                </span>
+              </div>
+              {!related.isPending && (related.data?.results?.length ?? 0) === 0 && (
+                <p className="text-xs text-txt3">
+                  No related transcript chunks found in raw_chunks.
+                </p>
+              )}
+              <ul className="space-y-1.5">
+                {(related.data?.results ?? []).map((h, i) => {
+                  const meta = h.metadata ?? {};
+                  const sid =
+                    typeof meta.session_id === "string" ? meta.session_id : "";
+                  const slug =
+                    typeof meta.project_id === "string"
+                      ? meta.project_id
+                      : "global";
+                  const preview =
+                    typeof meta.text_preview === "string"
+                      ? meta.text_preview
+                      : (h.preview ?? "");
+                  return (
+                    <li
+                      key={i}
+                      onClick={() => openRelated(h)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openRelated(h);
+                        }
+                      }}
+                      className="rounded-card bg-surface2/50 hairline px-3 py-2 text-xs cursor-pointer hover:ring-1 hover:ring-brand/40"
+                    >
+                      <div className="flex items-center gap-2 mb-0.5 text-[11px] font-mono text-txt3">
+                        <span>{slug.slice(0, 12)}</span>
+                        <span className="text-txt3">·</span>
+                        <span>{sid.slice(0, 8)}</span>
+                        <span className="ml-auto">score {h.score.toFixed(2)}</span>
+                      </div>
+                      <p className="text-txt2 line-clamp-2 font-mono whitespace-pre-wrap">
+                        {preview}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
             {q.data.page.cross_refs?.length > 0 && (
               <section>
                 <div className="text-nano text-txt3 uppercase tracking-wider mb-1">
