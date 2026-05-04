@@ -22,7 +22,7 @@ import * as vscode from 'vscode';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 
 const channel = vscode.window.createOutputChannel('DevNeural Bridge');
 
@@ -128,19 +128,140 @@ function isEnabled(): boolean {
   );
 }
 
-function findTargetTerminal(): vscode.Terminal | undefined {
-  /* Strict, explicit-only matching. We never auto-pick a terminal
-   * the user did not map, even if exactly one exists in the window.
-   * Auto-picking can dump a queued prompt into an unrelated project's
-   * shell and corrupt or trigger work the user didn't intend.
-   *
-   * The user maps a terminal via:
-   *   DevNeural: Pick Claude Terminal for This Window
-   * which writes the pattern into workspace settings. Until that
-   * runs, no message gets delivered from this window. */
+/* Cache of terminal id -> "is this running claude" so we don't shell
+ * out to wmic on every tick. Cleared when terminals open or close. */
+const claudeTerminalCache = new Map<vscode.Terminal, boolean>();
+function clearClaudeTerminalCache(): void {
+  claudeTerminalCache.clear();
+}
+
+interface ProcRow {
+  pid: number;
+  ppid: number;
+  cmd: string;
+}
+
+/* Walk the Windows process tree from a root pid; return any descendant
+ * whose ExecutablePath or CommandLine contains "claude". One wmic call
+ * for the whole snapshot, then BFS in memory.
+ *
+ * wmic is deprecated in Windows 11 but still ships. If it's missing
+ * we fall back to PowerShell Get-CimInstance which is the modern
+ * equivalent. Both produce the same shape. */
+async function findClaudeDescendant(rootPid: number): Promise<boolean> {
+  if (process.platform !== 'win32') return false;
+  const rows = await snapshotProcesses();
+  if (rows.length === 0) return false;
+  const byParent = new Map<number, ProcRow[]>();
+  for (const r of rows) {
+    const list = byParent.get(r.ppid) ?? [];
+    list.push(r);
+    byParent.set(r.ppid, list);
+  }
+  const stack: number[] = [rootPid];
+  const seen = new Set<number>();
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    const children = byParent.get(cur) ?? [];
+    for (const c of children) {
+      if (/claude/i.test(c.cmd)) return true;
+      stack.push(c.pid);
+    }
+  }
+  return false;
+}
+
+let cachedSnapshot: { rows: ProcRow[]; ts: number } | null = null;
+async function snapshotProcesses(): Promise<ProcRow[]> {
+  // 4-second cache: bridge tick is 750ms, identifying many terminals
+  // in a row would otherwise spawn a wmic per terminal per tick.
+  const now = Date.now();
+  if (cachedSnapshot && now - cachedSnapshot.ts < 4_000) {
+    return cachedSnapshot.rows;
+  }
+  const rows = await runProcessSnapshot();
+  cachedSnapshot = { rows, ts: now };
+  return rows;
+}
+
+function runProcessSnapshot(): Promise<ProcRow[]> {
+  return new Promise((resolve) => {
+    // PowerShell Get-CimInstance is the modern replacement for wmic
+    // and ships on every Windows 10+. Single -Command invocation,
+    // CSV output, parse line-by-line.
+    const psCmd =
+      "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation";
+    execFile(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psCmd],
+      { windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
+      (err, stdout) => {
+        if (err || !stdout) {
+          resolve([]);
+          return;
+        }
+        const rows: ProcRow[] = [];
+        const lines = stdout.split(/\r?\n/);
+        // Skip header
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line) continue;
+          // Naive CSV split: fields are quoted, commas inside quotes
+          // are valid. Use a regex that respects quoted segments.
+          const m = line.match(/^"(\d+)","(\d+)","(.*)"$/);
+          if (!m) continue;
+          rows.push({
+            pid: Number(m[1]),
+            ppid: Number(m[2]),
+            cmd: m[3] ?? '',
+          });
+        }
+        resolve(rows);
+      },
+    );
+  });
+}
+
+async function isClaudeTerminal(t: vscode.Terminal): Promise<boolean> {
+  const cached = claudeTerminalCache.get(t);
+  if (cached !== undefined) return cached;
+  let pid: number | undefined;
+  try {
+    pid = await t.processId;
+  } catch {
+    pid = undefined;
+  }
+  if (!pid) {
+    claudeTerminalCache.set(t, false);
+    return false;
+  }
+  const found = await findClaudeDescendant(pid);
+  claudeTerminalCache.set(t, found);
+  return found;
+}
+
+/* Async terminal resolution. The tick loop awaits this so we don't
+ * deliver a message before we know which terminal is the Claude one.
+ * Resolution order:
+ *
+ *   1. Configured terminalNamePattern matches a terminal name.
+ *      Fastest, also covers the user's explicit Pick Terminal flow.
+ *   2. Process-tree auto-detect: walk children of each terminal's
+ *      shell pid; any descendant whose CommandLine contains "claude"
+ *      claims the terminal. This is what catches Claude Code's
+ *      actual node-based shell when the terminal name is "PowerShell"
+ *      or "1: pwsh".
+ *
+ * If neither resolves, we return undefined. The user-facing notice
+ * gives them the explicit Pick Terminal escape hatch. */
+async function findTargetTerminalAsync(): Promise<vscode.Terminal | undefined> {
   const pattern = getTerminalPattern();
   const terminals = vscode.window.terminals;
   if (terminals.length === 0) return undefined;
+
+  // 1. Name pattern (cheap path).
   const active = vscode.window.activeTerminal;
   if (active && active.name.toLowerCase().includes(pattern)) {
     return active;
@@ -150,6 +271,18 @@ function findTargetTerminal(): vscode.Terminal | undefined {
     if (t && t.name.toLowerCase().includes(pattern)) {
       return t;
     }
+  }
+
+  // 2. Process-tree auto-detect.
+  // Prefer the active terminal so multi-terminal windows stay
+  // predictable; only fall through to others if active isn't Claude.
+  if (active && (await isClaudeTerminal(active))) {
+    return active;
+  }
+  for (let i = terminals.length - 1; i >= 0; i--) {
+    const t = terminals[i];
+    if (!t) continue;
+    if (await isClaudeTerminal(t)) return t;
   }
   return undefined;
 }
@@ -332,7 +465,7 @@ async function handleMessage(message: BridgeMessage): Promise<void> {
     return;
   }
 
-  const terminal = findTargetTerminal();
+  const terminal = await findTargetTerminalAsync();
   if (!terminal) {
     channel.appendLine(
       '[skip] no terminal in this window; another bridge instance is expected to handle it',
@@ -632,6 +765,11 @@ export function activate(context: vscode.ExtensionContext): void {
         else startWatching();
       }
     }),
+  );
+
+  context.subscriptions.push(
+    vscode.window.onDidOpenTerminal(() => clearClaudeTerminalCache()),
+    vscode.window.onDidCloseTerminal(() => clearClaudeTerminalCache()),
   );
 
   context.subscriptions.push({
