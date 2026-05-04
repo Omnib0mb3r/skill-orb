@@ -72,24 +72,45 @@ $settings = New-ScheduledTaskSettingsSet `
     -RunOnlyIfNetworkAvailable:$false `
     -ExecutionTimeLimit (New-TimeSpan -Hours 2)
 
-# Run as the current interactive user with highest privileges
+# Run as the current user at default privilege level. We don't need admin:
+# the data root and the backup target are both user-readable. Requiring
+# admin to install the task means non-elevated PowerShell can't register
+# it, which is needlessly hostile for a single-user box.
 $principal = New-ScheduledTaskPrincipal `
     -UserId (whoami) `
     -LogonType Interactive `
-    -RunLevel Highest
+    -RunLevel Limited
 
 # Replace any prior copy of this task
 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 
-Register-ScheduledTask `
-    -TaskName $taskName `
-    -Description "DevNeural data root backup. Runs backup.ps1 daily and rotates snapshots." `
-    -Action $action `
-    -Trigger $trigger `
-    -Settings $settings `
-    -Principal $principal | Out-Null
+try {
+    Register-ScheduledTask `
+        -TaskName $taskName `
+        -Description "DevNeural data root backup. Runs backup.ps1 daily and rotates snapshots." `
+        -Action $action `
+        -Trigger $trigger `
+        -Settings $settings `
+        -Principal $principal `
+        -ErrorAction Stop | Out-Null
+} catch {
+    if ($_.Exception.Message -match "Access is denied") {
+        Write-Host ""
+        Write-Host "[install-backup-task] PowerShell cmdlet access denied; falling back to schtasks.exe"
+        $schtasksPath = "$env:WINDIR\System32\schtasks.exe"
+        $taskCmd = "$pwsh $args"
+        $startTime = $Time
+        # /SC DAILY /ST <HH:mm> /TN <name> /TR <cmd>
+        & $schtasksPath /Create /F /SC DAILY /ST $startTime /TN $taskName /TR "`"$taskCmd`""
+        if ($LASTEXITCODE -ne 0) {
+            throw "both Register-ScheduledTask and schtasks.exe failed"
+        }
+    } else {
+        throw
+    }
+}
 
 Write-Host "[install-backup-task] registered '$taskName' to run daily at $Time"
 Write-Host "[install-backup-task] command: $pwsh $args"
 Write-Host "[install-backup-task] trigger now: Start-ScheduledTask -TaskName $taskName"
-Write-Host "[install-backup-task] view in UI: taskschd.msc → Task Scheduler Library → $taskName"
+Write-Host "[install-backup-task] view in UI: taskschd.msc -> Task Scheduler Library -> $taskName"

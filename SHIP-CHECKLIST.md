@@ -27,19 +27,19 @@
 
 ## C. Tailscale + remote access
 
-- [ ] Tailscale running on `OTLCDEV` (`tailscale status` shows the node with a `100.x.y.z` IP)
-- [ ] MagicDNS enabled in admin console so `http://otlcdev:3747` resolves
-- [ ] Tailscale running on phone, signed into the same tailnet
-- [ ] First load on the phone redirects to `/set-pin`, PIN sets cleanly
-- [ ] PWA install on iOS via Share → Add to Home Screen (required for push to work)
+- [x] Tailscale running on `OTLCDEV` (verified live; user reached the dashboard remotely 2026-05-04)
+- [x] MagicDNS resolving (live access confirmed)
+- [x] Tailscale running on phone, signed into the same tailnet
+- [x] Remote load redirects to `/set-pin` cleanly; PIN flow works end-to-end
+- [ ] PWA install on iOS via Share -> Add to Home Screen (required for push to work)
 
 ## D. Backup
 
 - [x] `npm run backup` produces a timestamped snapshot under the configured backup root
 - [x] `npm run verify-backup` passes (manifest parses, JSON state files parse, JSONL line-by-line parse)
 - [x] Daemon `/flush` endpoint responds 200 with `{ok:true,flushed_at:...}` so SQLite WAL is checkpointed before the snapshot
-- [ ] `npm run install-backup-task` registered on `OTLCDEV` (run once; verify with `Get-ScheduledTask -TaskName DevNeural-Backup`)
-- [ ] Recommended: backup root pointed at OneDrive or an external drive (default lives on the same disk; same disk = same fire)
+- [x] `npm run install-backup-task` registered on `OTLCDEV` (verified 2026-05-04: scheduled DAILY 03:00, LastTaskResult 0, snapshot 2026-05-03T20-35-21 landed at 25.6MB)
+- [x] Backup root pointed at OneDrive: `C:\Users\michael\OneDrive\devneural-backups`. Snapshots are off-disk (OneDrive sync handles cloud durability).
 - [x] Snapshots written as `<ts>.partial` then atomically renamed; rotation prunes anything beyond `-Keep` (default 14)
 
 ## E. Hooks (`~/.claude/settings.json`)
