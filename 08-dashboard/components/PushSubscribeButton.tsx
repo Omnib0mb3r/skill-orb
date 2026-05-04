@@ -15,7 +15,28 @@ function urlBase64ToBuffer(base64: string): ArrayBuffer {
   return buf;
 }
 
-type Mode = "loading" | "unsupported" | "insecure" | "subscribed" | "subscribable";
+type Mode =
+  | "loading"
+  | "unsupported"
+  | "insecure"
+  | "ios-needs-install"
+  | "subscribed"
+  | "subscribable";
+
+function detectIOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    // iPadOS 13+ identifies as Mac; disambiguate by touch
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function detectStandalone(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.matchMedia?.("(display-mode: standalone)").matches) return true;
+  // iOS Safari standalone flag (non-standard but real)
+  const nav = navigator as Navigator & { standalone?: boolean };
+  return nav.standalone === true;
+}
 
 export function PushSubscribeButton() {
   const [mode, setMode] = useState<Mode>("loading");
@@ -38,6 +59,18 @@ export function PushSubscribeButton() {
      *                     at click time inside the mutation. */
     const hasSW = "serviceWorker" in navigator;
     const hasPush = "PushManager" in window;
+    const isIOS = detectIOS();
+    const isStandalone = detectStandalone();
+
+    /* iOS Safari only exposes PushManager inside an installed PWA (iOS 16.4+).
+     * In a regular browser tab on iOS, PushManager is missing and Notification
+     * may also be absent. Detect this BEFORE the generic unsupported branch so
+     * we can tell the user the actually-actionable thing: Add to Home Screen. */
+    if (isIOS && !isStandalone) {
+      setMode("ios-needs-install");
+      return;
+    }
+
     if (!hasSW || !hasPush) {
       setMode("unsupported");
       return;
@@ -103,6 +136,18 @@ export function PushSubscribeButton() {
     return (
       <span className="inline-flex items-center gap-2 text-xs font-mono text-txt3">
         <Icon name="Bell" size={14} /> checking push support
+      </span>
+    );
+  }
+
+  if (mode === "ios-needs-install") {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5 text-xs font-mono text-warn">
+        <Icon name="Smartphone" size={14} />
+        push needs PWA install
+        <span className="text-txt3">
+          (Safari Share <Icon name="Share" size={11} className="inline align-text-bottom" /> -&gt; Add to Home Screen, then open from there)
+        </span>
       </span>
     );
   }
