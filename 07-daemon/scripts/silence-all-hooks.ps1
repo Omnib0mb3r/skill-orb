@@ -76,8 +76,19 @@ function Get-WrappedCommand {
     param([string]$original)
 
     # Already wrapped? skip.
-    if ($original -match '^\s*wscript(\.exe)?\b') { return $original }
+    # Bare wscript.exe start fails on Claude Code's hook runner because
+    # the runner invokes commands through a bash shell that treats the
+    # .exe as a script source ("cannot execute binary file"). Prefix
+    # with `cmd /c` so the first token is cmd.exe, which bash exec's
+    # cleanly, and let cmd run wscript inside its own context.
+    if ($original -match '^\s*cmd(\.exe)?\s+/c\s+wscript(\.exe)?\b') { return $original }
     if ($original -match '^\s*cmd(\.exe)?\s+/c\s+start\s+/min') { return $original }
+    if ($original -match '^\s*wscript(\.exe)?\b') {
+        # Previously-wrapped entries that lack the cmd /c prefix get
+        # rewritten so they survive Claude Code's bash-based exec path.
+        $rest = $original -replace '^\s*wscript(\.exe)?\s+', ''
+        return "cmd /c wscript.exe $rest"
+    }
 
     # .sh path? prefix with bash.
     $inner = $original
@@ -91,7 +102,7 @@ function Get-WrappedCommand {
     # Escape inner quotes for the wscript argument: each " becomes "" in the
     # wrapped command, and the whole thing is wrapped in outer quotes.
     $escaped = $inner -replace '"', '""'
-    return "wscript.exe `"$shimPath`" `"$escaped`""
+    return "cmd /c wscript.exe `"$shimPath`" `"$escaped`""
 }
 
 $totalWrapped = 0
