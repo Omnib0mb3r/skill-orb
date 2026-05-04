@@ -298,6 +298,23 @@ function extractText(obj: { message?: { content?: unknown } }): string {
 const BRIDGE_HEARTBEAT_FILE = path.posix.join(BRIDGE_DIR, '.heartbeat');
 const BRIDGE_HEARTBEAT_STALE_MS = 30_000;
 
+/* Virtual input inbox for the StreamDeck.App tray app. Focus + key
+ * actions go here instead of the bridge inbox because the tray app
+ * holds standing OS focus rights, where the VS Code extension running
+ * inside a browser-spawned process tree does not. The app watches this
+ * directory with a FileSystemWatcher and replays the events through
+ * the same code path the physical Stream Deck uses. */
+const VIRTUAL_INPUT_DIR = (() => {
+  const localAppData =
+    process.env.LOCALAPPDATA ??
+    path.posix.join(os.homedir().replace(/\\/g, '/'), 'AppData', 'Local');
+  return path.posix.join(
+    localAppData.replace(/\\/g, '/'),
+    'stream-deck',
+    'virtual-input',
+  );
+})();
+
 export interface BridgeStatus {
   alive: boolean;
   last_seen_ms: number | null;
@@ -353,17 +370,11 @@ export function queueSessionPrompt(
   return { ok: true, queued_at };
 }
 
-export function queueSessionFocus(
-  sessionId: string,
-):
-  | { ok: true }
-  | { ok: false; error: string; bridge: BridgeStatus } {
-  const status = bridgeStatus();
-  if (!status.alive) {
-    return { ok: false, error: 'bridge offline', bridge: status };
-  }
-  ensureDir(BRIDGE_DIR);
-  const file = path.posix.join(BRIDGE_DIR, `${sessionId}.in`);
+export function queueSessionFocus(sessionId: string): { ok: true } {
+  // Route to the StreamDeck.App tray's virtual-input watcher; that
+  // process owns OS focus rights the bridge never could.
+  ensureDir(VIRTUAL_INPUT_DIR);
+  const file = path.posix.join(VIRTUAL_INPUT_DIR, `${sessionId}.in`);
   fs.appendFileSync(
     file,
     JSON.stringify({ queued_at: new Date().toISOString(), action: 'focus' }) +
@@ -398,22 +409,9 @@ export function isNavKey(value: unknown): value is NavKey {
 export function queueSessionKey(
   sessionId: string,
   key: NavKey,
-):
-  | { ok: true; queued_at: string }
-  | { ok: false; error: string; bridge: BridgeStatus } {
-  const status = bridgeStatus();
-  if (!status.alive) {
-    return {
-      ok: false,
-      error:
-        status.last_seen_ms === null
-          ? 'bridge offline: no heartbeat ever recorded'
-          : `bridge offline: last heartbeat ${Math.round((status.age_ms ?? 0) / 1000)}s ago`,
-      bridge: status,
-    };
-  }
-  ensureDir(BRIDGE_DIR);
-  const file = path.posix.join(BRIDGE_DIR, `${sessionId}.in`);
+): { ok: true; queued_at: string } {
+  ensureDir(VIRTUAL_INPUT_DIR);
+  const file = path.posix.join(VIRTUAL_INPUT_DIR, `${sessionId}.in`);
   const queued_at = new Date().toISOString();
   fs.appendFileSync(
     file,
