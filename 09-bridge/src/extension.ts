@@ -479,7 +479,13 @@ async function handleMessage(message: BridgeMessage): Promise<void> {
     }`,
   );
   terminal.show(true);
-  terminal.sendText(message.text, true);
+  // VS Code's sendText(_, true) appends '\n', but the Claude Code TUI on
+  // Windows wants '\r' to commit input. Without an explicit '\r' the
+  // text lands in the prompt buffer and waits for the user to hit
+  // Enter manually. Send text with no auto-newline, then a separate
+  // '\r' write so Claude treats it as a real Enter keypress.
+  terminal.sendText(message.text, false);
+  terminal.sendText('\r', false);
 }
 
 /* Cache: session_id -> resolved cwd (or '' if unresolvable). Keyed by
