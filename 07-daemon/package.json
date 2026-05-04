@@ -20,6 +20,8 @@
     "install-backup-task": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-backup-task.ps1",
     "install-daemon-autostart": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-daemon-autostart.ps1",
     "uninstall-daemon-autostart": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-daemon-autostart.ps1 -Disable",
+    "install-offsite-backup-task": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-offsite-backup-task.ps1",
+    "uninstall-offsite-backup-task": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-offsite-backup-task.ps1 -Disable",
     "backup-where": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/show-backup-target.ps1",
     "test": "vitest run",
     "build:check": "tsc --noEmit"
