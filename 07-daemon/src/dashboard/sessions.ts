@@ -89,16 +89,24 @@ export interface SessionChunk {
 
 export function getSessionDetail(
   sessionId: string,
-  options: { recentLimit?: number } = {},
+  options: { recentLimit?: number; query?: string } = {},
 ): SessionDetail | null {
   const list = listSessions();
   const item = list.find((s) => s.session_id === sessionId);
   if (!item) return null;
+  /* If a search query is present we scan the entire jsonl for chunks
+   * that match (substring, case-insensitive) and return those plus a
+   * little context. Otherwise default to the cheap tail read. The
+   * "user opened this session from a search hit" path is exactly when
+   * older transcript turns matter. */
+  const recent = options.query
+    ? readMatchingChunks(item.jsonl_path, options.query, options.recentLimit ?? 200)
+    : readRecentChunks(item.jsonl_path, options.recentLimit ?? 30);
   return {
     ...item,
     summary: readSummary(sessionId),
     task: readCurrentTask(sessionId),
-    recent_chunks: readRecentChunks(item.jsonl_path, options.recentLimit ?? 30),
+    recent_chunks: recent,
   };
 }
 
@@ -147,6 +155,63 @@ function readRecentChunks(file: string, limit: number): SessionChunk[] {
   } finally {
     fs.closeSync(fd);
   }
+}
+
+/* Whole-file scan for chunks whose text contains the query
+ * (case-insensitive). Used when the user opens a session from a wiki
+ * search hit; the matching turn could be anywhere in the transcript,
+ * not just the tail. Bounded by MAX_BYTES so a multi-megabyte session
+ * doesn't OOM the daemon, and by limit on returned chunks so we never
+ * stream a huge payload to the dashboard. */
+function readMatchingChunks(file: string, query: string, limit: number): SessionChunk[] {
+  const MAX_BYTES = 8 * 1024 * 1024; // 8MB cap per session scan
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(file);
+  } catch {
+    return [];
+  }
+  // Read either the whole file or its tail if it exceeds the cap. For
+  // most Claude sessions full file is well under 8MB.
+  const start = Math.max(0, stat.size - MAX_BYTES);
+  const fd = fs.openSync(file, 'r');
+  let text: string;
+  try {
+    const buf = Buffer.alloc(stat.size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    text = buf.toString('utf-8');
+  } finally {
+    fs.closeSync(fd);
+  }
+  const firstNl = start === 0 ? -1 : text.indexOf('\n');
+  const usable = firstNl === -1 ? text : text.slice(firstNl + 1);
+  const needle = query.toLowerCase();
+  const matches: SessionChunk[] = [];
+  for (const line of usable.split('\n')) {
+    if (matches.length >= limit) break;
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const obj = JSON.parse(trimmed) as {
+        message?: { role?: string; content?: unknown };
+        type?: string;
+        timestamp?: string;
+        role?: string;
+      };
+      const text = extractText(obj);
+      if (!text) continue;
+      if (!text.toLowerCase().includes(needle)) continue;
+      const role = obj.message?.role ?? obj.role ?? obj.type ?? 'unknown';
+      matches.push({
+        role,
+        text: text.slice(0, 4000),
+        ...(obj.timestamp ? { timestamp: obj.timestamp } : {}),
+      });
+    } catch {
+      continue;
+    }
+  }
+  return matches;
 }
 
 function extractText(obj: { message?: { content?: unknown } }): string {

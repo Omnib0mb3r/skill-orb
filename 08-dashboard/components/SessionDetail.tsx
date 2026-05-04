@@ -62,14 +62,15 @@ function renderTurn(text: string, q: string): RenderedTurn {
 }
 
 export function SessionDetail({ sessionId, query }: Props) {
+  const trimmedQueryEarly = (query ?? "").trim();
   const q = useQuery({
-    queryKey: ["session", sessionId],
-    queryFn: () => sessionDetail(sessionId),
+    queryKey: ["session", sessionId, trimmedQueryEarly],
+    queryFn: () => sessionDetail(sessionId, trimmedQueryEarly || undefined),
     refetchInterval: 5_000,
     retry: false,
   });
 
-  const trimmedQuery = (query ?? "").trim();
+  const trimmedQuery = trimmedQueryEarly;
   const transcriptScroll = useRef<HTMLDivElement | null>(null);
   const matchRefs = useRef<HTMLSpanElement[]>([]);
   const [activeMatch, setActiveMatch] = useState(0);

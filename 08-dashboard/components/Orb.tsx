@@ -597,12 +597,19 @@ export function Orb({ compact = false }: OrbProps = {}) {
       onTouchStart={markInteracted}
     >
       {(
-        // Always render once the container has been measured, even with
-        // tiny dimensions. Falls back to a sensible default until
-        // ResizeObserver catches up; without this, on the home tab the
-        // dynamic canvas sometimes never mounts because the embed grid
-        // resolves its width AFTER our useEffect schedule fires.
+        /* react-force-graph-2d snapshots width/height at mount and the
+         * underlying canvas element gets sized once. Subsequent prop
+         * changes don't always reflow the internal canvas, so when the
+         * lib mounts at our 320×280 fallback (because container size
+         * hasn't measured yet on first home-tab paint) it stays at that
+         * size even after ResizeObserver fires. We force a remount
+         * whenever measured size changes meaningfully (>32px buckets)
+         * so the canvas always re-creates at the real dimensions. The
+         * key uses 32px buckets so live resizes from a window drag
+         * don't thrash through 100 remounts per second.
+         */
         <OrbCanvas
+          key={`${Math.round((size.w || 320) / 32)}x${Math.round((size.h || 280) / 32)}`}
           ref={fgRef}
           graphData={graphData as unknown as { nodes: object[]; links: object[] }}
           width={size.w || 320}

@@ -259,8 +259,10 @@ export interface SessionDetail extends SessionSummary {
   task: string;
   recent_chunks: SessionChunk[];
 }
-export const sessionDetail = (id: string) =>
-  request<{ ok: boolean; session: SessionDetail }>(`/sessions/${id}`);
+export const sessionDetail = (id: string, query?: string) =>
+  request<{ ok: boolean; session: SessionDetail }>(
+    `/sessions/${id}${query ? `?q=${encodeURIComponent(query)}` : ""}`,
+  );
 
 export const queuePrompt = (id: string, text: string) =>
   request<{ ok: boolean; queued_at?: string }>(

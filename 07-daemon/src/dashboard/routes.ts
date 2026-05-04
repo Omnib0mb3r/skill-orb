@@ -180,7 +180,11 @@ export async function registerDashboardRoutes(
 
   app.get('/sessions/:id', async (req, reply) => {
     const id = (req.params as { id: string }).id;
-    const detail = getSessionDetail(id, { recentLimit: 30 });
+    const query = (req.query as { q?: string }).q ?? '';
+    const opts = query
+      ? { recentLimit: 200, query }
+      : { recentLimit: 30 };
+    const detail = getSessionDetail(id, opts);
     if (!detail) {
       reply.code(404);
       return { ok: false, error: 'session not found' };
