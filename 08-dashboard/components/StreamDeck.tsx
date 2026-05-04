@@ -53,10 +53,16 @@ export function StreamDeck() {
   });
   const [showStale, setShowStale] = useState(false);
 
+  /* Only ACTIVE sessions go on the rail. The hardware Stream Deck only
+   * paints tiles for live Claude sessions; tiles you tap actually do
+   * something. Idle sessions are jsonl files with no live process to
+   * focus or send a prompt to, so they belong on the /sessions tab as
+   * a list, not on the deck. The "show inactive" toggle pops them back
+   * in if the user explicitly wants to see history. */
   const all: SessionSummary[] = q.data?.sessions ?? [];
-  const fresh = all.filter((s) => tileState(s) !== "stale");
-  const staleCount = all.length - fresh.length;
-  const visible = [...(showStale ? all : fresh)].sort((a, b) => {
+  const active = all.filter((s) => s.active);
+  const inactive = all.filter((s) => !s.active);
+  const visible = [...(showStale ? all : active)].sort((a, b) => {
     if (a.active !== b.active) return a.active ? -1 : 1;
     return b.last_modified_ms - a.last_modified_ms;
   });
@@ -66,7 +72,7 @@ export function StreamDeck() {
       <div className="flex items-center justify-between mb-1">
         <div className="text-nano text-txt3">Stream deck</div>
         <span className="text-nano text-txt3 font-mono">
-          {fresh.filter((s) => s.active).length}/{fresh.length}
+          {active.length} live
         </span>
       </div>
 
@@ -80,8 +86,8 @@ export function StreamDeck() {
 
       {!q.isLoading && visible.length === 0 && (
         <div className="text-xs text-txt3 px-2 py-3">
-          No sessions captured yet. Start a Claude session in any VS Code window on OTLCDEV
-          and it&apos;ll appear here within a few seconds.
+          No active sessions to control right now. Start a Claude session in any VS Code window
+          on OTLCDEV; a tile appears here within 5s.
         </div>
       )}
 
@@ -126,15 +132,15 @@ export function StreamDeck() {
         <Icon name="Plus" size={16} /> new session
       </button>
 
-      {staleCount > 0 && (
+      {inactive.length > 0 && (
         <button
           onClick={() => setShowStale((v) => !v)}
           className="text-nano text-txt3 hover:text-txt1 mt-1 px-2 py-1 text-left"
           aria-expanded={showStale}
         >
           {showStale
-            ? `Hide ${staleCount} stale session${staleCount === 1 ? "" : "s"}`
-            : `+${staleCount} stale session${staleCount === 1 ? "" : "s"} (>7d)`}
+            ? `Hide ${inactive.length} inactive`
+            : `+${inactive.length} inactive (history)`}
         </button>
       )}
     </aside>
