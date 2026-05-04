@@ -26,6 +26,7 @@ function safeExec(cwd: string, cmd: string): string | null {
       cwd,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
     }).trim();
   } catch {
     return null;

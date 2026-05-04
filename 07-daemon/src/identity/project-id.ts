@@ -25,6 +25,7 @@ function tryGitRemote(cwd: string): string | null {
       cwd,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
     }).trim();
     return remote || null;
   } catch {
@@ -38,6 +39,7 @@ function tryGitToplevel(cwd: string): string | null {
       cwd,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
     })
       .trim()
       .replace(/\\/g, '/');

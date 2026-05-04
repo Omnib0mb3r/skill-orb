@@ -154,6 +154,7 @@ export async function* scanCommits(
           cwd: projectRoot,
           encoding: 'utf-8',
           stdio: ['ignore', 'pipe', 'ignore'],
+          windowsHide: true,
         },
       );
     } catch {

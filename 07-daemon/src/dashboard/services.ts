@@ -149,6 +149,7 @@ function checkCmd(def: ServiceDef): ServiceResult {
     execSync(def.target, {
       stdio: ['ignore', 'ignore', 'ignore'],
       timeout: def.timeout_ms ?? 3000,
+      windowsHide: true,
     });
     return {
       id: def.id,

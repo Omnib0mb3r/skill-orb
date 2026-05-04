@@ -135,14 +135,15 @@ function initWikiGit(): void {
   const gitDir = path.posix.join(wikiRoot(), '.git');
   if (fs.existsSync(gitDir)) return;
   try {
-    execSync('git init -q', { cwd: wikiRoot(), stdio: 'ignore' });
+    execSync('git init -q', { cwd: wikiRoot(), stdio: 'ignore', windowsHide: true });
     execSync('git -c "user.email=devneural@local" -c "user.name=DevNeural" add .', {
       cwd: wikiRoot(),
       stdio: 'ignore',
+      windowsHide: true,
     });
     execSync(
       'git -c "user.email=devneural@local" -c "user.name=DevNeural" commit -q -m "wiki: initial scaffold"',
-      { cwd: wikiRoot(), stdio: 'ignore' },
+      { cwd: wikiRoot(), stdio: 'ignore', windowsHide: true },
     );
   } catch {
     /* git not available or init failed; non-fatal */
@@ -158,7 +159,7 @@ export function commitWiki(message: string): void {
   try {
     execSync(
       `git -c "user.email=devneural@local" -c "user.name=DevNeural" add -A && git -c "user.email=devneural@local" -c "user.name=DevNeural" commit -q --allow-empty -m "${message.replace(/"/g, '\\"')}"`,
-      { cwd: wikiRoot(), stdio: 'ignore', shell: 'bash' },
+      { cwd: wikiRoot(), stdio: 'ignore', shell: 'bash', windowsHide: true },
     );
   } catch {
     /* ignore git failures; wiki is the source of truth on disk */

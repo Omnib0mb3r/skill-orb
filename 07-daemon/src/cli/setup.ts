@@ -97,6 +97,7 @@ function step3Hooks(): void {
   }
   const child = spawnSync(process.execPath, [installScript], {
     stdio: 'inherit',
+    windowsHide: true,
   });
   if (child.status !== 0) {
     console.log(`  ${err('install-hooks failed with exit ' + child.status)}`);
@@ -107,7 +108,7 @@ function step4Status(): void {
   console.log(`\n${ok('▸')} Final status`);
   const statusScript = path.resolve(__dirname, 'status.js');
   if (!fs.existsSync(statusScript)) return;
-  spawnSync(process.execPath, [statusScript], { stdio: 'inherit' });
+  spawnSync(process.execPath, [statusScript], { stdio: 'inherit', windowsHide: true });
 }
 
 async function main(): Promise<void> {

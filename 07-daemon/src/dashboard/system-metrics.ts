@@ -86,7 +86,7 @@ function readDisks(): DiskMetric[] {
   try {
     const out = execSync(
       'powershell -NoProfile -Command "Get-PSDrive -PSProvider FileSystem | Select-Object Name,Used,Free | ConvertTo-Json -Compress"',
-      { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 },
+      { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, windowsHide: true },
     );
     const parsed = JSON.parse(out) as
       | { Name: string; Used?: number; Free?: number }

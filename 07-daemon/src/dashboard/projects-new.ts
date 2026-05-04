@@ -53,6 +53,7 @@ export async function createProject(
     execSync(`git clone --depth 1 ${TEMPLATE_REPO} "${target}"`, {
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 60_000,
+      windowsHide: true,
     });
   } catch (err) {
     return { ok: false, error: `git clone failed: ${(err as Error).message}` };
@@ -61,7 +62,7 @@ export async function createProject(
   // Detach from the template's history so this is its own repo
   try {
     fs.rmSync(path.posix.join(target, '.git'), { recursive: true, force: true });
-    execSync('git init -q', { cwd: target, stdio: 'ignore' });
+    execSync('git init -q', { cwd: target, stdio: 'ignore', windowsHide: true });
   } catch {
     /* non-fatal */
   }
@@ -98,7 +99,7 @@ export async function createProject(
   // Optionally open VS Code (host only)
   if (input.open_vscode !== false) {
     try {
-      spawn('code', [target], { detached: true, stdio: 'ignore' }).unref();
+      spawn('code', [target], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
     } catch {
       /* VS Code not on PATH; not fatal */
     }
