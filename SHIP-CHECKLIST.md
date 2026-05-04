@@ -32,7 +32,7 @@
 - [x] Tailscale running on phone, signed into the same tailnet
 - [x] Remote load redirects to `/set-pin` cleanly; PIN flow works end-to-end
 - [x] **`tailscale serve --bg --https=443 http://localhost:3747` registered**: HTTPS reverse proxy live at `https://otlcdev.tail27b46b.ts.net` (tailnet-only, real Let's Encrypt cert). Verified: `/health`, `/`, `/sw.js` all 200 over HTTPS. Required for service worker registration and web push (browsers disable both APIs over plain HTTP off-localhost).
-- [ ] PWA install on iOS via Share -> Add to Home Screen at the HTTPS URL (required for push to fire when dashboard is closed)
+- [x] PWA install on iOS via Share -> Add to Home Screen at the HTTPS URL (verified 2026-05-04; user installed and subscribed to push end-to-end)
 
 ## D. Backup
 
@@ -79,8 +79,8 @@
 - [x] Push subscribe button on `/reminders` requests permission + posts subscription
 - [x] `emitNotification()` autopushes severity `warn` and `alert`; `info` stays in-feed only
 - [x] 410/404 responses from the push service prune the subscription so a stale subscription doesn't keep failing forever
-- [ ] iOS PWA push verified end-to-end (requires Add to Home Screen; iOS-only)
-- [ ] Android push verified end-to-end (works in Chrome before install)
+- [x] iOS PWA push verified end-to-end (2026-05-04: installed via Share -> Add to Home Screen at https://otlcdev.tail27b46b.ts.net, subscribed successfully)
+- [ ] Android push verified end-to-end (works in Chrome before install; not yet tested on this user's devices)
 
 ## I. Audio + video pipeline (Phase 3.5)
 
