@@ -63,10 +63,13 @@ const DEFAULT_CONFIG: { services: ServiceDef[] } = {
       target: 'tailscale status --json',
     },
     {
+      // Cloudflare's 1.1.1.1 plain root returns 404 (DNS endpoint, no
+      // homepage). /cdn-cgi/trace returns a 200 text payload and is the
+      // standard "am I online" probe.
       id: 'internet',
-      label: 'Internet (1.1.1.1)',
+      label: 'Internet',
       kind: 'http',
-      target: 'https://1.1.1.1',
+      target: 'https://1.1.1.1/cdn-cgi/trace',
       expect_status: 200,
     },
   ],
