@@ -270,6 +270,56 @@ export function TerminalMirror({ sessionId }: Props) {
       window.addEventListener("resize", onResize);
       unbindResize = () => window.removeEventListener("resize", onResize);
 
+      /* Finger-drag scrollback for iPad / touch devices. xterm's
+       * native viewport scrollbar is a couple of pixels wide and hard
+       * to grab on a touch screen, so we translate touch drags
+       * anywhere on the terminal surface into term.scrollLines() and
+       * preventDefault to suppress the page scroll that would
+       * otherwise hijack the gesture. Read-only mirror, no input
+       * collisions. Pixel-to-line ratio is approximate; xterm doesn't
+       * expose row height publicly, so we use a sensible default that
+       * tracks fontSize-based geometry (~16 px per row). */
+      const ROW_PX_HINT = 16;
+      let lastTouchY: number | null = null;
+      const onTouchStart = (ev: TouchEvent) => {
+        if (ev.touches.length === 1) {
+          lastTouchY = ev.touches[0]?.clientY ?? null;
+        } else {
+          lastTouchY = null;
+        }
+      };
+      const onTouchMove = (ev: TouchEvent) => {
+        if (ev.touches.length !== 1 || lastTouchY === null) return;
+        const y = ev.touches[0]?.clientY ?? lastTouchY;
+        const dy = lastTouchY - y;
+        if (Math.abs(dy) < 2) return;
+        const lines = Math.round(dy / ROW_PX_HINT);
+        if (lines !== 0) {
+          try {
+            term.scrollLines(lines);
+          } catch {
+            /* ignore */
+          }
+          lastTouchY = y;
+          ev.preventDefault();
+        }
+      };
+      const onTouchEnd = () => {
+        lastTouchY = null;
+      };
+      el.addEventListener("touchstart", onTouchStart, { passive: true });
+      el.addEventListener("touchmove", onTouchMove, { passive: false });
+      el.addEventListener("touchend", onTouchEnd, { passive: true });
+      el.addEventListener("touchcancel", onTouchEnd, { passive: true });
+      const prevUnbindResize = unbindResize;
+      unbindResize = () => {
+        prevUnbindResize?.();
+        el.removeEventListener("touchstart", onTouchStart);
+        el.removeEventListener("touchmove", onTouchMove);
+        el.removeEventListener("touchend", onTouchEnd);
+        el.removeEventListener("touchcancel", onTouchEnd);
+      };
+
       try {
         const res = await fetch(
           `/sessions/${encodeURIComponent(sessionId)}/terminal-replay`,
