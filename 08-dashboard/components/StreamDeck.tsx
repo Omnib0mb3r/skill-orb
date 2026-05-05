@@ -193,7 +193,7 @@ export function StreamDeck() {
 
           <a
             href="/sessions"
-            className="mt-1 lift p-3 rounded-card bg-surface1 hairline border-dashed text-txt2 hover:text-txt1 flex items-center justify-center gap-2 text-sm font-medium"
+            className="w-full mt-1 lift p-3 rounded-card bg-surface1 hairline border-dashed text-txt2 hover:text-txt1 flex items-center justify-center gap-2 text-sm font-medium"
             aria-label="Manage sessions on the Sessions tab"
           >
             <Icon name="Plus" size={16} /> new session
@@ -203,7 +203,7 @@ export function StreamDeck() {
             type="button"
             onClick={() => q.refetch()}
             disabled={q.isFetching}
-            className="lift p-2 rounded-card bg-surface1 hairline text-txt3 hover:text-txt1 disabled:opacity-60 flex items-center justify-center gap-2 text-xs"
+            className="w-full lift p-2 rounded-card bg-surface1 hairline text-txt3 hover:text-txt1 disabled:opacity-60 flex items-center justify-center gap-2 text-xs"
             aria-label="Refresh stream deck session list"
           >
             <Icon
@@ -268,7 +268,7 @@ function DeckTile({ session: s, onTap }: DeckTileProps) {
       type="button"
       onClick={() => onTap(s, () => focusM.mutate())}
       disabled={focusM.isPending}
-      className={`block text-left p-3 rounded-card bg-surface1 hairline lift transition-shadow ${ring} ${
+      className={`w-full block text-left p-3 rounded-card bg-surface1 hairline lift transition-shadow ${ring} ${
         focusM.isPending ? "ring-1 ring-brand/60" : ""
       }`}
       aria-label={`Focus VS Code window for ${project} (${state}). Tap again to enter nav mode.`}
@@ -279,19 +279,17 @@ function DeckTile({ session: s, onTap }: DeckTileProps) {
         </div>
         <StatusDot status={led} pulse={pulseOnLed} />
       </div>
-      <div className="flex items-center justify-between text-xs text-txt3 font-mono">
+      <div className="text-xs text-txt2 font-mono mb-1">{stateLabel}</div>
+      <div className="flex items-center justify-between text-[11px] font-mono text-txt3">
         <span className="truncate">{s.session_id.slice(0, 8)}</span>
-        <span className="text-txt2 text-[11px]">{stateLabel}</span>
-      </div>
-      <div className="mt-1.5 flex items-center justify-between text-[11px] font-mono text-txt3">
-        <span>
-          {focusM.isPending
-            ? "focusing…"
-            : focusM.isSuccess
-              ? "focused ✓"
-              : `last ${relTime(s.last_modified_ms)} ago`}
-        </span>
-        <span className="flex items-center gap-1">
+        <span className="flex items-center gap-2">
+          <span>
+            {focusM.isPending
+              ? "focusing…"
+              : focusM.isSuccess
+                ? "focused ✓"
+                : `last ${relTime(s.last_modified_ms)} ago`}
+          </span>
           {s.has_task && <Icon name="ListTodo" size={11} />}
           {s.has_summary && <Icon name="ScrollText" size={11} />}
         </span>
