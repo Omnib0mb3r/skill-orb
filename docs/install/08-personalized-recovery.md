@@ -98,7 +98,8 @@ git clone https://github.com/Omnib0mb3r/design-system         C:\dev\Projects\de
 cd C:\dev\Projects\DevNeural\07-daemon
 npm install
 npm run setup                                # builds + scaffolds wiki at c:/dev/data/skill-connections/wiki/
-npm run install-hooks                        # registers v2 hooks; replaces any v1 entries from step 4
+npm run install-hooks                        # registers 5 v2 hook entries (Pre/Post/Prompt/Stop/Notification); replaces any v1 entries from step 4
+npm run silence-hooks                        # wraps every hook in silent-shim.exe so child spawns run hidden; idempotent
 
 cd C:\dev\Projects\DevNeural\08-dashboard
 npm install --legacy-peer-deps               # @tremor/react has a React-18 peer expectation; works on 19

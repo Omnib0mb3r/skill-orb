@@ -43,6 +43,7 @@ A second brain has six properties. DevNeural has all six.
 | 3.12 | Polish pass — sparklines, install prompt, keyboard a11y, sr-only utility | done, shipped |
 | 4 | Orb rebind to wiki data model — force-directed graph + /graph endpoint | done, shipped |
 | 5 | Settings audit + personalized recovery docs + robust backup pipeline | done, shipped |
+| 6 | Notification hook → dashboard permission UI (CC permission/elicitation prompts surface in /sessions with answer buttons) | done, shipped |
 
 See [docs/SESSION-HANDOVER.md](docs/SESSION-HANDOVER.md) for what state the repo was in at the most recent session boundary.
 
@@ -113,7 +114,7 @@ For Tailscale remote access from your phone, follow [docs/install/TAILSCALE.md](
 | **Cross-project intelligence** | Insights observed in two or more projects promote to global. The brain spans your work, not one repo. |
 | **Reference corpus** | Upload manuals, books, PDFs, images, DOCX. Local OCR + chunking. Audio + video pipeline ships behind whisper.cpp + ffmpeg. |
 | **Reinforcement** | Useful injections raise page weight; corrections lower it; unused pages decay. Empirical, not editorial. |
-| **Dashboard** | Central hub on port 3747. Sessions, projects, search, system metrics with sparklines, daily brief, reminders, web push, force-directed wiki graph (Orb). PWA-installable on phone. Tailscale for remote access. |
+| **Dashboard** | Central hub on port 3747. Sessions, projects, search, system metrics with sparklines, daily brief, reminders, web push, force-directed wiki graph (Orb), and inline answer UI for CC permission/elicitation prompts so you can reply remotely without tabbing back to VS Code. PWA-installable on phone. Tailscale for remote access. |
 | **Backup pipeline** | Daily scheduled snapshot of the data root with SQLite atomic capture, manifest, integrity verification, and rotation. |
 | **Local-first** | Default LLM is ollama (qwen3:8b). Anthropic API supported as fallback. Zero cost in default config. |
 
@@ -184,7 +185,7 @@ For the LLM's standing instructions on writing wiki pages, read [docs/spec/DEVNE
 | Path | What |
 |---|---|
 | `07-daemon/` | The brain. Capture, ingest, query, lint, HTTP/WS API, dashboard static serve, backup pipeline. |
-| `07-daemon/scripts/` | `backup.ps1`, `restore.ps1`, `verify-backup.ps1`, `install-backup-task.ps1`, `dedupe-hooks.ps1`. |
+| `07-daemon/scripts/` | `backup.ps1`, `restore.ps1`, `verify-backup.ps1`, `install-backup-task.ps1`, `dedupe-hooks.ps1`, `silence-all-hooks.ps1` (silent-shim wrap), `silent-shim/` (native invisible launcher), `repair-double-wrapped-hooks.ps1` + `reescape-hook-args.ps1` (one-shot migrations). |
 | `08-dashboard/` | Next.js 15 + Tailwind v4 + Tanstack Query. Statically exported; daemon serves the build. |
 | `09-bridge/` | VS Code extension that pastes queued prompts into terminals. Phase 3.3. |
 | `03-web-app/` | The orb (legacy v1 visual; superseded by `/orb` route in dashboard). |

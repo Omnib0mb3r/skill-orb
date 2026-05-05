@@ -1,9 +1,9 @@
 # Session handover
 
 > Pick up where the last session left off. Designed to be the first file a new Claude (or you) reads when starting fresh.
-> Last updated: 2026-05-04 (post wiki backfill, orb visual rewrite, bridge auto-detect, terminal-mode flip).
+> Last updated: 2026-05-04 (post Notification permission UI + audio env-var fix + silent-shim escape fix).
 
-> **State now:** All Phase 3.x dashboard work is shipped. Wiki backfill of 168MB / 180 historical Claude session jsonl files is complete (116 wiki pages, 5185 raw chunks, 81 graph edges). Orb visual rewrite landed (curved bezier edges + custom particles + breathing glow + screen-stable widths + isolation/gravity forces + connected-subgraph framing). VS Code session-bridge now auto-detects the Claude terminal via process-tree walk, no manual mapping required. User has flipped `claudeCode.useTerminal: true` so future sessions are remote-driveable from the dashboard. Daemon autostart task installed and verified (logon + 5min repeat watchdog). PWA brand icons generated. Off-site weekly backup script ready (not yet installed).
+> **State now:** All Phases 1-5 shipped. Plus a sixth body of work landed today: CC's Notification hook is wired to DevNeural's hook-runner, the daemon exposes `/sessions/:id/pending-prompt` (POST/GET/DELETE), and the dashboard's SessionDetail renders the question with auto-parsed numbered answer buttons + free-text fallback. Two silent-shim bugs fixed: cmd-style `""` inner-arg escape replaced with backslash `\"` (bash on Windows treats `""` as empty-string concatenation, which broke spawn), and the install detection regex was anchored so re-runs are idempotent. Two one-shot repair scripts added: `repair-double-wrapped-hooks.ps1` peels stacked shim layers from older runs, `reescape-hook-args.ps1` migrates inner-arg escapes from `""` to `\"`. Audio pipeline verified end-to-end on a generated mp3; `DEVNEURAL_WHISPER_BIN` had been pinned to the deprecated `main.exe` stub and was corrected to `whisper-cli.exe` via `setx`. Stream Deck rail in the dashboard now groups tiles by project (multi-session workspaces no longer look like multiple projects) and has a manual refresh button. Transcript role label `assistant` renamed to `lex`.
 
 ---
 
@@ -16,12 +16,18 @@ DevNeural v2 is a local-first second brain: capture, semantic RAG, learning wiki
 - **Identity is "second brain."** Not a metaphor. Six properties: persistent memory, semantic recall, watches without being asked, surfaces in real time, compounds with use, lives on local hardware. See `docs/spec/devneural-v2.md` section 0.
 - **Two layers: semantics + logic.** Semantics = embeddings, vector search, fuzzy recall. Logic = `[trigger] → [insight]` schema, validation, promotion rules, hard editorial rules. Both required. See section 7.
 - **Read first:** `README.md` (top-level), then `docs/spec/devneural-v2.md` for architecture, then `docs/spec/DEVNEURAL.md` for the wiki schema, then this file.
-- **Phase status:** 1, 2, 3.1 - 3.12 done. 4 (orb visual rewrite) done. 5 (settings audit + autostart + backup tasks) done.
-- **Today's headline shipments (2026-05-04):**
+- **Phase status:** 1, 2, 3.1 - 3.12 done. 4 (orb) done. 5 (settings audit + autostart + backup tasks) done. 6 (Notification → permission UI) done.
+- **Today's later shipments (2026-05-04, post-handover original):**
+  - Notification hook: hook-runner handles `notification` phase. Daemon: new `pending-prompt` module + endpoints. Dashboard: PendingPromptPanel in SessionDetail with auto-parsed numbered choices + free-text fallback, dismiss button. Phase override to `permission` when pending. Auto-clears on user_prompt or session_stop or explicit DELETE.
+  - silent-shim escape: `""` -> `\"` (bash safety). Detection regex anchored. Two repair scripts added.
+  - Audio pipeline: `DEVNEURAL_WHISPER_BIN` corrected from `main.exe` (deprecation stub) to `whisper-cli.exe`. Verified extractAudioTranscript ok on a 2s sine mp3.
+  - Stream Deck rail: groups tiles by project_slug; manual refresh button below "new session".
+  - Transcript role label: `assistant` -> `lex`.
+- **Earlier shipments same day (still relevant context):**
   - Wiki backfill from history complete (168MB / 180 jsonl files, 116 wiki pages indexed, 5185 raw chunks, /graph returns 81 edges).
   - Orb rewrite: curved bezier edges + custom particles drawn in same closure, screen-stable widths, breathing glow, animated promoted ring, isolation-pull + global-gravity forces, connected-subgraph framing.
   - Wiki search: per-collection grouped sections + per-section pagination, wiki-page modal with Pattern/Evidence/Cross-refs/Log + clickable session UUIDs in evidence + Related Transcripts vector search.
-  - Session detail: terminal-styled transcripts (`> ai` / `> you` / `> tool`), full-jsonl scan when `?q=` is set so search hits found anywhere highlight properly.
+  - Session detail: terminal-styled transcripts (`> lex` / `> you` / `> tool`), full-jsonl scan when `?q=` is set so search hits found anywhere highlight properly.
   - Stream Deck Nav mode: 5x3 hardware-mirror grid with mic + arrows + numbers, owns its own bezier + particles.
   - Session-bridge: auto-detects Claude terminal via Win32 process-tree walk (no manual mapping). Strict, never auto-injects into unrelated shells. Per-workspace offset persistence so VS Code reload doesn't replay backlog.
   - Daemon autostart Task Scheduler entry installed and verified (logon trigger + 5-min watchdog repeat with cheap /health probe short-circuit).

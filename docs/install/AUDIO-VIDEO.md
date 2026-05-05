@@ -58,8 +58,15 @@ curl -L -o whisper-bin.zip https://github.com/ggerganov/whisper.cpp/releases/lat
 Expand-Archive -Path whisper-bin.zip -DestinationPath . -Force
 ```
 
-Result: `C:\dev\whisper.cpp\Release\main.exe`. CPU-only inference,
-which is fine for `base.en` on any modern machine.
+Result: `C:\dev\whisper.cpp\Release\whisper-cli.exe` (and a number of
+sibling executables). CPU-only inference, which is fine for `base.en`
+on any modern machine.
+
+> **Heads-up:** older releases shipped a `main.exe` that did the
+> transcription. Recent builds replaced `main.exe` with a deprecation
+> stub that prints a warning and exits without doing any work. Always
+> point `DEVNEURAL_WHISPER_BIN` (if you set it at all) at
+> `whisper-cli.exe`, never `main.exe`.
 
 ### 2b. Build from source (CUDA, fine-tuned, custom flags)
 
@@ -76,8 +83,11 @@ cmake -B build
 cmake --build build --config Release
 ```
 
-Result: `build\bin\Release\whisper-cli.exe` (newer CMake) or
-`main.exe` (older). The daemon probes both.
+Result: `build\bin\Release\whisper-cli.exe` (modern CMake build). The
+daemon's fallback list still mentions `main.exe` for compatibility with
+ancient builds, but on any current source checkout `whisper-cli.exe` is
+the only binary that actually transcribes; `main.exe` if present is a
+deprecation stub.
 
 ## 3. Download a model
 
@@ -100,7 +110,7 @@ If you installed elsewhere, set these in your shell profile or via a
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DEVNEURAL_WHISPER_BIN` | probes `C:/dev/whisper.cpp/...` then PATH | Full path to `whisper-cli.exe` or `main.exe` |
+| `DEVNEURAL_WHISPER_BIN` | probes `C:/dev/whisper.cpp/...` then PATH | Full path to `whisper-cli.exe`. Never set this to `main.exe`; in current builds it is a deprecation stub that exits without transcribing. |
 | `DEVNEURAL_WHISPER_MODEL` | `base.en` | Model name (without the `ggml-` prefix and `.bin` extension) |
 | `DEVNEURAL_WHISPER_MODEL_PATH` | derived from model name | Full path to a `.bin` model file (overrides `DEVNEURAL_WHISPER_MODEL`) |
 | `DEVNEURAL_FFMPEG_BIN` | `ffmpeg` (PATH) | Full path to `ffmpeg.exe` |
@@ -108,7 +118,7 @@ If you installed elsewhere, set these in your shell profile or via a
 Example PowerShell:
 
 ```powershell
-[Environment]::SetEnvironmentVariable('DEVNEURAL_WHISPER_BIN', 'C:\dev\whisper.cpp\Release\main.exe', 'User')
+[Environment]::SetEnvironmentVariable('DEVNEURAL_WHISPER_BIN', 'C:\dev\whisper.cpp\Release\whisper-cli.exe', 'User')
 # (or for source-build path: 'C:\dev\whisper.cpp\build\bin\Release\whisper-cli.exe')
 [Environment]::SetEnvironmentVariable('DEVNEURAL_WHISPER_MODEL_PATH', 'C:\dev\whisper.cpp\models\ggml-base.en.bin', 'User')
 [Environment]::SetEnvironmentVariable('DEVNEURAL_WHISPER_MODEL', 'base.en', 'User')

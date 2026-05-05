@@ -1,7 +1,7 @@
 # Phase 5: Settings audit and personalized install docs
 
-> Status: deferred. Runs after Phases 2 (burndown), 3 (dashboard), and 4 (orb) have stabilized the system.
-> Last updated: 2026-05-02.
+> Status: complete. Settings.json shape audited, all hooks wrapped via silent-shim.exe (07-daemon/scripts/silent-shim). Off-site backup pipeline verified end-to-end: daily 03:00 task points at the OneDrive path, and the wiki repo is now mirrored to the private `Omnib0mb3r/devneural-wiki` GitHub repo with a daemon-side push every 5 min. Audio/video pipeline verified end-to-end (extractAudioTranscript ok on a generated mp3); a stale `DEVNEURAL_WHISPER_BIN` env var that pinned the deprecated `main.exe` stub was corrected to `whisper-cli.exe` and the daemon was restarted. Phase 4 Orb shipped. Notification hook added: hook-runner now handles a fifth phase (`notification`) and the dashboard surfaces CC's permission/elicitation prompts with answer buttons (see `feat(notification)`). silent-shim escape switched from cmd-style `""` to backslash `\"` so the wrap survives bash invocation; detection regex anchored so re-runs are idempotent.
+> Last updated: 2026-05-04.
 
 ---
 

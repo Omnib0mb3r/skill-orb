@@ -132,14 +132,22 @@ setup done.
 
 ## Step 6: Verify hooks are wired (without firing the daemon)
 
-Open `~/.claude/settings.json` and look at the `hooks` block. You should see four entries containing `07-daemon/dist/capture/hooks/hook-runner.js`:
+Open `~/.claude/settings.json` and look at the `hooks` block. You should see five entries that resolve to `07-daemon/dist/capture/hooks/hook-runner.js` (after the silent-shim wrap is applied, the path appears inside `silent-runner.vbs`'s args; the raw form is shown below for clarity):
 
 - `PreToolUse` (matcher `*`) → runs `hook-runner.js pre`
 - `PostToolUse` (matcher `*`) → runs `hook-runner.js post`
 - `UserPromptSubmit` → runs `hook-runner.js prompt`
 - `Stop` → runs `hook-runner.js stop`
+- `Notification` → runs `hook-runner.js notification` (forwards CC's permission/elicitation message to the daemon so the dashboard surfaces it with answer buttons)
 
 Other entries (Claude-Setup hooks, plugin hooks, your own hooks) should be unchanged.
+
+**Apply the silent-shim wrap so spawns run hidden:**
+```powershell
+npm run silence-hooks
+```
+
+This wraps every hook (DevNeural's plus any others) in `silent-shim.exe` so child processes do not flash a console window on every event. Idempotent on re-run.
 
 **Verify the backup exists:**
 ```powershell

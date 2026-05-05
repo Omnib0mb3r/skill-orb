@@ -22,17 +22,22 @@ Of all the things in `~/.claude/`, only `settings.json` is modified by DevNeural
 
 **DevNeural's hook entries (added by `npm run install-hooks`):**
 
-| Event | Matcher | Command |
-|---|---|---|
-| `PreToolUse` | `*` | `node "C:/dev/Projects/DevNeural/07-daemon/dist/capture/hooks/hook-runner.js" pre` |
-| `PostToolUse` | `*` | `node "C:/dev/Projects/DevNeural/07-daemon/dist/capture/hooks/hook-runner.js" post` |
-| `UserPromptSubmit` | (none) | `node "C:/dev/Projects/DevNeural/07-daemon/dist/capture/hooks/hook-runner.js" prompt` |
-| `Stop` | (none) | `node "C:/dev/Projects/DevNeural/07-daemon/dist/capture/hooks/hook-runner.js" stop` |
+| Event | Matcher | Phase arg | Purpose |
+|---|---|---|---|
+| `PreToolUse` | `*` | `pre` | Captures tool-start observation |
+| `PostToolUse` | `*` | `post` | Captures tool-complete observation |
+| `UserPromptSubmit` | (none) | `prompt` | Captures prompt + posts to `/curate` for injection |
+| `Stop` | (none) | `stop` | Marks session_stop, clears any pending permission prompt |
+| `Notification` | (none) | `notification` | Captures CC's permission/elicitation message; posts to `/sessions/:id/pending-prompt` so the dashboard surfaces it with answer buttons |
+
+Each entry is materialized by `install-hooks.ts` as a wscript-wrapped invocation of `silent-runner.vbs <phase>`, which in turn launches `node "07-daemon/dist/capture/hooks/hook-runner.js" <phase>`. The whole thing is then re-wrapped by `silence-all-hooks.ps1` in `silent-shim.exe` so the hook runs invisibly (no console flash) on Windows.
+
+**Inner-arg escape convention:** `silent-shim.exe` takes one quoted argument that is the inner command. Embedded `"` characters inside that argument are escaped with backslash `\"`, NOT cmd-style `""`. Reason: Claude Code on Windows runs hook commands through bash (Git Bash), and bash treats `""` inside `"..."` as empty-string concatenation rather than an escaped quote. `\"` is honored by both bash dq AND the Windows CRT (CommandLineToArgvW), so the wrap survives either invocation path. If you re-run `silence-all-hooks.ps1`, it now no-ops on already-wrapped entries (anchored detection regex).
 
 **Detection rules used by `install-hooks`:**
 
-- An entry is "DevNeural v2" if its command contains `07-daemon/dist/capture/hooks/hook-runner.js`.
-- An entry is "DevNeural v1" if its command contains `01-data-layer/dist/hook-runner.js` or `04-session-intelligence/dist/session-start.js`.
+- An entry is "DevNeural v2" if its command contains `07-daemon/dist/capture/hooks/hook-runner.js` OR `07-daemon/dist/capture/hooks/silent-runner.vbs` (raw and wrapped forms both detected).
+- An entry is "DevNeural v1" if its command contains `01-data-layer/dist/hook-runner.js` or `04-session-intelligence/dist/session-start.js`. Purged on every install.
 - All other entries are treated as foreign and **left alone**.
 
 **Install behavior:**
@@ -77,6 +82,8 @@ You should only see additions to the `hooks` block.
 ## Phase 5 audit: actual `OTLCDEV` settings inventory
 
 > Captured 2026-05-04 from `~/.claude/settings.json` on `OTLCDEV`. Refresh whenever a major plugin is added or the `Claude-Setup` repo updates. No secrets present in this snapshot; `[REDACTED]` placeholders shown for any field that would carry one.
+>
+> **Refresh note 2026-05-04 (later in day):** the v1 entries in the inventory below were migrated to v2 by `install-hooks`; all hook entries are now silent-shim-wrapped with backslash-escaped inner args; and a fifth DevNeural entry was added for the `Notification` event so CC permission prompts surface in the dashboard. The duplicates flagged with `!` below were not removed; they remain pending the next manual `dedupe-hooks` pass. Counts in the per-event tables therefore reflect the pre-migration snapshot, not the current state.
 
 ### Top-level shape
 
@@ -288,7 +295,7 @@ If `OTLCDEV` is wiped and you need to rebuild from scratch:
 4. **Pull the ollama model** (`ollama pull qwen3:8b`).
 5. **Clone DevNeural** to `C:/dev/Projects/DevNeural/`.
 6. **Run setup**: `cd 07-daemon && npm install && npm run setup`.
-7. The setup will detect existing hooks (from step 3), not nuke them, and add DevNeural's four entries.
+7. The setup will detect existing hooks (from step 3), not nuke them, and add DevNeural's five entries (Pre/Post/Prompt/Stop/Notification). Then run `npm run silence-hooks` to wrap every hook in `silent-shim.exe`.
 8. **Optionally restore your wiki** from a backup (see `06-recovery-and-reconstruction.md`).
 9. **Run npm run status** to verify.
 

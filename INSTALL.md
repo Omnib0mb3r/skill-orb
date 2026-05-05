@@ -2,7 +2,7 @@
 
 > Entry point for installing or rebuilding DevNeural on a new (or wiped) machine.
 > Goal: any developer (or a Claude reading this doc) can stand the system up cleanly without breaking an existing setup.
-> Last updated: 2026-05-02.
+> Last updated: 2026-05-04.
 
 This file is the table of contents. The detailed instructions live under [docs/install/](docs/install/).
 
@@ -50,7 +50,8 @@ This is the short version. The detailed steps are in `04-step-by-step.md` and th
 [ ] Repo cloned to C:/dev/Projects/DevNeural/
 [ ] Default model pulled (`ollama pull qwen3:8b`)
 [ ] cd 07-daemon && npm install && npm run setup
-[ ] cd 07-daemon && npm run install-hooks       # registers v2 hooks; backs up settings.json
+[ ] cd 07-daemon && npm run install-hooks       # registers 5 v2 hook entries (Pre/Post/Prompt/Stop/Notification); backs up settings.json
+[ ] cd 07-daemon && npm run silence-hooks       # wraps every hook in silent-shim.exe so spawns run hidden; idempotent
 [ ] cd 08-dashboard && npm install --legacy-peer-deps && NODE_ENV=production npx next build
 [ ] cd 09-bridge && npm install && npm run build && npm run package
 [ ]   code --install-extension devneural-bridge.vsix

@@ -270,6 +270,41 @@ For now: not a known DevNeural failure mode.
 
 ---
 
+## Audio upload says "transcript_extracted: 0" or daemon log shows "whisper exited with code 1"
+
+**Cause:** `DEVNEURAL_WHISPER_BIN` is set to `C:\dev\whisper.cpp\Release\main.exe`. Recent whisper.cpp builds replaced `main.exe` with a deprecation stub that prints a warning and exits without transcribing. The audio module then sees no `.txt` output and reports failure.
+
+**Fix:**
+```powershell
+setx DEVNEURAL_WHISPER_BIN "C:\dev\whisper.cpp\Release\whisper-cli.exe"
+# Restart the daemon so the new env value is inherited
+taskkill /F /PID (Get-Content C:/dev/data/skill-connections/daemon.pid) -ErrorAction SilentlyContinue
+cd C:\dev\Projects\DevNeural\07-daemon; powershell -File scripts\start-daemon.ps1
+```
+
+Alternative: unset the env var entirely so `audio.ts` falls back to its built-in path list (which already prefers `whisper-cli.exe` over `main.exe`).
+
+---
+
+## PostToolUse / PreToolUse hook errors: "silent-shim.exe: silent-shim.exe: cannot execute"
+
+**Cause:** older `silence-all-hooks.ps1` versions used cmd-style `""` to escape inner-arg quotes. Bash (Claude Code's shell on Windows) treats `""` as empty-string concatenation, so the inner exe path collapses with its arguments and `silent-shim` tries to launch a path fragment.
+
+**Fix:**
+```powershell
+cd C:\dev\Projects\DevNeural\07-daemon
+powershell -File scripts\reescape-hook-args.ps1   # one-shot: rewrites "" -> \"
+```
+
+If you ever ran an old `silence-all-hooks.ps1` more than once, the detection regex bug may also have wrapped your hooks in two layers of `silent-shim`. Repair with:
+```powershell
+powershell -File scripts\repair-double-wrapped-hooks.ps1   # peels one shim layer where double-wrapped
+```
+
+Both scripts back up `~/.claude/settings.json` before writing and accept `-DryRun` to preview. Re-running `silence-all-hooks.ps1` is idempotent on the corrected state.
+
+---
+
 ## "I don't know what changed but it's slow"
 
 ```powershell

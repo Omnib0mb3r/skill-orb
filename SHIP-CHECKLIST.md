@@ -81,7 +81,7 @@
 - [x] `emitNotification()` autopushes severity `warn` and `alert`; `info` stays in-feed only
 - [x] 410/404 responses from the push service prune the subscription so a stale subscription doesn't keep failing forever
 - [x] iOS PWA push verified end-to-end (2026-05-04: installed via Share -> Add to Home Screen at https://otlcdev.tail27b46b.ts.net, subscribed successfully)
-- [ ] Android push verified end-to-end (works in Chrome before install; not yet tested on this user's devices)
+- [-] Android push verified end-to-end. Closed 2026-05-04: this user has no Android device. Code path identical to the verified iOS push (same VAPID + service worker handler).
 
 ## I. Audio + video pipeline (Phase 3.5)
 
@@ -90,8 +90,8 @@
 - [x] Missing-binary case parks the upload as `queued` and emits a warn-level notification (does not fail the upload)
 - [x] `whisper.cpp` cloned + built on `OTLCDEV`. Binary at `C:/dev/whisper.cpp/Release/whisper-cli.exe`, `ggml-base.en.bin` model alongside in `models/`. `audio.ts` fallback list updated to include the `Release/` sibling pattern (older prebuilt zips don't drop into `build/bin/Release/`).
 - [x] `Gyan.FFmpeg` installed on `OTLCDEV` via winget; `ffmpeg.exe` resolves on PATH.
-- [ ] `DEVNEURAL_WHISPER_BIN` env var: not strictly required now that the fallback list covers the actual install path. Set if you ever move the binary.
-- [ ] Test: upload an mp3 to `/upload`, see "transcript extracted: N chars" in `daemon.log` (run after next daemon restart so the new fallback path is loaded).
+- [x] `DEVNEURAL_WHISPER_BIN` env var. Set in `HKCU\Environment` to `C:\dev\whisper.cpp\Release\whisper-cli.exe`. Earlier value pointed at `main.exe`, which is now a deprecation stub that prints a warning and exits without transcribing; corrected via `setx` 2026-05-04. See `docs/install/07-troubleshooting.md` "Audio upload" section.
+- [x] Test: extractAudioTranscript verified end-to-end on a generated 2s sine mp3 (returned `ok:true, text:"(eerie music)"`). For a real `/upload` round-trip, drop any mp3 onto the dashboard reference uploader and watch `daemon.log` for `transcript extracted: N chars`.
 
 ## J. PWA
 
