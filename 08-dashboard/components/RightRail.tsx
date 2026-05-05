@@ -8,6 +8,7 @@ import {
   notifications as notificationsClient,
   completeReminder,
   dismissNotification,
+  correctWikiPage,
 } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
@@ -36,6 +37,18 @@ export function RightRail() {
   });
   const dismissM = useMutation({
     mutationFn: (id: string) => dismissNotification(id),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["notifications", "recent"] }),
+  });
+  const correctM = useMutation({
+    mutationFn: async (vars: { notifId: string; pageId: string }) => {
+      const r = await correctWikiPage(vars.pageId);
+      // Dismiss the notification too so the user gets a clean clear in
+      // the same click; the correction record itself lives in the
+      // reinforcement log.
+      await dismissNotification(vars.notifId);
+      return r;
+    },
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["notifications", "recent"] }),
   });
@@ -125,6 +138,18 @@ export function RightRail() {
             const dot =
               n.severity === "alert" ? "fail" : n.severity === "warn" ? "warn" : "ai";
             const clickable = Boolean(n.link);
+            // Curator injection notifications carry the wiki page id in
+            // their link as ?page=<id>. Extract so the "wrong" button
+            // can post a correction without parsing on the daemon side.
+            const wikiPageId = (() => {
+              if (n.source !== "curator" || !n.link) return null;
+              try {
+                const u = new URL(n.link, "http://x");
+                return u.searchParams.get("page");
+              } catch {
+                return null;
+              }
+            })();
             return (
               <li
                 key={n.id}
@@ -152,9 +177,9 @@ export function RightRail() {
                   <StatusDot status={dot} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs text-txt1 truncate">{n.title}</div>
+                  <div className="text-xs text-txt1 line-clamp-2">{n.title}</div>
                   {n.body && (
-                    <div className="text-[11px] font-mono text-txt3 mt-0.5 truncate">
+                    <div className="text-[11px] font-mono text-txt3 mt-0.5 line-clamp-3 break-words">
                       {n.body}
                     </div>
                   )}
@@ -166,6 +191,21 @@ export function RightRail() {
                       minute: "2-digit",
                     })}
                   </span>
+                  {wikiPageId && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        correctM.mutate({ notifId: n.id, pageId: wikiPageId });
+                      }}
+                      disabled={correctM.isPending}
+                      className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-txt3 hover:text-fail p-1 -m-1 transition-opacity"
+                      aria-label={`Mark this injection wrong (lowers ${wikiPageId} weight)`}
+                      title="This was wrong (lowers page weight, archives at 3 corrections)"
+                    >
+                      <Icon name="ThumbsDown" size={12} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={(e) => {

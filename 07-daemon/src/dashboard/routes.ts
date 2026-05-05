@@ -755,6 +755,22 @@ export async function registerDashboardRoutes(
     return { ok: true, ...r };
   });
 
+  /* One-click correction from the dashboard. Used when the user spots
+   * a curator injection in the live activity rail and decides the
+   * page was bad recall. Lowers weight, increments corrections, archives
+   * if the page hits the corrections>=3 + weight<floor threshold.
+   * Idempotent: safe to call multiple times; each call counts. */
+  app.post('/admin/wiki/correct/:id', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const { correctWikiPageById } = await import('../reinforcement/index.js');
+    const r = await correctWikiPageById(store, id, log);
+    if (!r.ok) {
+      reply.code(404);
+      return r;
+    }
+    return r;
+  });
+
   /* Manually promote a pending wiki page to canonical. Intended use:
    * seed the curator before any organic reinforcement has fired so the
    * loop has at least one canonical target to inject. Idempotent: if
@@ -783,10 +799,15 @@ export async function registerDashboardRoutes(
             ? page.frontmatter.weight
             : 0.5,
     };
+    // Always rewrite frontmatter so the new weight (or status) reaches
+    // disk, even when status was already canonical and only the weight
+    // changed.
+    rewritePageFrontmatter(page, fm);
     if (!alreadyCanonical) {
-      rewritePageFrontmatter(page, fm);
       const movedPath = moveTo({ ...page, frontmatter: fm }, wikiPagesDir());
       page = { ...page, filePath: movedPath, frontmatter: fm };
+    } else {
+      page = { ...page, frontmatter: fm };
     }
     // Always reindex. Even when frontmatter is already canonical the
     // vector-store metadata may still say pending (e.g. an earlier

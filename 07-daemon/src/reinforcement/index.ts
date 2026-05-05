@@ -484,6 +484,54 @@ export async function evaluateAssistantReply(
   commitWiki(`reinforce hit ${p.pageId}`);
 }
 
+/**
+ * Direct, session-less correction. Used by the dashboard's "this was
+ * wrong" button on a curator-injection notification: the user has no
+ * pending session context (they may not even be in a Claude session),
+ * they just want to flag the page as bad recall. Same weight-loss and
+ * archive-on-3 semantics as evaluateCorrection's wiki branch, minus
+ * the session pending lookup and blacklist.
+ */
+export async function correctWikiPageById(
+  store: Store,
+  pageId: string,
+  log: (msg: string) => void = () => undefined,
+): Promise<{ ok: true; weight: number; corrections: number; archived: boolean } | { ok: false; error: string }> {
+  const page = loadPage(pageId);
+  if (!page) return { ok: false, error: `wiki page ${pageId} not found` };
+  const fm = { ...page.frontmatter };
+  fm.corrections = (fm.corrections ?? 0) + 1;
+  fm.weight = Math.max(0, fm.weight - fm.weight * CORRECTION_WEIGHT_LOSS);
+  rewritePageFrontmatter(page, fm);
+  appendReinforcementLog({
+    kind: 'correction',
+    session: 'manual',
+    page: pageId,
+    weight: fm.weight,
+  });
+  log(`[reinforce] manual correction on ${pageId}: weight=${fm.weight.toFixed(2)}`);
+  appendLog(`reinforce: manual correction on ${pageId} (weight ${fm.weight.toFixed(2)})`);
+  let archived = false;
+  let final = { ...page, frontmatter: fm };
+  if (fm.corrections >= 3 && fm.weight < ARCHIVE_FLOOR) {
+    const archivedPath = moveTo(final, wikiArchiveDir());
+    final = { ...final, filePath: archivedPath };
+    archived = true;
+    appendReinforcementLog({
+      kind: 'archive',
+      session: 'manual',
+      page: pageId,
+      reason: 'corrections>=3',
+    });
+    log(`[reinforce] archived ${pageId} after 3+ corrections`);
+    appendLog(`reinforce: archived ${pageId} after corrections=3`);
+  }
+  await reindexPage(store, final);
+  await store.wikiPages.flush();
+  commitWiki(`reinforce manual correction ${pageId}`);
+  return { ok: true, weight: fm.weight, corrections: fm.corrections, archived };
+}
+
 export function evaluateCorrection(
   store: Store,
   sessionId: string,

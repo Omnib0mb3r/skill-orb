@@ -426,6 +426,18 @@ export const notifications = (limit = 50) =>
 export const dismissNotification = (id: string) =>
   request<{ ok: boolean }>(`/notifications/${id}/dismiss`, { method: "POST" });
 
+/* One-click correction on a wiki page. Used by the live activity rail
+ * when the user spots a curator injection that was bad recall. Daemon
+ * lowers weight + increments corrections; archives at 3+ corrections. */
+export const correctWikiPage = (pageId: string) =>
+  request<{
+    ok: boolean;
+    weight?: number;
+    corrections?: number;
+    archived?: boolean;
+    error?: string;
+  }>(`/admin/wiki/correct/${encodeURIComponent(pageId)}`, { method: "POST" });
+
 // ── projects ────────────────────────────────────────────────────
 export interface ProjectRecord {
   id: string;
