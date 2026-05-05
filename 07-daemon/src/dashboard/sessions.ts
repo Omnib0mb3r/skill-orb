@@ -19,7 +19,13 @@ const SESSIONS_ROOT = path
   .join(os.homedir(), '.claude', 'projects')
   .replace(/\\/g, '/');
 const BRIDGE_DIR = path.posix.join(DATA_ROOT, 'session-bridge');
-const ACTIVE_THRESHOLD_MS = 10 * 60 * 1000; // last 10min of activity = "active"
+/* "Active" = jsonl mtime touched within the last day. The dashboard
+ * uses this flag to decide what shows on the Stream Deck rail by
+ * default. Anything more aggressive (e.g. 10 minutes) makes the live
+ * session vanish during normal idle gaps; anything looser brings back
+ * yesterday's archive. The phase coloring (thinking/tool/idle) gives
+ * the live indicator inside that window. */
+const ACTIVE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
 export interface SessionListItem {
   session_id: string;

@@ -81,12 +81,11 @@ export function StreamDeck() {
     queryFn: sessionsClient,
     refetchInterval: 5_000,
   });
-  /* Default: show every session that still has a jsonl on disk. Stale
-   * (mtime > ACTIVE_THRESHOLD_MS) tiles render dimmer via the "inactive"
-   * state but stay visible so a session that goes quiet for an hour
-   * doesn't vanish out from under the user. Toggle hides them when the
-   * rail gets crowded. */
-  const [showStale, setShowStale] = useState(true);
+  /* Default: show only sessions the daemon flags as active. The flag
+   * uses a 24h jsonl-mtime window, so a live session stays visible
+   * through normal idle gaps. Toggle pulls in older history when
+   * the user wants to revisit a yesterday's transcript. */
+  const [showStale, setShowStale] = useState(false);
 
   /* Last-focused tracker drives the "tap again to enter Nav" rule. */
   const [navSessionId, setNavSessionId] = useState<string | null>(null);
