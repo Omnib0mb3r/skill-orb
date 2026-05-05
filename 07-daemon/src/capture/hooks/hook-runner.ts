@@ -188,6 +188,53 @@ async function postPendingPrompt(
   }
 }
 
+/* Recap-line forwarder.
+ *
+ * The user's shell prompt (Starship/Powerlevel etc.) injects a "※ recap:"
+ * one-liner above the prompt area summarizing the prior context. Those
+ * recaps are pure shell garnish from CC's perspective, but they're
+ * exactly the kind of one-line state-of-the-session that's worth
+ * surfacing on the dashboard so the user can scan progress remotely.
+ *
+ * Strategy: scan UserPromptSubmit prompts for "※ recap:" (with or
+ * without leading whitespace, anywhere in the message). If found, emit
+ * an info-level notification with source="recap" so the activity rail
+ * picks it up. Body is the text from the marker to the next blank line
+ * or end of prompt, capped so we don't shove a paragraph into a toast. */
+const RECAP_MARKER = /(?:^|\n)[ \t]*[※][ \t]*recap[: ]\s*([\s\S]+?)(?=\n\s*\n|$)/i;
+const RECAP_MAX = 600;
+
+async function maybeEmitRecap(prompt: string, sessionId: string): Promise<void> {
+  if (!prompt) return;
+  const m = prompt.match(RECAP_MARKER);
+  if (!m || !m[1]) return;
+  const body = m[1].trim().replace(/\s+/g, ' ').slice(0, RECAP_MAX);
+  if (!body) return;
+  const url = `http://127.0.0.1:${DAEMON_PORT}/notifications`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 800);
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        severity: 'info',
+        source: 'recap',
+        title: '※ recap',
+        body,
+        link: sessionId
+          ? `/sessions/detail?id=${encodeURIComponent(sessionId)}`
+          : undefined,
+      }),
+      signal: ctrl.signal,
+    });
+  } catch {
+    /* daemon down; recap silently skipped */
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function clearPendingPrompt(sessionId: string): Promise<void> {
   if (!sessionId || sessionId === 'unknown') return;
   const url = `http://127.0.0.1:${DAEMON_PORT}/sessions/${encodeURIComponent(sessionId)}/pending-prompt`;
@@ -409,6 +456,10 @@ async function main(): Promise<void> {
   // to stdout so Claude Code includes it as additional context. Bounded
   // timeout; daemon-down silently skips.
   if (phase === 'user_prompt' && obs.prompt) {
+    // Surface "※ recap:" lines from the shell prompt to the dashboard
+    // activity rail. Fire and continue — recap is a side channel, not
+    // a blocker for curation.
+    void maybeEmitRecap(obs.prompt, obs.session);
     await curateAndPrint(obs.prompt, obs.session, identity.id);
   }
 

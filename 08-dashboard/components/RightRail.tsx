@@ -56,10 +56,11 @@ export function RightRail() {
   const openReminders = (remQ.data?.reminders ?? []).filter(
     (r) => !r.completed_at && !r.archived_at,
   );
-  /* Activity rail = brain stream only (curator + reinforcement). System
-   * notifications stay in the bell. Per-scope dismiss tracking means
-   * clearing here doesn't touch the bell row. */
-  const ACTIVITY_SOURCES = new Set(["curator", "reinforcement"]);
+  /* Activity rail = brain stream only (curator + reinforcement + recap).
+   * System notifications stay in the bell. Per-scope dismiss tracking
+   * means clearing here doesn't touch the bell row. Recap lines are the
+   * shell-prompt "※ recap:" summaries forwarded by the hook-runner. */
+  const ACTIVITY_SOURCES = new Set(["curator", "reinforcement", "recap"]);
   const allEvents = (notQ.data?.notifications ?? []).filter(
     (n) =>
       ACTIVITY_SOURCES.has(n.source) &&
