@@ -230,7 +230,7 @@ export function getPending(sessionId: string): Pending | null {
   return p;
 }
 
-interface PageOnDisk {
+export interface PageOnDisk {
   filePath: string;
   raw: string;
   frontmatter: PageFrontmatter;
@@ -245,7 +245,7 @@ function findPageFile(pageId: string): string | null {
   return null;
 }
 
-function loadPage(pageId: string): PageOnDisk | null {
+export function loadPage(pageId: string): PageOnDisk | null {
   const filePath = findPageFile(pageId);
   if (!filePath) return null;
   const raw = fs.readFileSync(filePath, 'utf-8');
@@ -258,7 +258,7 @@ function loadPage(pageId: string): PageOnDisk | null {
   };
 }
 
-function rewritePageFrontmatter(
+export function rewritePageFrontmatter(
   page: PageOnDisk,
   fm: PageFrontmatter,
 ): void {
@@ -268,7 +268,7 @@ function rewritePageFrontmatter(
   writePage(dir, { frontmatter: fm, sections: parsed.sections });
 }
 
-function moveTo(page: PageOnDisk, targetDir: string): string {
+export function moveTo(page: PageOnDisk, targetDir: string): string {
   const fileName = path.basename(page.filePath);
   const target = path.posix.join(targetDir, fileName);
   ensureDir(targetDir);
@@ -334,7 +334,7 @@ async function scheduleRawHitIngest(
   }
 }
 
-async function reindexPage(store: Store, page: PageOnDisk): Promise<void> {
+export async function reindexPage(store: Store, page: PageOnDisk): Promise<void> {
   const fm = page.frontmatter;
   const tsMs = Date.now();
   store.db.upsertWikiPage(

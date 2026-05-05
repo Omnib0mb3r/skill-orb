@@ -755,6 +755,38 @@ export async function registerDashboardRoutes(
     return { ok: true, ...r };
   });
 
+  /* Manually promote a pending wiki page to canonical. Intended use:
+   * seed the curator before any organic reinforcement has fired so the
+   * loop has at least one canonical target to inject. Idempotent: if
+   * already canonical, returns ok with already_canonical:true. Updates
+   * frontmatter, moves the file from pending/ to pages/, and reindexes
+   * the vector-store metadata so the curator's status filter matches. */
+  app.post('/admin/wiki/promote/:id', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const body = (req.body ?? {}) as { weight?: number };
+    const { loadPage, rewritePageFrontmatter, moveTo, reindexPage } =
+      await import('../reinforcement/index.js');
+    const { wikiPagesDir } = await import('../paths.js');
+    const page = loadPage(id);
+    if (!page) {
+      reply.code(404);
+      return { ok: false, error: `wiki page ${id} not found in pending or pages` };
+    }
+    if (page.frontmatter.status === 'canonical') {
+      return { ok: true, already_canonical: true, id };
+    }
+    const fm = {
+      ...page.frontmatter,
+      status: 'canonical' as const,
+      weight: typeof body.weight === 'number' ? body.weight : 0.5,
+    };
+    rewritePageFrontmatter(page, fm);
+    const newPath = moveTo({ ...page, frontmatter: fm }, wikiPagesDir());
+    await reindexPage(store, { ...page, filePath: newPath, frontmatter: fm });
+    log(`[admin] promoted wiki page ${id} to canonical (weight ${fm.weight})`);
+    return { ok: true, id, weight: fm.weight };
+  });
+
   app.post('/admin/backfill/:mode/cancel', async (req, reply) => {
     const mode = (req.params as { mode: string }).mode;
     if (mode !== 'raw' && mode !== 'wiki') {
