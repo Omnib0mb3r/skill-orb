@@ -199,11 +199,11 @@ export function RightRail() {
                         correctM.mutate({ notifId: n.id, pageId: wikiPageId });
                       }}
                       disabled={correctM.isPending}
-                      className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-txt3 hover:text-fail p-1 -m-1 transition-opacity"
+                      className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-txt3 hover:text-fail p-1.5 -m-0.5 transition-opacity"
                       aria-label={`Mark this injection wrong (lowers ${wikiPageId} weight)`}
                       title="This was wrong (lowers page weight, archives at 3 corrections)"
                     >
-                      <Icon name="ThumbsDown" size={12} />
+                      <Icon name="ThumbsDown" size={16} />
                     </button>
                   )}
                   <button
@@ -213,11 +213,11 @@ export function RightRail() {
                       dismissM.mutate(n.id);
                     }}
                     disabled={dismissM.isPending}
-                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-txt3 hover:text-txt1 p-1 -m-1 transition-opacity"
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-txt3 hover:text-txt1 p-1.5 -m-0.5 transition-opacity"
                     aria-label={`Dismiss ${n.title}`}
                     title="Dismiss"
                   >
-                    <Icon name="X" size={12} />
+                    <Icon name="X" size={16} />
                   </button>
                 </div>
               </li>
