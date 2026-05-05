@@ -268,7 +268,21 @@ export function TerminalMirror({ sessionId }: Props) {
         }
       };
       window.addEventListener("resize", onResize);
-      unbindResize = () => window.removeEventListener("resize", onResize);
+      window.addEventListener("orientationchange", onResize);
+      /* Also observe the container's own box: the panel can reflow
+       * without a window resize (right rail showing/hiding at xl
+       * breakpoint, mobile tab bar appearing, dashboard nav collapsing
+       * the side panel) and we want the mirror to re-fit immediately. */
+      const ro =
+        typeof ResizeObserver !== "undefined"
+          ? new ResizeObserver(() => onResize())
+          : null;
+      if (ro) ro.observe(el);
+      unbindResize = () => {
+        window.removeEventListener("resize", onResize);
+        window.removeEventListener("orientationchange", onResize);
+        ro?.disconnect();
+      };
 
       /* Finger-drag scrollback for iPad / touch devices. xterm's
        * native viewport scrollbar is a couple of pixels wide and hard
@@ -465,7 +479,7 @@ export function TerminalMirror({ sessionId }: Props) {
       ) : null}
       <div
         ref={containerRef}
-        className="h-[65vh] min-h-[420px] bg-[oklch(8%_0_0)]"
+        className="h-[calc(100dvh-13rem)] min-h-[320px] bg-[oklch(8%_0_0)]"
         aria-label="Live Claude Code terminal output"
       />
     </section>
