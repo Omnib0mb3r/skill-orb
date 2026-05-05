@@ -415,7 +415,7 @@ export function TerminalMirror({ sessionId }: Props) {
       ) : null}
       <div
         ref={containerRef}
-        className="h-[65vh] min-h-[420px] bg-[oklch(8%_0_0)] overflow-auto"
+        className="h-[65vh] min-h-[420px] bg-[oklch(8%_0_0)]"
         aria-label="Live Claude Code terminal output"
       />
     </section>
