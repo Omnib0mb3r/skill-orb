@@ -253,3 +253,16 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0ms !important; transition-duration: 0ms !important; }
 }
+
+/* xterm viewport touch scroll on iOS / iPad PWA. Without these the
+ * Terminal mirror's scrollback only responds to wheel events; finger
+ * drags get captured by the page chrome and the user has no way to
+ * read history that has scrolled past the viewport. -webkit-overflow-
+ * scrolling: touch enables momentum; touch-action: pan-y tells the
+ * browser this region opts in to vertical pan and lets xterm's
+ * scrollbar receive the gesture. */
+.xterm-viewport {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overflow-y: auto !important;
+}
