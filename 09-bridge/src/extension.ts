@@ -666,6 +666,148 @@ function stopWatching(): void {
   }
 }
 
+/* Terminal-output mirror.
+ *
+ * Subscribes to vscode.window.onDidWriteTerminalData (proposed API
+ * gated by enabledApiProposals: ["terminalDataWriteEvent"] in
+ * package.json AND launching VS Code with
+ * --enable-proposed-api Omnib0mb3r.devneural-bridge). Streams every
+ * byte the Claude terminal renders to the daemon as a debounced HTTP
+ * POST. The daemon ring-buffers and broadcasts to dashboard clients
+ * over WebSocket so an iPad can watch the live TUI.
+ *
+ * Read-only mirror. Inputs still flow via the existing Steer box and
+ * Nav grid. Failure modes:
+ *   - Proposed API unavailable -> log once, return; existing flow
+ *     keeps working.
+ *   - Daemon down -> POST throws; swallowed.
+ *   - Terminal not Claude-bearing -> filtered out before any work.
+ *
+ * Resolves session_id from the terminal's cwd by scanning the
+ * StreamDeck identity dir, the same source of truth the daemon
+ * already uses for "active" detection. */
+function startTerminalMirror(context: vscode.ExtensionContext): void {
+  const proposed = vscode.window as unknown as {
+    onDidWriteTerminalData?: (
+      cb: (e: { terminal: vscode.Terminal; data: string }) => void,
+    ) => vscode.Disposable;
+  };
+  if (typeof proposed.onDidWriteTerminalData !== 'function') {
+    channel.appendLine(
+      '[mirror] onDidWriteTerminalData not exposed; launch VS Code with --enable-proposed-api Omnib0mb3r.devneural-bridge to enable terminal mirroring',
+    );
+    return;
+  }
+
+  const buffers = new Map<vscode.Terminal, string>();
+  const flushTimers = new Map<vscode.Terminal, NodeJS.Timeout>();
+  const sessionIdCache = new Map<vscode.Terminal, string | null>();
+
+  function localAppData(): string {
+    return (
+      process.env.LOCALAPPDATA?.replace(/\\/g, '/') ??
+      path.posix.join(os.homedir().replace(/\\/g, '/'), 'AppData', 'Local')
+    );
+  }
+
+  function resolveSessionForTerminal(t: vscode.Terminal): string | null {
+    if (sessionIdCache.has(t)) return sessionIdCache.get(t) ?? null;
+    let cwd: string | undefined;
+    const opts = t.creationOptions as { cwd?: vscode.Uri | string };
+    if (opts.cwd instanceof vscode.Uri) cwd = opts.cwd.fsPath;
+    else if (typeof opts.cwd === 'string') cwd = opts.cwd;
+    if (!cwd) {
+      const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      cwd = ws;
+    }
+    if (!cwd) {
+      sessionIdCache.set(t, null);
+      return null;
+    }
+    const wantA = cwd.replace(/\\/g, '/').toLowerCase().replace(/\/$/, '');
+    const identityDir = path.posix.join(localAppData(), 'stream-deck', 'identity');
+    try {
+      for (const f of fs.readdirSync(identityDir)) {
+        if (!f.endsWith('.json')) continue;
+        try {
+          const raw = fs.readFileSync(path.posix.join(identityDir, f), 'utf-8');
+          const obj = JSON.parse(raw) as { Cwd?: string };
+          const wantB = (obj.Cwd ?? '')
+            .replace(/\\/g, '/')
+            .toLowerCase()
+            .replace(/\/$/, '');
+          if (!wantB) continue;
+          if (wantA === wantB || wantA.startsWith(wantB) || wantB.startsWith(wantA)) {
+            const id = f.slice(0, -'.json'.length);
+            sessionIdCache.set(t, id);
+            return id;
+          }
+        } catch {
+          continue;
+        }
+      }
+    } catch {
+      /* identity dir absent — tray app not running */
+    }
+    sessionIdCache.set(t, null);
+    return null;
+  }
+
+  function flush(t: vscode.Terminal): void {
+    const data = buffers.get(t);
+    flushTimers.delete(t);
+    buffers.delete(t);
+    if (!data) return;
+    const sessionId = resolveSessionForTerminal(t);
+    if (!sessionId) return;
+    const dataRoot = getDataRoot();
+    const port = (() => {
+      const m = dataRoot.match(/skill-connections/);
+      return m ? 3747 : 3747;
+    })();
+    const url = `http://127.0.0.1:${port}/sessions/${encodeURIComponent(
+      sessionId,
+    )}/terminal-stream`;
+    void fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data }),
+    }).catch(() => {
+      /* daemon down; drop chunk silently */
+    });
+  }
+
+  context.subscriptions.push(
+    proposed.onDidWriteTerminalData!(async (e) => {
+      try {
+        if (!(await isClaudeTerminal(e.terminal))) return;
+        const prev = buffers.get(e.terminal) ?? '';
+        buffers.set(e.terminal, prev + e.data);
+        if (!flushTimers.has(e.terminal)) {
+          flushTimers.set(
+            e.terminal,
+            setTimeout(() => flush(e.terminal), 50),
+          );
+        }
+      } catch {
+        /* event handler must never throw */
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.window.onDidCloseTerminal((t) => {
+      sessionIdCache.delete(t);
+      const timer = flushTimers.get(t);
+      if (timer) clearTimeout(timer);
+      flushTimers.delete(t);
+      buffers.delete(t);
+    }),
+  );
+
+  channel.appendLine('[mirror] terminal-data subscription active');
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   channel.appendLine(`[activate] DevNeural Bridge ${getDataRoot()}`);
   if (isEnabled()) {
@@ -751,6 +893,17 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push({
     dispose: () => stopWatching(),
   });
+
+  // Terminal-output mirror. Wrapped in try/catch so a missing proposed
+  // API or any subscription failure can't break the existing prompt
+  // delivery flow.
+  try {
+    startTerminalMirror(context);
+  } catch (err) {
+    channel.appendLine(
+      `[mirror] startup failed (non-fatal): ${(err as Error).message}`,
+    );
+  }
 }
 
 export function deactivate(): void {

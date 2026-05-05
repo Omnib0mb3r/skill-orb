@@ -28,6 +28,11 @@ import {
 } from './sessions.js';
 import { setPhase, type SessionPhase } from './session-phase.js';
 import { setPending, clearPending, getPending } from './pending-prompt.js';
+import {
+  pushTerminalData,
+  getTerminalReplay,
+  subscribeTerminal,
+} from './terminal-stream.js';
 import { lintQueueStatus } from '../wiki/lint-queue.js';
 import { providerStatus } from '../llm/index.js';
 import { embedderStats } from '../embedder/index.js';
@@ -496,6 +501,52 @@ export async function registerDashboardRoutes(
     });
     return { ok: true, notification: n };
   });
+
+  /* Terminal-output mirror.
+   *
+   * Bridge POSTs every chunk of rendered terminal data here. We push
+   * into the per-session ring and fan out to live WebSocket clients.
+   * Body: { data: string }. Empty body = 204 (no-op). */
+  app.post('/sessions/:id/terminal-stream', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const body = (req.body ?? {}) as { data?: unknown };
+    if (typeof body.data !== 'string' || !body.data) {
+      reply.code(204);
+      return null;
+    }
+    pushTerminalData(id, body.data);
+    reply.code(204);
+    return null;
+  });
+
+  /* Late-join replay: GET returns the current ring snapshot as plain
+   * text. The dashboard calls this once before opening the WS so the
+   * xterm renders the recent screen state instead of starting blank. */
+  app.get('/sessions/:id/terminal-replay', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    reply.type('text/plain; charset=utf-8');
+    return getTerminalReplay(id);
+  });
+
+  /* Live mirror via WebSocket. Each connected client gets every
+   * subsequent chunk pushed to the session's ring. The replay GET
+   * above seeds the initial screen; this carries the live updates. */
+  app.get(
+    '/sessions/:id/terminal-ws',
+    { websocket: true },
+    (socket, req) => {
+      const id = (req.params as { id: string }).id;
+      const unsubscribe = subscribeTerminal(id, (data) => {
+        try {
+          socket.send(data);
+        } catch {
+          /* socket may have closed mid-broadcast */
+        }
+      });
+      socket.on('close', unsubscribe);
+      socket.on('error', unsubscribe);
+    },
+  );
 
   app.post('/sessions/clear-supersede', async (req, reply) => {
     const body = (req.body ?? {}) as { session_id?: string; cwd?: string };

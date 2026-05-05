@@ -33,6 +33,7 @@ import { generateWhatsNew } from './wiki/whats-new.js';
 import { registerDashboardRoutes } from './dashboard/routes.js';
 import fastifyCookie from '@fastify/cookie';
 import fastifyMultipart from '@fastify/multipart';
+import fastifyWebsocket from '@fastify/websocket';
 import fastifyStatic from '@fastify/static';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -120,6 +121,7 @@ async function main(): Promise<void> {
       files: 1,
     },
   });
+  await app.register(fastifyWebsocket);
 
   /* SPA-vs-API collision guard.
    *
