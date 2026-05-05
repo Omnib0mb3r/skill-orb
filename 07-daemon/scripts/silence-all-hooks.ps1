@@ -96,7 +96,10 @@ function Get-WrappedCommand {
     param([string]$original)
 
     # Already wrapped via silent-shim? leave alone.
-    if ($original -match [regex]::Escape($shimPath) + '\s+"') { return $original }
+    # Anchored to start; the previous regex omitted the `^"` and the `"`
+    # that closes the shim path, so a quoted shim invocation never matched
+    # and every re-run double-wrapped its inputs.
+    if ($original -match ('^"' + [regex]::Escape($shimPath) + '"\s+"')) { return $original }
     # cmd /c start /min — pre-existing pattern from other tools, leave alone.
     if ($original -match '^\s*cmd(\.exe)?\s+/c\s+start\s+/min') { return $original }
 
@@ -113,9 +116,15 @@ function Get-WrappedCommand {
     }
 
     # silent-shim.exe takes the full inner command as a single arg.
-    # Escape embedded double-quotes by doubling them (cmd-style); shim
-    # parses the first quoted token as the exe and the rest as args.
-    $escaped = $inner -replace '"', '""'
+    # Escape embedded double-quotes with backslash. cmd-style "" doubling
+    # also works under cmd.exe and CommandLineToArgvW, but Claude Code on
+    # Windows runs hook commands through bash (Git Bash), and bash treats
+    # "" inside "..." as empty-string concatenation -- it joins the inner
+    # tokens into one argv slot, after which silent-shim splits on the
+    # first space and tries to launch a path fragment like 'C:\Program'.
+    # Backslash \" is honored both by bash dq AND by the Windows CRT, so
+    # it survives either invocation path.
+    $escaped = $inner -replace '"', '\"'
     return "`"$shimPath`" `"$escaped`""
 }
 
