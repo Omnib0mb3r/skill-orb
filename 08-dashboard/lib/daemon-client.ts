@@ -328,6 +328,21 @@ export const queuePrompt = (id: string, text: string) =>
 export const focusSession = (id: string) =>
   request<{ ok: boolean }>(`/sessions/${id}/focus`, { method: "POST" });
 
+export interface ScreenshotUploadResult {
+  ok: boolean;
+  path?: string;
+  bytes?: number;
+  error?: string;
+}
+export function uploadScreenshot(blob: Blob, filename = "paste.png") {
+  const fd = new FormData();
+  fd.append("file", blob, filename);
+  return request<ScreenshotUploadResult>("/uploads/screenshot", {
+    method: "POST",
+    body: fd,
+  });
+}
+
 /* Pending permission prompt: dashboard reads via SessionSummary.pending_prompt
  * (rides on /sessions). After the user picks an answer, queuePrompt sends the
  * digit + commits, then clearPendingPrompt drops the pending struct so the

@@ -8,6 +8,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { MultipartFile } from '@fastify/multipart';
 import type { Store } from '../store/index.js';
+import { DATA_ROOT } from '../paths.js';
 import { authMiddleware, registerAuthRoutes, isPinSet } from './auth.js';
 import { ReferenceStore } from '../reference/store.js';
 import { ingestUpload } from '../reference/process.js';
@@ -708,6 +709,75 @@ export async function registerDashboardRoutes(
       return r;
     }
     return r;
+  });
+
+  /* Lightweight screenshot drop.
+   *
+   * Receives a single image file (typical use: pasted from clipboard
+   * into the SendPromptForm on the dashboard), saves it under
+   * DATA_ROOT/uploads/screenshots/<uuid>.<ext>, and returns the
+   * absolute Windows path. The dashboard splices that path into the
+   * textarea so the bridge sends it to Claude Code as a Read-able file
+   * reference. No corpus ingestion, no embedding — this is a side door
+   * for "look at this picture" prompts, not a way to seed the wiki. */
+  app.post('/uploads/screenshot', async (req, reply) => {
+    const isMultipart = req.isMultipart && req.isMultipart();
+    if (!isMultipart) {
+      reply.code(400);
+      return { ok: false, error: 'multipart upload required' };
+    }
+    let buffer: Buffer | undefined;
+    let mimetype: string | undefined;
+    let filename: string | undefined;
+    try {
+      for await (const part of req.parts()) {
+        if (part.type === 'file') {
+          const fp = part as MultipartFile;
+          if (!buffer) {
+            buffer = await fp.toBuffer();
+            mimetype = fp.mimetype;
+            filename = fp.filename;
+          } else {
+            await fp.toBuffer();
+          }
+        }
+      }
+    } catch (err) {
+      reply.code(400);
+      return { ok: false, error: `upload parse failed: ${(err as Error).message}` };
+    }
+    if (!buffer || buffer.length === 0) {
+      reply.code(400);
+      return { ok: false, error: 'no image in upload' };
+    }
+    if (mimetype && !mimetype.startsWith('image/')) {
+      reply.code(400);
+      return { ok: false, error: `unsupported mime: ${mimetype}` };
+    }
+    const ext = (() => {
+      if (filename) {
+        const m = filename.match(/\.([a-zA-Z0-9]{2,5})$/);
+        if (m) return m[1]!.toLowerCase();
+      }
+      if (mimetype === 'image/jpeg') return 'jpg';
+      if (mimetype === 'image/gif') return 'gif';
+      if (mimetype === 'image/webp') return 'webp';
+      return 'png';
+    })();
+    const { randomUUID } = await import('node:crypto');
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const dir = path.posix.join(DATA_ROOT, 'uploads', 'screenshots');
+    fs.mkdirSync(dir, { recursive: true });
+    const id = randomUUID();
+    const file = path.posix.join(dir, `${id}.${ext}`);
+    fs.writeFileSync(file, buffer);
+    // Return a Windows-style absolute path so when the user pastes it
+    // into the prompt and the bridge ships it to CC, the Read tool's
+    // path resolver doesn't trip over forward slashes on a non-cwd
+    // file.
+    const winPath = file.replace(/\//g, '\\');
+    return { ok: true, path: winPath, bytes: buffer.length };
   });
 
   // ── Reference upload + corpus management ─────────────────────────

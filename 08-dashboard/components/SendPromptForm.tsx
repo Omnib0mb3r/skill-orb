@@ -6,6 +6,7 @@ import {
   queuePrompt,
   focusSession,
   bridgeStatus,
+  uploadScreenshot,
   DaemonError,
 } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
@@ -18,6 +19,7 @@ export function SendPromptForm({ sessionId }: Props) {
   const [text, setText] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
   const [failMsg, setFailMsg] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   // Poll bridge liveness so the user sees the form go red and the send
   // button disable when no VS Code window is running the bridge. Saves
@@ -49,6 +51,45 @@ export function SendPromptForm({ sessionId }: Props) {
   const focusM = useMutation({
     mutationFn: () => focusSession(sessionId),
   });
+
+  /* Paste-image handler.
+   *
+   * When the user pastes a screenshot into the textarea, intercept the
+   * clipboard items, extract the first image, ship it to the daemon's
+   * /uploads/screenshot endpoint, and splice the saved Windows path
+   * into the textarea so the bridge sends it as a Read-able file
+   * reference. Falls through to the default paste handler when no
+   * image is on the clipboard so plain-text paste still works. */
+  async function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const items = Array.from(e.clipboardData?.items ?? []);
+    const imageItem = items.find((i) => i.kind === "file" && i.type.startsWith("image/"));
+    if (!imageItem) return;
+    const blob = imageItem.getAsFile();
+    if (!blob) return;
+    e.preventDefault();
+    setUploading(true);
+    setFailMsg(null);
+    try {
+      const ext = (blob.type.split("/")[1] ?? "png").split("+")[0];
+      const result = await uploadScreenshot(blob, `paste-${Date.now()}.${ext}`);
+      if (!result.ok || !result.path) {
+        setFailMsg(result.error ?? "upload failed");
+        return;
+      }
+      const target = e.currentTarget;
+      const pos = target.selectionStart ?? text.length;
+      const before = text.slice(0, pos);
+      const after = text.slice(target.selectionEnd ?? pos);
+      const insert = (before && !before.endsWith(" ") && !before.endsWith("\n") ? " " : "") + result.path + " ";
+      setText(before + insert + after);
+    } catch (err) {
+      const e = err as DaemonError;
+      const payload = e.payload as { error?: string } | undefined;
+      setFailMsg(payload?.error ?? e.message);
+    } finally {
+      setUploading(false);
+    }
+  }
 
   return (
     <div className="rounded-panel bg-surface1 hairline">
@@ -97,7 +138,8 @@ export function SendPromptForm({ sessionId }: Props) {
           name="prompt-input"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Type a prompt to send to this session…"
+          onPaste={handlePaste}
+          placeholder="Type a prompt to send to this session… (paste a screenshot to attach)"
           rows={3}
           className="w-full px-3 py-2 rounded-input bg-surface2 hairline text-txt1 outline-none focus:ring-1 focus:ring-brand/60 text-sm font-mono resize-y placeholder:text-txt3"
           onKeyDown={(e) => {
@@ -107,6 +149,9 @@ export function SendPromptForm({ sessionId }: Props) {
             }
           }}
         />
+        {uploading && (
+          <div className="text-nano text-txt3 font-mono">uploading screenshot…</div>
+        )}
         <div className="flex items-center justify-between">
           <div className="text-nano text-txt3">
             <kbd className="font-mono">⌘↵</kbd> to send
