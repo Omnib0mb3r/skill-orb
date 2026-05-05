@@ -571,7 +571,12 @@ export async function registerDashboardRoutes(
 
   app.post('/notifications/:id/dismiss', async (req) => {
     const id = (req.params as { id: string }).id;
-    dismissNotification(id);
+    /* Optional scope: 'bell' or 'activity'. Omitted = legacy
+     * "dismiss everywhere" so older clients keep working. */
+    const body = (req.body ?? {}) as { scope?: string };
+    const scope =
+      body.scope === 'bell' || body.scope === 'activity' ? body.scope : undefined;
+    dismissNotification(id, scope);
     return { ok: true };
   });
 

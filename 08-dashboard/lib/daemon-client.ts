@@ -405,6 +405,7 @@ export const deleteReminder = (id: string) =>
   request<{ ok: boolean }>(`/reminders/${id}`, { method: "DELETE" });
 
 // ── notifications ────────────────────────────────────────────────
+export type NotificationScope = "bell" | "activity";
 export interface Notification {
   id: string;
   severity: "info" | "warn" | "alert";
@@ -413,18 +414,26 @@ export interface Notification {
   body?: string;
   link?: string;
   ts: string;
-  /** True once /notifications/:id/dismiss has been POSTed. Daemon's
-   * notifications.ts persists this as a flag, not a timestamp; older
-   * code in this file used `dismissed_at` and silently let dismissed
-   * rows keep rendering because the field never matched. */
+  /** True once dismissed in BOTH scopes. Per-scope visibility lives in
+   * dismissed_scopes; check that one when filtering for a specific
+   * surface (e.g. the top-bar bell vs the right-rail activity). */
   dismissed: boolean;
+  dismissed_scopes: NotificationScope[];
 }
 export const notifications = (limit = 50) =>
   request<{ ok: boolean; notifications: Notification[] }>(
     `/notifications?limit=${limit}`,
   );
-export const dismissNotification = (id: string) =>
-  request<{ ok: boolean }>(`/notifications/${id}/dismiss`, { method: "POST" });
+/* Scope optional. 'bell' clears just the top-bar dropdown row, 'activity'
+ * clears just the right-rail row, omitted clears both (legacy). */
+export const dismissNotification = (
+  id: string,
+  scope?: NotificationScope,
+) =>
+  request<{ ok: boolean }>(`/notifications/${id}/dismiss`, {
+    method: "POST",
+    ...(scope ? { body: { scope } } : {}),
+  });
 
 /* One-click correction on a wiki page. Used by the live activity rail
  * when the user spots a curator injection that was bad recall. Daemon

@@ -80,6 +80,14 @@ export function SessionDetail({ sessionId, query }: Props) {
   const transcriptScroll = useRef<HTMLDivElement | null>(null);
   const matchRefs = useRef<HTMLSpanElement[]>([]);
   const [activeMatch, setActiveMatch] = useState(0);
+  /* Auto-scroll the transcript to the latest turn unless the user has
+   * scrolled up to read history. Heuristic: if the scroll position is
+   * within AUTOSCROLL_NEAR_BOTTOM_PX of the bottom we treat the user as
+   * "following" and keep pinning to the latest on each chunk update.
+   * The moment they scroll away we stop following so we don't yank
+   * them back mid-read; scrolling back to the bottom resumes follow. */
+  const AUTOSCROLL_NEAR_BOTTOM_PX = 80;
+  const followLatestRef = useRef(true);
 
   // Reset matchRefs every render; fill in via callback ref on each <mark>.
   matchRefs.current = [];
@@ -125,6 +133,36 @@ export function SessionDetail({ sessionId, query }: Props) {
       seededRef.current = true;
     }
   }, [totalMatches]);
+
+  /* Pin to the latest turn when new chunks arrive AND the user is at
+   * (or close to) the bottom. Skipped when ?q= is set so the
+   * highlighting jump logic above stays in control. Runs on every
+   * chunks-array change. */
+  useEffect(() => {
+    if (trimmedQuery) return;
+    const el = transcriptScroll.current;
+    if (!el || !followLatestRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [renderedChunks.length, trimmedQuery]);
+
+  /* Initial pin on first data load: nothing to anchor against on the
+   * very first render so the effect above doesn't fire until the next
+   * refetch. Force one scroll-to-bottom once we have data. */
+  useEffect(() => {
+    if (trimmedQuery) return;
+    if (!q.data?.ok) return;
+    const el = transcriptScroll.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    // Re-assert follow in case the container grew after layout.
+    followLatestRef.current = true;
+  }, [q.data?.ok, trimmedQuery]);
+
+  function onTranscriptScroll(e: React.UIEvent<HTMLDivElement>): void {
+    const t = e.currentTarget;
+    const distance = t.scrollHeight - t.scrollTop - t.clientHeight;
+    followLatestRef.current = distance <= AUTOSCROLL_NEAR_BOTTOM_PX;
+  }
 
   function step(delta: number): void {
     if (totalMatches === 0) return;
@@ -286,6 +324,7 @@ export function SessionDetail({ sessionId, query }: Props) {
          */}
         <div
           ref={transcriptScroll}
+          onScroll={onTranscriptScroll}
           className="max-h-[60vh] overflow-y-auto bg-[oklch(11%_0_0)] font-mono text-xs"
         >
           {renderedChunks.length === 0 && (

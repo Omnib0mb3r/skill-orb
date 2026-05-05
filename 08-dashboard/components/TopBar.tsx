@@ -47,12 +47,10 @@ export function TopBar({ activeTab }: { activeTab: string }) {
     refetchInterval: 10_000,
   });
   const dismissM = useMutation({
-    mutationFn: (id: string) => dismissNotification(id),
-    /* Optimistic update: flip the row's dismissed flag in cache so the
-     * dropdown clears the moment the user clicks X, not on the next
-     * 10s refetch. Then invalidate so the canonical state from the
-     * daemon also lands. The unread badge is driven by /dashboard/health
-     * (separate query) — invalidate that too so the count drops. */
+    /* Bell dismiss only clears this dropdown; the activity rail keeps
+     * its copy until acknowledged there. Optimistic cache flip so the
+     * row disappears on click instead of waiting for the next refetch. */
+    mutationFn: (id: string) => dismissNotification(id, "bell"),
     onMutate: async (id: string) => {
       await qc.cancelQueries({ queryKey: ["notifications", "recent"] });
       const prev = qc.getQueryData<{ ok: boolean; notifications: Notification[] }>(
@@ -62,7 +60,14 @@ export function TopBar({ activeTab }: { activeTab: string }) {
         qc.setQueryData(["notifications", "recent"], {
           ...prev,
           notifications: prev.notifications.map((n) =>
-            n.id === id ? { ...n, dismissed: true } : n,
+            n.id === id
+              ? {
+                  ...n,
+                  dismissed_scopes: Array.from(
+                    new Set([...(n.dismissed_scopes ?? []), "bell"]),
+                  ),
+                }
+              : n,
           ),
         });
       }
@@ -107,7 +112,11 @@ export function TopBar({ activeTab }: { activeTab: string }) {
     window.dispatchEvent(new CustomEvent("open-cmdk"));
   }
 
-  const recent = (notifs.data?.notifications ?? []).filter((n) => !n.dismissed).slice(0, 8);
+  /* Bell shows everything (system + activity); per-scope dismiss filter
+   * keeps a row hidden here once the user clicks X in this dropdown. */
+  const recent = (notifs.data?.notifications ?? [])
+    .filter((n) => !(n.dismissed_scopes ?? []).includes("bell"))
+    .slice(0, 8);
 
   return (
     <header className="flex flex-col">

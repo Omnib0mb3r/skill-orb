@@ -36,17 +36,16 @@ export function RightRail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["reminders"] }),
   });
   const dismissM = useMutation({
-    mutationFn: (id: string) => dismissNotification(id),
+    /* Activity-rail dismiss only affects this surface; the bell keeps
+     * the same notification until acknowledged there separately. */
+    mutationFn: (id: string) => dismissNotification(id, "activity"),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["notifications", "recent"] }),
   });
   const correctM = useMutation({
     mutationFn: async (vars: { notifId: string; pageId: string }) => {
       const r = await correctWikiPage(vars.pageId);
-      // Dismiss the notification too so the user gets a clean clear in
-      // the same click; the correction record itself lives in the
-      // reinforcement log.
-      await dismissNotification(vars.notifId);
+      await dismissNotification(vars.notifId, "activity");
       return r;
     },
     onSuccess: () =>
@@ -56,7 +55,15 @@ export function RightRail() {
   const openReminders = (remQ.data?.reminders ?? []).filter(
     (r) => !r.completed_at && !r.archived_at,
   );
-  const allEvents = (notQ.data?.notifications ?? []).filter((n) => !n.dismissed);
+  /* Activity rail = brain stream only (curator + reinforcement). System
+   * notifications stay in the bell. Per-scope dismiss tracking means
+   * clearing here doesn't touch the bell row. */
+  const ACTIVITY_SOURCES = new Set(["curator", "reinforcement"]);
+  const allEvents = (notQ.data?.notifications ?? []).filter(
+    (n) =>
+      ACTIVITY_SOURCES.has(n.source) &&
+      !(n.dismissed_scopes ?? []).includes("activity"),
+  );
   const events = (filter === "all"
     ? allEvents
     : allEvents.filter((n) => n.severity === filter)
