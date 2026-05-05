@@ -18,3 +18,7 @@ skill-connections/
 /orb-*.png
 /home-*.png
 
+# Claude Code local-only state. .claude/commands/ stays tracked (shared
+# slash commands); these two files are per-machine and must not ship.
+/.claude/scheduled_tasks.lock
+/.claude/settings.local.json
