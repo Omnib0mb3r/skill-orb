@@ -7,6 +7,7 @@ import { projectFromSlug, relTime } from "@/lib/session-helpers";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
 import { NavGrid } from "./NavGrid";
+import { lexPickStable } from "@/lib/lex";
 
 /* Stream Deck rail = remote analog of the physical Elgato deck.
  *
@@ -170,8 +171,7 @@ export function StreamDeck() {
 
           {!q.isLoading && visible.length === 0 && (
             <div className="text-xs text-txt3 px-2 py-3">
-              No active sessions to control right now. Start a Claude session in any VS Code window
-              on OTLCDEV; a tile appears here within 5s.
+              {lexPickStable("empty_sessions", "stream-deck-rail")}
             </div>
           )}
 

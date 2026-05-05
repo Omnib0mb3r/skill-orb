@@ -582,10 +582,11 @@ export function Orb({ compact = false }: OrbProps = {}) {
       {isEmpty && (
         <div className="absolute inset-0 grid place-items-center pointer-events-none">
           <div className="rounded-panel bg-surface1 hairline px-8 py-7 max-w-md text-center pointer-events-auto">
-            <div className="font-display text-xl font-emphasized mb-2">No wiki pages yet</div>
+            <div className="font-display text-xl font-emphasized mb-2">An empty mind</div>
             <p className="text-txt3 text-sm">
-              The orb visualizes your wiki as a graph. Pages appear here as the daemon
-              ingests transcripts and writes transferable insights.
+              The orb is Lex's brain rendered as a graph. Nothing's lit up yet
+              because nothing's been promoted into the wiki. Talk to a few
+              sessions and watch this fill in.
             </p>
           </div>
         </div>

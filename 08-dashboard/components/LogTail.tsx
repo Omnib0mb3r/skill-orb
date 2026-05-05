@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { logTail } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
+import { lexPickStable } from "@/lib/lex";
 
 /* Daemon log tail panel.
  *
@@ -78,9 +79,15 @@ export function LogTail() {
         onScroll={onScroll}
         className="max-h-80 overflow-y-auto font-mono text-[11px] leading-relaxed px-5 py-3"
       >
-        {q.isLoading && <div className="text-txt3">loading log…</div>}
+        {q.isLoading && (
+          <div className="text-txt3">{lexPickStable("loading_log", "log-tail")}</div>
+        )}
         {!q.isLoading && lines.length === 0 && (
-          <div className="text-txt3">No log lines{filter ? ` matching "${filter}"` : ""}.</div>
+          <div className="text-txt3">
+            {filter
+              ? `No log lines matching "${filter}". Different keyword maybe.`
+              : lexPickStable("empty_logs", "log-tail")}
+          </div>
         )}
         {lines.map((l, i) => (
           <div key={i} className={`${highlightLevel(l)} whitespace-pre-wrap break-all`}>

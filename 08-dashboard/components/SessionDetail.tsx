@@ -13,6 +13,7 @@ import {
 import { projectFromSlug, relTime } from "@/lib/session-helpers";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
+import { lexPickStable } from "@/lib/lex";
 
 /* SessionDetail with optional in-transcript highlight + jump.
  *
@@ -328,7 +329,9 @@ export function SessionDetail({ sessionId, query }: Props) {
           className="max-h-[60vh] overflow-y-auto bg-[oklch(11%_0_0)] font-mono text-xs"
         >
           {renderedChunks.length === 0 && (
-            <div className="px-5 py-4 text-xs text-txt3">No recent turns captured.</div>
+            <div className="px-5 py-4 text-xs text-txt3">
+              {lexPickStable("empty_recent_turns", "session-detail")}
+            </div>
           )}
           {renderedChunks.map(({ chunk: c, rendered }, i) => {
             const role = (c.role ?? "").toLowerCase();

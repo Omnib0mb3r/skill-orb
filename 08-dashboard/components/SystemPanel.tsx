@@ -9,6 +9,7 @@ import { StatusDot } from "./StatusDot";
 import { LogTail } from "./LogTail";
 import { DiagnosticsPanel } from "./DiagnosticsPanel";
 import { BackfillPanel } from "./BackfillPanel";
+import { lexPickStable } from "@/lib/lex";
 
 function fmtBytes(bytes: number): string {
   if (!bytes) return "0";
@@ -179,7 +180,9 @@ export function SystemPanel() {
           </div>
           <ul className="divide-y divide-border2">
             {services.length === 0 && (
-              <li className="px-5 py-3 text-xs text-txt3">No service manifest found.</li>
+              <li className="px-5 py-3 text-xs text-txt3">
+                {lexPickStable("empty_services", "system-services")}
+              </li>
             )}
             {services.map((svc) => (
               <li

@@ -11,6 +11,7 @@ import {
 } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
+import { lexPickStable } from "@/lib/lex";
 
 const TABS = [
   { href: "/",          label: "Home",      icon: "Home" as const },
@@ -121,7 +122,14 @@ export function TopBar({ activeTab }: { activeTab: string }) {
   return (
     <header className="flex flex-col">
       <div className="flex items-center h-14 px-5 hairline-soft">
-        <div className="flex items-center gap-2 relative brand-glow">
+        <button
+          type="button"
+          onClick={() =>
+            window.dispatchEvent(new CustomEvent("lex-secret-tap"))
+          }
+          aria-label="DevNeural"
+          className="flex items-center gap-2 relative brand-glow rounded-card -mx-1 px-1 hover:bg-surface2/40 transition"
+        >
           <div className="w-8 h-8 rounded-card bg-brand/10 ring-1 ring-brand/30 grid place-items-center">
             <Icon name="Brain" className="text-brandSoft" size={20} />
           </div>
@@ -131,7 +139,7 @@ export function TopBar({ activeTab }: { activeTab: string }) {
           <div className="text-txt3 text-[11px] uppercase tracking-[0.14em] font-medium ml-1 mt-0.5">
             Hub
           </div>
-        </div>
+        </button>
 
         <div className="flex-1 max-w-2xl mx-4">
           <button
@@ -184,7 +192,7 @@ export function TopBar({ activeTab }: { activeTab: string }) {
                 <ul className="max-h-96 overflow-y-auto divide-y divide-border2">
                   {recent.length === 0 && (
                     <li className="px-4 py-6 text-xs text-txt3 text-center">
-                      Nothing new.
+                      {lexPickStable("empty_notifications", "topbar-bell")}
                     </li>
                   )}
                   {recent.map((n) => {

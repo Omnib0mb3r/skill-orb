@@ -6,6 +6,7 @@ import { StreamDeck } from "./StreamDeck";
 import { RightRail } from "./RightRail";
 import { VitalsRibbon } from "./VitalsRibbon";
 import { CommandPalette } from "./CommandPalette";
+import { LexEasterEgg } from "./LexEasterEgg";
 import { Icon } from "./Icon";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -35,6 +36,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <VitalsRibbon />
       <CommandPalette />
       <MobileTabBar activeTab={activeTab} />
+      <LexEasterEgg />
     </div>
   );
 }

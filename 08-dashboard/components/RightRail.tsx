@@ -12,6 +12,7 @@ import {
 } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
+import { lexMotd } from "@/lib/lex";
 
 type ActivityFilter = "all" | "info" | "warn" | "alert";
 const FILTER_CYCLE: ActivityFilter[] = ["all", "info", "warn", "alert"];
@@ -76,6 +77,18 @@ export function RightRail() {
 
   return (
     <aside className="w-80 flex-shrink-0 flex flex-col gap-4 p-4 hairline-soft border-l border-border2 overflow-y-auto">
+      {/* Lex MOTD — stable per UTC day, no dismiss. Sets the tone before
+       * the user looks at reminders or the activity feed. */}
+      <section className="rounded-card bg-surface1 hairline px-4 py-3">
+        <div className="flex items-center gap-2 text-nano text-txt3 uppercase tracking-[0.16em]">
+          <span className="w-1.5 h-1.5 rounded-pill bg-brand" />
+          Lex
+        </div>
+        <p className="mt-1.5 text-[12px] leading-relaxed text-txt2 italic">
+          {lexMotd().replace(/^Lex says:\s*/, "")}
+        </p>
+      </section>
+
       {/* reminders */}
       <section className="rounded-card bg-surface1 hairline">
         <div className="px-4 py-3 border-b border-border1 flex items-center justify-between">
