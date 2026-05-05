@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   queuePrompt,
@@ -20,6 +20,7 @@ export function SendPromptForm({ sessionId }: Props) {
   const [recent, setRecent] = useState<string[]>([]);
   const [failMsg, setFailMsg] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Poll bridge liveness so the user sees the form go red and the send
   // button disable when no VS Code window is running the bridge. Saves
@@ -52,36 +53,31 @@ export function SendPromptForm({ sessionId }: Props) {
     mutationFn: () => focusSession(sessionId),
   });
 
-  /* Paste-image handler.
-   *
-   * When the user pastes a screenshot into the textarea, intercept the
-   * clipboard items, extract the first image, ship it to the daemon's
-   * /uploads/screenshot endpoint, and splice the saved Windows path
-   * into the textarea so the bridge sends it as a Read-able file
-   * reference. Falls through to the default paste handler when no
-   * image is on the clipboard so plain-text paste still works. */
-  async function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
-    const items = Array.from(e.clipboardData?.items ?? []);
-    const imageItem = items.find((i) => i.kind === "file" && i.type.startsWith("image/"));
-    if (!imageItem) return;
-    const blob = imageItem.getAsFile();
-    if (!blob) return;
-    e.preventDefault();
+  /* Splice an absolute path into the textarea at the cursor.
+   * Used by both the paste handler and the file-picker fallback. */
+  function spliceIntoTextarea(p: string) {
+    const ta = document.getElementById("prompt-input") as HTMLTextAreaElement | null;
+    const pos = ta?.selectionStart ?? text.length;
+    const end = ta?.selectionEnd ?? pos;
+    const before = text.slice(0, pos);
+    const after = text.slice(end);
+    const insert =
+      (before && !before.endsWith(" ") && !before.endsWith("\n") ? " " : "") + p + " ";
+    setText(before + insert + after);
+  }
+
+  async function uploadAndSplice(blob: Blob) {
     setUploading(true);
     setFailMsg(null);
     try {
-      const ext = (blob.type.split("/")[1] ?? "png").split("+")[0];
+      const mime = blob.type || "image/png";
+      const ext = (mime.split("/")[1] ?? "png").split("+")[0];
       const result = await uploadScreenshot(blob, `paste-${Date.now()}.${ext}`);
       if (!result.ok || !result.path) {
         setFailMsg(result.error ?? "upload failed");
         return;
       }
-      const target = e.currentTarget;
-      const pos = target.selectionStart ?? text.length;
-      const before = text.slice(0, pos);
-      const after = text.slice(target.selectionEnd ?? pos);
-      const insert = (before && !before.endsWith(" ") && !before.endsWith("\n") ? " " : "") + result.path + " ";
-      setText(before + insert + after);
+      spliceIntoTextarea(result.path);
     } catch (err) {
       const e = err as DaemonError;
       const payload = e.payload as { error?: string } | undefined;
@@ -89,6 +85,52 @@ export function SendPromptForm({ sessionId }: Props) {
     } finally {
       setUploading(false);
     }
+  }
+
+  /* Paste-image handler.
+   *
+   * Desktop browsers populate clipboardData.items on Ctrl/Cmd+V. iOS
+   * Safari often delivers a long-press paste with an empty items array
+   * for screenshots; we fall back to the Async Clipboard API
+   * (navigator.clipboard.read) which iOS does support on HTTPS with a
+   * user gesture. If that also returns nothing, the user can use the
+   * paperclip button to pick the file from the photo library. */
+  async function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const items = Array.from(e.clipboardData?.items ?? []);
+    const imageItem = items.find((i) => i.kind === "file" && i.type.startsWith("image/"));
+    if (imageItem) {
+      const blob = imageItem.getAsFile();
+      if (blob) {
+        e.preventDefault();
+        await uploadAndSplice(blob);
+        return;
+      }
+    }
+    // iOS fallback. navigator.clipboard.read returns ClipboardItem[]
+    // with mime types we can sniff. Requires HTTPS + user gesture.
+    if (typeof navigator !== "undefined" && navigator.clipboard?.read) {
+      try {
+        const ci = await navigator.clipboard.read();
+        for (const item of ci) {
+          const imgType = item.types.find((t) => t.startsWith("image/"));
+          if (!imgType) continue;
+          const blob = await item.getType(imgType);
+          e.preventDefault();
+          await uploadAndSplice(blob);
+          return;
+        }
+      } catch {
+        // Permission denied or no image. Fall through to default paste.
+      }
+    }
+  }
+
+  function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    void uploadAndSplice(f);
+    // Reset so picking the same file twice still fires onChange.
+    e.target.value = "";
   }
 
   return (
@@ -152,9 +194,27 @@ export function SendPromptForm({ sessionId }: Props) {
         {uploading && (
           <div className="text-nano text-txt3 font-mono">uploading screenshot…</div>
         )}
-        <div className="flex items-center justify-between">
-          <div className="text-nano text-txt3">
-            <kbd className="font-mono">⌘↵</kbd> to send
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-nano text-txt3">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="h-9 w-9 rounded-input hairline grid place-items-center text-txt2 hover:text-txt1 disabled:opacity-40"
+              aria-label="Attach screenshot"
+              title="Attach a screenshot from camera roll or files"
+            >
+              <Icon name="Paperclip" size={16} />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={onFilePicked}
+              className="hidden"
+              aria-hidden="true"
+            />
+            <span><kbd className="font-mono">⌘↵</kbd> to send</span>
           </div>
           <button
             type="submit"
