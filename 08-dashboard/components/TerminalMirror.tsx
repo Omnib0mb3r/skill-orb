@@ -256,32 +256,29 @@ export function TerminalMirror({ sessionId }: Props) {
         }
       };
 
+      /* Debounce resize so rapid layout shifts (orientation change,
+       * panel toggling) don't run the fontSize-fit loop tens of times
+       * per second, which made the iPad app crawl. */
+      let resizeTimer: ReturnType<typeof setTimeout> | null = null;
       const onResize = () => {
-        if (sourceCols && sourceRows) {
-          applyDims(sourceCols, sourceRows);
-        } else {
-          try {
-            fit.fit();
-          } catch {
-            /* ignore */
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          resizeTimer = null;
+          if (sourceCols && sourceRows) {
+            applyDims(sourceCols, sourceRows);
+          } else {
+            try {
+              fit.fit();
+            } catch {
+              /* ignore */
+            }
           }
-        }
+        }, 150);
       };
       window.addEventListener("resize", onResize);
-      window.addEventListener("orientationchange", onResize);
-      /* Also observe the container's own box: the panel can reflow
-       * without a window resize (right rail showing/hiding at xl
-       * breakpoint, mobile tab bar appearing, dashboard nav collapsing
-       * the side panel) and we want the mirror to re-fit immediately. */
-      const ro =
-        typeof ResizeObserver !== "undefined"
-          ? new ResizeObserver(() => onResize())
-          : null;
-      if (ro) ro.observe(el);
       unbindResize = () => {
         window.removeEventListener("resize", onResize);
-        window.removeEventListener("orientationchange", onResize);
-        ro?.disconnect();
+        if (resizeTimer) clearTimeout(resizeTimer);
       };
 
       /* Finger-drag scrollback for iPad / touch devices. xterm's
@@ -479,7 +476,7 @@ export function TerminalMirror({ sessionId }: Props) {
       ) : null}
       <div
         ref={containerRef}
-        className="h-[calc(100dvh-13rem)] min-h-[320px] bg-[oklch(8%_0_0)]"
+        className="h-[65vh] min-h-[420px] bg-[oklch(8%_0_0)]"
         aria-label="Live Claude Code terminal output"
       />
     </section>
