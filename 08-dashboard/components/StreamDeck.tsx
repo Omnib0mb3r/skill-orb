@@ -94,6 +94,28 @@ export function StreamDeck() {
     return b.last_modified_ms - a.last_modified_ms;
   });
 
+  /* Group by project_slug so multiple sessions in the same workspace
+   * collapse under one header instead of looking like distinct projects. */
+  const groups = (() => {
+    const map = new Map<string, SessionSummary[]>();
+    for (const s of visible) {
+      const arr = map.get(s.project_slug) ?? [];
+      arr.push(s);
+      map.set(s.project_slug, arr);
+    }
+    return [...map.entries()]
+      .map(([slug, sessions]) => ({
+        slug,
+        label: projectFromSlug(slug),
+        sessions,
+      }))
+      .sort((a, b) => {
+        const aMax = Math.max(...a.sessions.map((s) => s.last_modified_ms));
+        const bMax = Math.max(...b.sessions.map((s) => s.last_modified_ms));
+        return bMax - aMax;
+      });
+  })();
+
   const navSession =
     navSessionId != null ? all.find((s) => s.session_id === navSessionId) : null;
 
@@ -153,8 +175,20 @@ export function StreamDeck() {
             </div>
           )}
 
-          {visible.map((s) => (
-            <DeckTile key={s.session_id} session={s} onTap={handleTileTap} />
+          {groups.map(({ slug, label, sessions }) => (
+            <div key={slug} className="space-y-2">
+              {sessions.length > 1 && (
+                <div className="flex items-center justify-between px-1 pt-1">
+                  <div className="text-nano text-txt2 font-emphasized">{label}</div>
+                  <span className="text-nano text-txt3 font-mono">
+                    {sessions.length} sessions
+                  </span>
+                </div>
+              )}
+              {sessions.map((s) => (
+                <DeckTile key={s.session_id} session={s} onTap={handleTileTap} />
+              ))}
+            </div>
           ))}
 
           <a
@@ -164,6 +198,21 @@ export function StreamDeck() {
           >
             <Icon name="Plus" size={16} /> new session
           </a>
+
+          <button
+            type="button"
+            onClick={() => q.refetch()}
+            disabled={q.isFetching}
+            className="lift p-2 rounded-card bg-surface1 hairline text-txt3 hover:text-txt1 disabled:opacity-60 flex items-center justify-center gap-2 text-xs"
+            aria-label="Refresh stream deck session list"
+          >
+            <Icon
+              name="RefreshCw"
+              size={16}
+              className={q.isFetching ? "animate-spin" : undefined}
+            />
+            {q.isFetching ? "refreshing…" : "refresh"}
+          </button>
 
           {inactive.length > 0 && (
             <button
