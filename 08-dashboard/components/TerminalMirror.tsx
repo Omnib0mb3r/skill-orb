@@ -215,35 +215,26 @@ export function TerminalMirror({ sessionId }: Props) {
         if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const t = term as any;
-        /* Pick the largest fontSize where the container's natural grid
-         * accommodates both source cols AND source rows. If neither
-         * constraint can be met simultaneously (very narrow panel on a
-         * tall source), prefer fitting rows so the source's pinned
-         * status row (Thinking / Garnishing / etc) stays visible at
-         * the bottom of the viewport instead of disappearing into
-         * scrollback. Cols overflow becomes horizontal scroll, which
-         * is far less harmful than losing the live spinner. */
-        let bestFit: number | null = null;
-        for (let fs = 16; fs >= 4; fs--) {
+        /* Find the fontSize where the panel's natural-width cols
+         * equals source cols, so the xterm canvas fills the container
+         * horizontally. Fixed-point iteration: at any font size the
+         * natural cols are container_width / char_width(fs). Char
+         * width scales linearly with fs, so multiplying fs by
+         * (natural / target) converges in 2-3 passes. Clamped 4..16
+         * so the font stays readable on either extreme. Rows that
+         * don't fit at the chosen fs go to scrollback; scrollToBottom
+         * keeps the source's pinned status row visible. */
+        let fs = 10;
+        for (let i = 0; i < 5; i++) {
           t.options.fontSize = fs;
           const proposed = fit.proposeDimensions();
-          if (proposed && proposed.cols >= cols && proposed.rows >= rows) {
-            bestFit = fs;
-            break;
-          }
+          if (!proposed || !proposed.cols) break;
+          const ratio = proposed.cols / cols;
+          if (Math.abs(ratio - 1) < 0.015) break;
+          fs = fs * ratio;
+          fs = Math.max(4, Math.min(fs, 16));
         }
-        if (bestFit === null) {
-          for (let fs = 16; fs >= 4; fs--) {
-            t.options.fontSize = fs;
-            const proposed = fit.proposeDimensions();
-            if (proposed && proposed.rows >= rows) {
-              bestFit = fs;
-              break;
-            }
-          }
-        }
-        if (bestFit === null) bestFit = 4;
-        t.options.fontSize = bestFit;
+        t.options.fontSize = fs;
         try {
           term.resize(cols, rows);
         } catch {
