@@ -128,8 +128,37 @@ function parsePhase(arg: string | undefined): HookPhase {
     case 'notification':
     case 'notify':
       return 'notification';
+    case 'session_start':
+    case 'sessionstart':
+    case 'start':
+      return 'session_start';
     default:
       return 'post_tool';
+  }
+}
+
+/* Tell the daemon a SessionStart fired from /clear so it can mark the
+ * previous session in this workspace as superseded. Without this the
+ * Stream Deck rail keeps the old tile around for ACTIVE_THRESHOLD_MS. */
+async function postClearSupersede(
+  sessionId: string,
+  cwd: string,
+): Promise<void> {
+  if (!sessionId || !cwd) return;
+  const url = `http://127.0.0.1:${DAEMON_PORT}/sessions/clear-supersede`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 800);
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, cwd }),
+      signal: ctrl.signal,
+    });
+  } catch {
+    /* daemon down or timeout; supersede silently skipped */
+  } finally {
+    clearTimeout(t);
   }
 }
 
@@ -304,6 +333,30 @@ async function main(): Promise<void> {
   const cwd = payload.cwd ? String(payload.cwd) : process.cwd();
   const identity = resolveProjectIdentity(cwd);
 
+  // SessionStart is a control event, not a captured turn. We only care
+  // about source=clear (and source=compact, which behaves the same way:
+  // new session_id replaces the previous one in this workspace). For
+  // those sources, ping the daemon's supersede endpoint and exit. Other
+  // sources (startup, resume) fall through to the no-op return below
+  // because there's no prior tile to retire.
+  if (phase === 'session_start') {
+    const source = String(payload.source ?? '').toLowerCase();
+    const sessionId = String(payload.session_id ?? '');
+    if ((source === 'clear' || source === 'compact') && sessionId) {
+      await postClearSupersede(sessionId, cwd);
+    }
+    // Lazy-spawn daemon so the supersede arrives even on cold start.
+    const pid = readPid();
+    if (pid === null || !isAlive(pid)) {
+      try {
+        ensureDaemonRunning();
+      } catch {
+        /* ignore */
+      }
+    }
+    return;
+  }
+
   try {
     recordIdentity(identity);
   } catch {
@@ -333,6 +386,9 @@ async function main(): Promise<void> {
     user_prompt: 'thinking',
     session_stop: 'idle',
     notification: 'permission',
+    // session_start short-circuits earlier in main(); this entry is
+    // unreachable but required by the Record<HookPhase, ...> type.
+    session_start: 'idle',
   };
   void pingPhase(obs.session, phaseMap[phase]);
 

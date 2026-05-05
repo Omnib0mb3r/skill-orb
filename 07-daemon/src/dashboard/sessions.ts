@@ -13,6 +13,7 @@ import { DATA_ROOT, ensureDir } from '../paths.js';
 import { readSummary, readCurrentTask } from '../curation/index.js';
 import { getPhase } from './session-phase.js';
 import { getPending, type PendingPrompt } from './pending-prompt.js';
+import { isSuperseded, markSuperseded } from './superseded.js';
 
 const SESSIONS_ROOT = path
   .join(os.homedir(), '.claude', 'projects')
@@ -86,6 +87,96 @@ function derivePhaseFromTail(file: string): 'thinking' | 'tool' | 'idle' | 'unkn
   return 'unknown';
 }
 
+/* Encode a cwd into Claude Code's project-slug folder name.
+ *
+ * CC stores per-workspace transcripts under ~/.claude/projects/<slug>/.
+ * The encoding replaces `:`, `\`, and `/` with `-`. e.g.
+ *   C:\dev\Projects\DevNeural   ->  C--dev-Projects-DevNeural
+ *
+ * Deterministic so the daemon can map cwd → slug without scanning the
+ * whole projects dir. */
+function cwdToSlug(cwd: string): string {
+  return cwd.replace(/[\\/:]/g, '-');
+}
+
+/* Find the previous session in the same workspace as `newSessionId`
+ * and mark it superseded. Called by the /sessions/clear-supersede
+ * route after the SessionStart hook fires with source=clear.
+ *
+ * Workspace resolution comes from cwd, encoded into CC's slug folder
+ * naming convention. Within that slug we pick the freshest other
+ * jsonl whose mtime sits within PROXIMITY_MS of now — that's the
+ * /clear or /compact tight-window signature. Anything older gets
+ * skipped so legitimate parallel sessions in unrelated workspaces are
+ * never retired. */
+const PROXIMITY_MS = 5_000;
+
+export function recordClearSupersede(
+  newSessionId: string,
+  cwd?: string,
+): { ok: true; superseded: string | null } | { ok: false; error: string } {
+  if (!newSessionId) return { ok: false, error: 'session_id required' };
+  if (!fs.existsSync(SESSIONS_ROOT)) {
+    return { ok: false, error: 'no claude projects dir' };
+  }
+  const now = Date.now();
+  const candidateSlugs: string[] = [];
+  if (cwd) {
+    const slug = cwdToSlug(cwd);
+    const slugDir = path.posix.join(SESSIONS_ROOT, slug);
+    if (fs.existsSync(slugDir)) candidateSlugs.push(slug);
+  }
+  // Fallback: scan slugs and pick whichever contains the new session's
+  // jsonl. Used only if cwd is missing or the encoded slug doesn't
+  // exist (CC versions could change the encoding).
+  if (candidateSlugs.length === 0) {
+    const slugs = fs.readdirSync(SESSIONS_ROOT, { withFileTypes: true });
+    for (const slug of slugs) {
+      if (!slug.isDirectory()) continue;
+      const candidate = path.posix.join(
+        SESSIONS_ROOT,
+        slug.name,
+        `${newSessionId}.jsonl`,
+      );
+      if (fs.existsSync(candidate)) {
+        candidateSlugs.push(slug.name);
+        break;
+      }
+    }
+  }
+  if (candidateSlugs.length === 0) {
+    return { ok: true, superseded: null };
+  }
+  const slugDir = path.posix.join(SESSIONS_ROOT, candidateSlugs[0]!);
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(slugDir, { withFileTypes: true });
+  } catch {
+    return { ok: false, error: 'readdir failed' };
+  }
+  let bestId: string | null = null;
+  let bestGap = Infinity;
+  for (const e of entries) {
+    if (!e.isFile() || !e.name.endsWith('.jsonl')) continue;
+    const id = e.name.replace('.jsonl', '');
+    if (id === newSessionId) continue;
+    try {
+      const stat = fs.statSync(path.posix.join(slugDir, e.name));
+      const gap = now - stat.mtimeMs;
+      if (gap < 0) continue;
+      if (gap > PROXIMITY_MS) continue;
+      if (gap < bestGap) {
+        bestGap = gap;
+        bestId = id;
+      }
+    } catch {
+      continue;
+    }
+  }
+  if (bestId) markSuperseded(bestId, newSessionId);
+  return { ok: true, superseded: bestId };
+}
+
 export function listSessions(): SessionListItem[] {
   if (!fs.existsSync(SESSIONS_ROOT)) return [];
   const out: SessionListItem[] = [];
@@ -103,6 +194,10 @@ export function listSessions(): SessionListItem[] {
     for (const e of entries) {
       if (!e.isFile() || !e.name.endsWith('.jsonl')) continue;
       const sessionId = e.name.replace('.jsonl', '');
+      // Sessions retired by /clear (or /compact) are kept on disk by
+      // Claude Code but should not show up as active tiles. The
+      // SessionStart hook records them in the superseded store.
+      if (isSuperseded(sessionId)) continue;
       const file = path.posix.join(slugDir, e.name);
       let stat: fs.Stats;
       try {

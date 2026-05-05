@@ -22,6 +22,7 @@ import {
   queueSessionKey,
   isNavKey,
   bridgeStatus,
+  recordClearSupersede,
 } from './sessions.js';
 import { setPhase, type SessionPhase } from './session-phase.js';
 import { setPending, clearPending, getPending } from './pending-prompt.js';
@@ -440,6 +441,28 @@ export async function registerDashboardRoutes(
     const id = (req.params as { id: string }).id;
     const p = getPending(id);
     return { ok: true, pending: p };
+  });
+
+  /* /clear (and /compact) supersession.
+   *
+   * Hook-runner POSTs here when the SessionStart hook fires with
+   * source=clear or source=compact. We resolve the previous session
+   * in the same workspace and add it to the superseded store so the
+   * Stream Deck rail stops rendering a phantom tile for the cleared
+   * session. */
+  app.post('/sessions/clear-supersede', async (req, reply) => {
+    const body = (req.body ?? {}) as { session_id?: string; cwd?: string };
+    if (!body.session_id || typeof body.session_id !== 'string') {
+      reply.code(400);
+      return { ok: false, error: 'session_id required' };
+    }
+    const cwd = typeof body.cwd === 'string' ? body.cwd : undefined;
+    const result = recordClearSupersede(body.session_id, cwd);
+    if (!result.ok) {
+      reply.code(500);
+      return result;
+    }
+    return result;
   });
 
   // ── Search across all collections ────────────────────────────────

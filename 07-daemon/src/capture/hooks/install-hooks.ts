@@ -62,6 +62,11 @@ const HOOK_PHASES: Array<{ event: string; phase: string; matcher?: string }> = [
   // entry the dashboard sees nothing when CC asks "1) yes 2) no" and the
   // user has to tab back to the VS Code window to reply.
   { event: 'Notification', phase: 'notification' },
+  // SessionStart fires on every session boot. We care about source=clear
+  // so the daemon can mark the previous session in this workspace as
+  // superseded; without this, /clear leaves a phantom tile in the Stream
+  // Deck rail until the old jsonl's mtime ages past ACTIVE_THRESHOLD_MS.
+  { event: 'SessionStart', phase: 'session_start' },
 ];
 
 function buildCommand(phase: string): string {

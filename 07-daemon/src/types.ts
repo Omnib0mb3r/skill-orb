@@ -58,6 +58,11 @@ export interface HookPayload {
    * carried via hook_event_name or a custom matcher slot. */
   message?: string;
   notification_type?: string;
+  /* SessionStart hook fields. Claude Code fires SessionStart on every
+   * fresh session boot; `source` distinguishes startup | resume | clear |
+   * compact so the daemon can react only to /clear and supersede the
+   * previous session in this workspace. */
+  source?: string;
 }
 
 export type HookPhase =
@@ -65,4 +70,5 @@ export type HookPhase =
   | 'post_tool'
   | 'user_prompt'
   | 'session_stop'
-  | 'notification';
+  | 'notification'
+  | 'session_start';
