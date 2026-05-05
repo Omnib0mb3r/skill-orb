@@ -116,18 +116,18 @@ export function RightRail() {
         </ul>
       </section>
 
-      {/* live activity */}
+      {/* curator feed */}
       <section className="rounded-card bg-surface1 hairline">
         <div className="px-4 py-3 border-b border-border1 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Icon name="Activity" className="text-brandSoft" size={16} />
-            <h2 className="font-display text-sm font-emphasized">Live activity</h2>
+            <Icon name="Brain" className="text-brandSoft" size={16} />
+            <h2 className="font-display text-sm font-emphasized">Curator feed</h2>
           </div>
           <button
             type="button"
             onClick={cycleFilter}
             className="text-[11px] font-mono text-txt3 hover:text-txt1 flex items-center gap-1"
-            aria-label={`Filter activity (current: ${filter}). Click to cycle.`}
+            aria-label={`Filter curator feed (current: ${filter}). Click to cycle.`}
             title="Click to cycle: all → info → warn → alert"
           >
             <Icon name="Filter" size={12} /> {filter}
@@ -137,8 +137,12 @@ export function RightRail() {
           {events.length === 0 && (
             <li className="px-4 py-3 text-xs text-txt3 feed-item">
               {filter === "all"
-                ? "Nothing moving right now."
-                : `No ${filter} events recently.`}
+                ? "Lex is reading along. Nothing in the wiki has matched your prompts yet."
+                : filter === "info"
+                  ? "No injections recently. Either Lex hasn't found a match or you're working on something genuinely new."
+                  : filter === "warn"
+                    ? "No corrections lately. Either Lex is on point or you haven't told it otherwise."
+                    : "Nothing's on fire. Yet."}
             </li>
           )}
           {events.map((n) => {
