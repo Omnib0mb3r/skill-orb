@@ -19,13 +19,40 @@ const SESSIONS_ROOT = path
   .join(os.homedir(), '.claude', 'projects')
   .replace(/\\/g, '/');
 const BRIDGE_DIR = path.posix.join(DATA_ROOT, 'session-bridge');
-/* "Active" = jsonl mtime touched within the last day. The dashboard
- * uses this flag to decide what shows on the Stream Deck rail by
- * default. Anything more aggressive (e.g. 10 minutes) makes the live
- * session vanish during normal idle gaps; anything looser brings back
- * yesterday's archive. The phase coloring (thinking/tool/idle) gives
- * the live indicator inside that window. */
+/* "Active" used to be a heuristic on jsonl mtime. mtime lies: a session
+ * gets a final write on /clear, on hook fires from another shell that
+ * accidentally references the same id, etc. The truth lives in the
+ * StreamDeck.App identity directory: one file per session whose host
+ * process the deck app considers alive. We read that set and use it as
+ * the authoritative liveness signal.
+ *
+ * The deck app isn't required, though. When the identity directory
+ * doesn't exist, fall back to a generous mtime window so users who
+ * never installed the deck still see their sessions. */
 const ACTIVE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+const STREAMDECK_IDENTITY_DIR = (() => {
+  const localAppData =
+    process.env.LOCALAPPDATA ??
+    path.posix.join(os.homedir().replace(/\\/g, '/'), 'AppData', 'Local');
+  return path.posix.join(
+    localAppData.replace(/\\/g, '/'),
+    'stream-deck',
+    'identity',
+  );
+})();
+
+function readLiveSessionIds(): Set<string> | null {
+  if (!fs.existsSync(STREAMDECK_IDENTITY_DIR)) return null;
+  try {
+    const ids = new Set<string>();
+    for (const e of fs.readdirSync(STREAMDECK_IDENTITY_DIR)) {
+      if (e.endsWith('.json')) ids.add(e.slice(0, -'.json'.length));
+    }
+    return ids;
+  } catch {
+    return null;
+  }
+}
 
 export interface SessionListItem {
   session_id: string;
@@ -299,6 +326,7 @@ export function listSessions(): SessionListItem[] {
   const out: SessionListItem[] = [];
   const slugs = fs.readdirSync(SESSIONS_ROOT, { withFileTypes: true });
   const now = Date.now();
+  const liveIds = readLiveSessionIds();
   for (const slug of slugs) {
     if (!slug.isDirectory()) continue;
     const slugDir = path.posix.join(SESSIONS_ROOT, slug.name);
@@ -322,7 +350,11 @@ export function listSessions(): SessionListItem[] {
       } catch {
         continue;
       }
-      const isActive = now - stat.mtimeMs < ACTIVE_THRESHOLD_MS;
+      // Authoritative liveness from the deck app's identity dir when
+      // available; mtime fallback otherwise.
+      const isActive = liveIds
+        ? liveIds.has(sessionId)
+        : now - stat.mtimeMs < ACTIVE_THRESHOLD_MS;
       // For active sessions, tail-derive phase so the dashboard reflects
       // current reality even when chokidar misses change events. Stale
       // sessions just take whatever the in-memory tracker last knew.
