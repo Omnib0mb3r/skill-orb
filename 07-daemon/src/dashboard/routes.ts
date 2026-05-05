@@ -417,6 +417,16 @@ export async function registerDashboardRoutes(
       return { ok: false, error: 'message required' };
     }
     setPending(id, body.message, body.kind ?? 'notification');
+    // Also surface in the live activity feed so the user sees CC waiting
+    // even when not on /sessions. warn-level because it blocks Claude
+    // until the user answers; this severity also triggers web push.
+    emitNotification({
+      severity: 'warn',
+      source: 'permission',
+      title: `Claude waiting on you (${body.kind ?? 'notification'})`,
+      body: body.message.slice(0, 200),
+      link: `/sessions/detail?id=${encodeURIComponent(id)}`,
+    });
     return { ok: true };
   });
 

@@ -413,7 +413,11 @@ export interface Notification {
   body?: string;
   link?: string;
   ts: string;
-  dismissed_at?: string;
+  /** True once /notifications/:id/dismiss has been POSTed. Daemon's
+   * notifications.ts persists this as a flag, not a timestamp; older
+   * code in this file used `dismissed_at` and silently let dismissed
+   * rows keep rendering because the field never matched. */
+  dismissed: boolean;
 }
 export const notifications = (limit = 50) =>
   request<{ ok: boolean; notifications: Notification[] }>(

@@ -80,7 +80,7 @@ export function TopBar({ activeTab }: { activeTab: string }) {
     window.dispatchEvent(new CustomEvent("open-cmdk"));
   }
 
-  const recent = (notifs.data?.notifications ?? []).filter((n) => !n.dismissed_at).slice(0, 8);
+  const recent = (notifs.data?.notifications ?? []).filter((n) => !n.dismissed).slice(0, 8);
 
   return (
     <header className="flex flex-col">

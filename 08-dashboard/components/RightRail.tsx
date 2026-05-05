@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   reminders as remindersClient,
   notifications as notificationsClient,
   completeReminder,
+  dismissNotification,
 } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
@@ -15,6 +17,7 @@ const FILTER_CYCLE: ActivityFilter[] = ["all", "info", "warn", "alert"];
 
 export function RightRail() {
   const qc = useQueryClient();
+  const router = useRouter();
   const [filter, setFilter] = useState<ActivityFilter>("all");
   const remQ = useQuery({
     queryKey: ["reminders"],
@@ -31,11 +34,16 @@ export function RightRail() {
       completeReminder(id, complete),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["reminders"] }),
   });
+  const dismissM = useMutation({
+    mutationFn: (id: string) => dismissNotification(id),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["notifications", "recent"] }),
+  });
 
   const openReminders = (remQ.data?.reminders ?? []).filter(
     (r) => !r.completed_at && !r.archived_at,
   );
-  const allEvents = (notQ.data?.notifications ?? []).filter((n) => !n.dismissed_at);
+  const allEvents = (notQ.data?.notifications ?? []).filter((n) => !n.dismissed);
   const events = (filter === "all"
     ? allEvents
     : allEvents.filter((n) => n.severity === filter)
@@ -116,8 +124,30 @@ export function RightRail() {
           {events.map((n) => {
             const dot =
               n.severity === "alert" ? "fail" : n.severity === "warn" ? "warn" : "ai";
+            const clickable = Boolean(n.link);
             return (
-              <li key={n.id} className="px-4 py-2.5 flex items-start gap-2.5 feed-item">
+              <li
+                key={n.id}
+                className={`group px-4 py-2.5 flex items-start gap-2.5 feed-item ${
+                  clickable ? "cursor-pointer hover:bg-surface2/40" : ""
+                }`}
+                onClick={() => {
+                  if (n.link) router.push(n.link);
+                }}
+                role={clickable ? "button" : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                onKeyDown={(e) => {
+                  if (clickable && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    if (n.link) router.push(n.link);
+                  }
+                }}
+                aria-label={
+                  clickable
+                    ? `${n.title}. Press Enter to open ${n.link}.`
+                    : n.title
+                }
+              >
                 <span className="mt-1">
                   <StatusDot status={dot} />
                 </span>
@@ -129,11 +159,26 @@ export function RightRail() {
                     </div>
                   )}
                 </div>
-                <div className="text-[11px] font-mono text-txt3 shrink-0">
-                  {new Date(n.ts).toLocaleTimeString(undefined, {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="text-[11px] font-mono text-txt3">
+                    {new Date(n.ts).toLocaleTimeString(undefined, {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      dismissM.mutate(n.id);
+                    }}
+                    disabled={dismissM.isPending}
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-txt3 hover:text-txt1 p-1 -m-1 transition-opacity"
+                    aria-label={`Dismiss ${n.title}`}
+                    title="Dismiss"
+                  >
+                    <Icon name="X" size={12} />
+                  </button>
                 </div>
               </li>
             );
