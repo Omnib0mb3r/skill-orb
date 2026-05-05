@@ -235,6 +235,32 @@ async function maybeEmitRecap(prompt: string, sessionId: string): Promise<void> 
   }
 }
 
+/* Lex pulse.
+ *
+ * Fired on Stop so the dashboard activity rail surfaces Claude's last
+ * assistant message in plain English. The daemon does the heavy
+ * lifting: tail-reads the jsonl, extracts the last text turn, decides
+ * severity, dedupes. Hook-runner just pings the endpoint with
+ * session_id + cwd. Bounded timeout; daemon-down silently skips. */
+async function postLexPulse(sessionId: string, cwd: string): Promise<void> {
+  if (!sessionId || sessionId === 'unknown') return;
+  const url = `http://127.0.0.1:${DAEMON_PORT}/sessions/${encodeURIComponent(sessionId)}/lex-pulse`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 1000);
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cwd }),
+      signal: ctrl.signal,
+    });
+  } catch {
+    /* daemon down or timeout; pulse silently skipped */
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function clearPendingPrompt(sessionId: string): Promise<void> {
   if (!sessionId || sessionId === 'unknown') return;
   const url = `http://127.0.0.1:${DAEMON_PORT}/sessions/${encodeURIComponent(sessionId)}/pending-prompt`;
@@ -461,6 +487,13 @@ async function main(): Promise<void> {
     // a blocker for curation.
     void maybeEmitRecap(obs.prompt, obs.session);
     await curateAndPrint(obs.prompt, obs.session, identity.id);
+  }
+
+  // On Stop, ping the daemon to surface Claude's last assistant turn
+  // to the dashboard activity rail. Daemon decides whether the turn
+  // is worth surfacing based on length + question heuristic.
+  if (phase === 'session_stop') {
+    void postLexPulse(obs.session, cwd);
   }
 
   const decision = bumpSignalCounter(identity.id);

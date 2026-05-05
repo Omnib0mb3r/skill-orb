@@ -23,6 +23,7 @@ import {
   isNavKey,
   bridgeStatus,
   recordClearSupersede,
+  buildLexPulseFromTail,
 } from './sessions.js';
 import { setPhase, type SessionPhase } from './session-phase.js';
 import { setPending, clearPending, getPending } from './pending-prompt.js';
@@ -450,6 +451,51 @@ export async function registerDashboardRoutes(
    * in the same workspace and add it to the superseded store so the
    * Stream Deck rail stops rendering a phantom tile for the cleared
    * session. */
+  /* Lex pulse.
+   *
+   * Hook-runner POSTs here on Stop so the dashboard sees what Claude
+   * just said in plain English. Daemon tail-reads the session jsonl,
+   * extracts the most recent assistant text turn, and emits an
+   * activity-rail notification with a heuristic severity:
+   *   - ends with '?' -> warn (Lex needs an answer)
+   *   - >= 80 chars   -> info (Lex finished a meaningful turn)
+   *   - else          -> skipped (trivial ack, not worth a card)
+   *
+   * Dedupe: the last-seen text is hashed per session in memory so
+   * repeated Stop fires (CC sometimes fires twice for the same turn)
+   * don't double-post. */
+  const lastLexPulseHash = new Map<string, string>();
+
+  function hashStr(s: string): string {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = ((h * 31) + s.charCodeAt(i)) | 0;
+    return String(h);
+  }
+
+  app.post('/sessions/:id/lex-pulse', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const body = (req.body ?? {}) as { cwd?: string };
+    const pulse = buildLexPulseFromTail(id, body.cwd);
+    if (!pulse) {
+      reply.code(204);
+      return null;
+    }
+    const sig = hashStr(pulse.body);
+    if (lastLexPulseHash.get(id) === sig) {
+      reply.code(204);
+      return null;
+    }
+    lastLexPulseHash.set(id, sig);
+    const n = emitNotification({
+      severity: pulse.severity,
+      source: 'lex',
+      title: pulse.title,
+      body: pulse.body,
+      link: `/sessions/detail?id=${encodeURIComponent(id)}`,
+    });
+    return { ok: true, notification: n };
+  });
+
   app.post('/sessions/clear-supersede', async (req, reply) => {
     const body = (req.body ?? {}) as { session_id?: string; cwd?: string };
     if (!body.session_id || typeof body.session_id !== 'string') {

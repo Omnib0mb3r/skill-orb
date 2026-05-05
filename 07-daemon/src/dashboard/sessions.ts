@@ -87,6 +87,117 @@ function derivePhaseFromTail(file: string): 'thinking' | 'tool' | 'idle' | 'unkn
   return 'unknown';
 }
 
+/* Read the most recent assistant TEXT message from the tail of a jsonl.
+ * Skips tool_use turns (those are mechanical, not pertinent for the
+ * user). Returns null if nothing useful is found. Cheap tail scan
+ * (~16KB) so it's safe to call on every Stop hook. */
+function readLastAssistantText(file: string): string | null {
+  try {
+    const stat = fs.statSync(file);
+    if (stat.size === 0) return null;
+    const tailLen = Math.min(stat.size, 32 * 1024);
+    const start = stat.size - tailLen;
+    const fd = fs.openSync(file, 'r');
+    let text: string;
+    try {
+      const buf = Buffer.alloc(tailLen);
+      fs.readSync(fd, buf, 0, tailLen, start);
+      text = buf.toString('utf-8');
+    } finally {
+      fs.closeSync(fd);
+    }
+    const lines = text.split('\n').filter((l) => l.trim().length > 0);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i]!;
+      try {
+        const rec = JSON.parse(line) as {
+          type?: string;
+          message?: {
+            role?: string;
+            content?: unknown;
+          };
+        };
+        const role = rec.message?.role;
+        if (role !== 'assistant') continue;
+        const content = rec.message?.content;
+        if (!Array.isArray(content)) continue;
+        const textBlocks = content
+          .filter(
+            (b): b is { type: string; text: string } =>
+              b !== null &&
+              typeof b === 'object' &&
+              (b as { type?: string }).type === 'text' &&
+              typeof (b as { text?: string }).text === 'string',
+          )
+          .map((b) => b.text)
+          .filter((t) => t.trim().length > 0);
+        if (textBlocks.length === 0) continue;
+        return textBlocks.join('\n').trim();
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/* Build a "Lex pulse" — the dashboard surface for whatever Claude said
+ * on the most recent assistant turn. Severity heuristic:
+ *   - ends with '?' → warn (Lex has a question for the user)
+ *   - >= MIN chars → info (Lex finished a meaningful turn)
+ *   - else         → null (trivial reply, skip; we'd rather drop a
+ *     small "ok" than spam the rail)
+ *
+ * Returns the body + severity ready for emitNotification, or null when
+ * the turn isn't worth surfacing. */
+const LEX_PULSE_MAX = 600;
+const LEX_PULSE_MIN = 30;
+
+export function buildLexPulseFromTail(
+  sessionId: string,
+  cwd: string | undefined,
+): { severity: 'info' | 'warn'; title: string; body: string } | null {
+  let slugDir: string | null = null;
+  if (cwd) {
+    const dir = path.posix.join(SESSIONS_ROOT, cwd.replace(/[\\/:]/g, '-'));
+    if (fs.existsSync(dir)) slugDir = dir;
+  }
+  if (!slugDir) {
+    // Fallback: scan slugs for the session id.
+    const slugs = fs.readdirSync(SESSIONS_ROOT, { withFileTypes: true });
+    for (const slug of slugs) {
+      if (!slug.isDirectory()) continue;
+      const candidate = path.posix.join(
+        SESSIONS_ROOT,
+        slug.name,
+        `${sessionId}.jsonl`,
+      );
+      if (fs.existsSync(candidate)) {
+        slugDir = path.posix.join(SESSIONS_ROOT, slug.name);
+        break;
+      }
+    }
+  }
+  if (!slugDir) return null;
+  const file = path.posix.join(slugDir, `${sessionId}.jsonl`);
+  const text = readLastAssistantText(file);
+  if (!text) return null;
+  const trimmed = text.replace(/\s+/g, ' ').trim();
+  const endsWithQuestion = /[?？]\s*$/.test(trimmed);
+  // Questions always surface (the user needs to answer). Statements
+  // need to clear the min length to avoid spamming the rail with
+  // single-word acknowledgements.
+  if (!endsWithQuestion && trimmed.length < LEX_PULSE_MIN) return null;
+  const body = trimmed.slice(0, LEX_PULSE_MAX);
+  return {
+    severity: endsWithQuestion ? 'warn' : 'info',
+    title: endsWithQuestion ? 'Lex has a question' : 'Lex finished a turn',
+    body,
+  };
+}
+
 /* Encode a cwd into Claude Code's project-slug folder name.
  *
  * CC stores per-workspace transcripts under ~/.claude/projects/<slug>/.

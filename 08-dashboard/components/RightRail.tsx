@@ -56,11 +56,16 @@ export function RightRail() {
   const openReminders = (remQ.data?.reminders ?? []).filter(
     (r) => !r.completed_at && !r.archived_at,
   );
-  /* Activity rail = brain stream only (curator + reinforcement + recap).
-   * System notifications stay in the bell. Per-scope dismiss tracking
-   * means clearing here doesn't touch the bell row. Recap lines are the
-   * shell-prompt "※ recap:" summaries forwarded by the hook-runner. */
-  const ACTIVITY_SOURCES = new Set(["curator", "reinforcement", "recap"]);
+  /* Activity rail = brain stream only. System notifications stay in
+   * the bell. Per-scope dismiss tracking means clearing here doesn't
+   * touch the bell row.
+   *   curator       - wiki-page injection events
+   *   reinforcement - hit / no-hit / correction signals
+   *   recap         - "※ recap:" lines forwarded from the user's shell
+   *   lex           - Claude's last assistant turn (questions + summaries)
+   *                   surfaced on Stop so the user can monitor remotely
+   *                   without tabbing back to the VS Code window */
+  const ACTIVITY_SOURCES = new Set(["curator", "reinforcement", "recap", "lex"]);
   const allEvents = (notQ.data?.notifications ?? []).filter(
     (n) =>
       ACTIVITY_SOURCES.has(n.source) &&
