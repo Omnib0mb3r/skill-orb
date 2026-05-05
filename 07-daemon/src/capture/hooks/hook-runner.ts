@@ -42,7 +42,7 @@ const DAEMON_PORT = Number(process.env.DEVNEURAL_PORT ?? 3747);
  * thinking. Bounded timeout; daemon-down silently skips. */
 async function pingPhase(
   sessionId: string,
-  phase: 'thinking' | 'tool' | 'idle',
+  phase: 'thinking' | 'tool' | 'idle' | 'permission',
 ): Promise<void> {
   if (!sessionId || sessionId === 'unknown') return;
   const url = `http://127.0.0.1:${DAEMON_PORT}/sessions/${encodeURIComponent(sessionId)}/phase`;
@@ -125,8 +125,51 @@ function parsePhase(arg: string | undefined): HookPhase {
     case 'stop':
     case 'session_stop':
       return 'session_stop';
+    case 'notification':
+    case 'notify':
+      return 'notification';
     default:
       return 'post_tool';
+  }
+}
+
+/* Forward Claude's notification message to the daemon so the dashboard
+ * can render the prompt + answer buttons. Bounded timeout; daemon-down
+ * silently skips. */
+async function postPendingPrompt(
+  sessionId: string,
+  message: string,
+  kind: string,
+): Promise<void> {
+  if (!sessionId || sessionId === 'unknown' || !message) return;
+  const url = `http://127.0.0.1:${DAEMON_PORT}/sessions/${encodeURIComponent(sessionId)}/pending-prompt`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 800);
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, kind }),
+      signal: ctrl.signal,
+    });
+  } catch {
+    /* daemon down or timeout; pending-prompt push silently skipped */
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function clearPendingPrompt(sessionId: string): Promise<void> {
+  if (!sessionId || sessionId === 'unknown') return;
+  const url = `http://127.0.0.1:${DAEMON_PORT}/sessions/${encodeURIComponent(sessionId)}/pending-prompt`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 500);
+  try {
+    await fetch(url, { method: 'DELETE', signal: ctrl.signal });
+  } catch {
+    /* ignore */
+  } finally {
+    clearTimeout(t);
   }
 }
 
@@ -181,6 +224,23 @@ function buildObservation(
       project_id: projectId,
       project_name: projectName,
       cwd,
+    };
+  }
+
+  if (phase === 'notification') {
+    const message = String(payload.message ?? '');
+    const kind = String(
+      payload.notification_type ?? payload.hook_event_name ?? 'notification',
+    );
+    return {
+      timestamp,
+      event: 'notification',
+      session,
+      project_id: projectId,
+      project_name: projectName,
+      cwd,
+      notification_kind: kind,
+      notification_message: scrubSecrets(trim(message)),
     };
   }
 
@@ -266,14 +326,28 @@ async function main(): Promise<void> {
   // Push current phase so the dashboard tile reflects what Claude is
   // doing right now. Mapping: pre_tool = tool running, post_tool = idle
   // between tool calls, user_prompt = thinking on the new prompt,
-  // session_stop = idle.
-  const phaseMap: Record<HookPhase, 'thinking' | 'tool' | 'idle'> = {
+  // session_stop = idle, notification = waiting on user permission.
+  const phaseMap: Record<HookPhase, 'thinking' | 'tool' | 'idle' | 'permission'> = {
     pre_tool: 'tool',
     post_tool: 'idle',
     user_prompt: 'thinking',
     session_stop: 'idle',
+    notification: 'permission',
   };
   void pingPhase(obs.session, phaseMap[phase]);
+
+  // Forward the notification message so the dashboard can render the
+  // permission/elicitation prompt with answer buttons. Clear pending on
+  // user_prompt (the user just answered, in CC or remotely) and on stop.
+  if (phase === 'notification' && obs.notification_message) {
+    void postPendingPrompt(
+      obs.session,
+      obs.notification_message,
+      obs.notification_kind ?? 'notification',
+    );
+  } else if (phase === 'user_prompt' || phase === 'session_stop') {
+    void clearPendingPrompt(obs.session);
+  }
 
   // P4: on UserPromptSubmit, fetch curated injection from daemon and print
   // to stdout so Claude Code includes it as additional context. Bounded

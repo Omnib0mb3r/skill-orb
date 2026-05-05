@@ -24,6 +24,7 @@ import {
   bridgeStatus,
 } from './sessions.js';
 import { setPhase, type SessionPhase } from './session-phase.js';
+import { setPending, clearPending, getPending } from './pending-prompt.js';
 import { lintQueueStatus } from '../wiki/lint-queue.js';
 import { providerStatus } from '../llm/index.js';
 import { embedderStats } from '../embedder/index.js';
@@ -398,6 +399,37 @@ export async function registerDashboardRoutes(
     setPhase(id, phase);
     reply.code(200);
     return { ok: true };
+  });
+
+  /* Pending permission/elicitation prompt.
+   *
+   * POST: hook-runner forwards Claude's notification message so the
+   *   dashboard can render the question + numbered answer buttons.
+   * DELETE: dashboard calls this after the user answers (or after the
+   *   bridge confirms the answer landed) so the badge clears.
+   * GET (under /sessions/:id detail): not a separate endpoint; the
+   *   pending struct rides on the session list/detail responses. */
+  app.post('/sessions/:id/pending-prompt', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const body = (req.body ?? {}) as { message?: string; kind?: string };
+    if (!body.message || typeof body.message !== 'string') {
+      reply.code(400);
+      return { ok: false, error: 'message required' };
+    }
+    setPending(id, body.message, body.kind ?? 'notification');
+    return { ok: true };
+  });
+
+  app.delete('/sessions/:id/pending-prompt', async (req) => {
+    const id = (req.params as { id: string }).id;
+    clearPending(id);
+    return { ok: true };
+  });
+
+  app.get('/sessions/:id/pending-prompt', async (req) => {
+    const id = (req.params as { id: string }).id;
+    const p = getPending(id);
+    return { ok: true, pending: p };
   });
 
   // ── Search across all collections ────────────────────────────────

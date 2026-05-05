@@ -12,6 +12,7 @@ import * as os from 'node:os';
 import { DATA_ROOT, ensureDir } from '../paths.js';
 import { readSummary, readCurrentTask } from '../curation/index.js';
 import { getPhase } from './session-phase.js';
+import { getPending, type PendingPrompt } from './pending-prompt.js';
 
 const SESSIONS_ROOT = path
   .join(os.homedir(), '.claude', 'projects')
@@ -32,6 +33,10 @@ export interface SessionListItem {
    * 'unknown' means no hook has fired yet for this session in this
    * daemon's lifetime (e.g. stale jsonl from before the daemon started). */
   phase: 'thinking' | 'tool' | 'permission' | 'idle' | 'unknown';
+  /** Captured Notification message when Claude is waiting for an answer.
+   * The dashboard renders this with answer buttons so the user can reply
+   * remotely instead of tabbing to the VS Code window. */
+  pending_prompt: PendingPrompt | null;
 }
 
 /* Derive current phase by reading the last few KB of the jsonl. The
@@ -114,6 +119,11 @@ export function listSessions(): SessionListItem[] {
         const derived = derivePhaseFromTail(file);
         if (derived !== 'unknown') phase = derived;
       }
+      const pending = getPending(sessionId);
+      // Pending prompt overrides tail-derived phase: if Claude is waiting
+      // for an answer, the tile / detail must show 'permission' even
+      // though the last jsonl record is still the assistant's question.
+      if (pending) phase = 'permission';
       out.push({
         session_id: sessionId,
         project_slug: slug.name,
@@ -124,6 +134,7 @@ export function listSessions(): SessionListItem[] {
         has_summary: Boolean(readSummary(sessionId)),
         has_task: Boolean(readCurrentTask(sessionId)),
         phase,
+        pending_prompt: pending,
       });
     }
   }

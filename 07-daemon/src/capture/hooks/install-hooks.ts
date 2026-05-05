@@ -56,6 +56,12 @@ const HOOK_PHASES: Array<{ event: string; phase: string; matcher?: string }> = [
   { event: 'PostToolUse', phase: 'post' },
   { event: 'UserPromptSubmit', phase: 'prompt' },
   { event: 'Stop', phase: 'stop' },
+  // Notification fires when Claude is waiting on a permission/elicitation
+  // answer from the user. We capture the prompt message + matcher so the
+  // dashboard can surface the question with answer buttons; without this
+  // entry the dashboard sees nothing when CC asks "1) yes 2) no" and the
+  // user has to tab back to the VS Code window to reply.
+  { event: 'Notification', phase: 'notification' },
 ];
 
 function buildCommand(phase: string): string {

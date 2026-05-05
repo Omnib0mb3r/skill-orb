@@ -270,6 +270,11 @@ export type SessionPhase =
   | "permission"
   | "idle"
   | "unknown";
+export interface PendingPrompt {
+  message: string;
+  kind: string;
+  received_at: number;
+}
 export interface SessionSummary {
   session_id: string;
   project_slug: string;
@@ -280,6 +285,7 @@ export interface SessionSummary {
   has_summary: boolean;
   has_task: boolean;
   phase: SessionPhase;
+  pending_prompt: PendingPrompt | null;
 }
 export const sessions = () =>
   request<{ ok: boolean; sessions: SessionSummary[] }>("/sessions");
@@ -321,6 +327,15 @@ export const queuePrompt = (id: string, text: string) =>
 
 export const focusSession = (id: string) =>
   request<{ ok: boolean }>(`/sessions/${id}/focus`, { method: "POST" });
+
+/* Pending permission prompt: dashboard reads via SessionSummary.pending_prompt
+ * (rides on /sessions). After the user picks an answer, queuePrompt sends the
+ * digit + commits, then clearPendingPrompt drops the pending struct so the
+ * badge disappears immediately instead of waiting for the next hook fire. */
+export const clearPendingPrompt = (id: string) =>
+  request<{ ok: boolean }>(`/sessions/${id}/pending-prompt`, {
+    method: "DELETE",
+  });
 
 export type NavKey =
   | "up" | "down" | "left" | "right"

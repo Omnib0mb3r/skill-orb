@@ -2,8 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { sessionDetail } from "@/lib/daemon-client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  sessionDetail,
+  queuePrompt,
+  clearPendingPrompt,
+  type PendingPrompt,
+} from "@/lib/daemon-client";
 import { projectFromSlug, relTime } from "@/lib/session-helpers";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
@@ -197,6 +202,13 @@ export function SessionDetail({ sessionId, query }: Props) {
         )}
       </div>
 
+      {s.pending_prompt && (
+        <PendingPromptPanel
+          sessionId={s.session_id}
+          pending={s.pending_prompt}
+        />
+      )}
+
       <div className="rounded-panel bg-surface1 hairline">
         <div className="px-5 py-3 border-b border-border1 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
@@ -252,7 +264,7 @@ export function SessionDetail({ sessionId, query }: Props) {
          * Roles map to a short label + color so the user reads as a
          * conversation log rather than a JSON dump:
          *   user      -> "you"   (green prompt)
-         *   assistant -> "ai"    (brand-soft prompt)
+         *   assistant -> "lex"   (brand-soft prompt)
          *   tool      -> "tool"  (cyan)
          *   else      -> first 8 chars of the role (lower-cased)
          */}
@@ -266,17 +278,17 @@ export function SessionDetail({ sessionId, query }: Props) {
           {renderedChunks.map(({ chunk: c, rendered }, i) => {
             const role = (c.role ?? "").toLowerCase();
             const tag =
-              role === "assistant" ? "ai"
+              role === "assistant" ? "lex"
               : role === "user" ? "you"
               : role === "tool" ? "tool"
               : role.slice(0, 8) || "?";
             const tagColor =
-              tag === "ai" ? "text-brandSoft"
+              tag === "lex" ? "text-brandSoft"
               : tag === "you" ? "text-ok"
               : tag === "tool" ? "text-ai"
               : "text-txt3";
             const barColor =
-              tag === "ai" ? "bg-brandSoft/40"
+              tag === "lex" ? "bg-brandSoft/40"
               : tag === "you" ? "bg-ok/40"
               : tag === "tool" ? "bg-ai/40"
               : "bg-border1";
@@ -335,4 +347,156 @@ export function SessionDetail({ sessionId, query }: Props) {
       </div>
     </div>
   );
+}
+
+/* Pending permission/elicitation prompt panel.
+ *
+ * Renders the question text Claude sent over the Notification hook plus
+ * answer buttons. We try to auto-detect numbered choices ("1) yes  2) no")
+ * and surface them as one-tap buttons; anything else falls back to a free
+ * text input. Submit posts the answer through the existing prompt queue
+ * (commit:true so the bridge presses Enter), then DELETEs the pending
+ * record so the badge clears immediately. */
+function PendingPromptPanel(props: {
+  sessionId: string;
+  pending: PendingPrompt;
+}) {
+  const { sessionId, pending } = props;
+  const qc = useQueryClient();
+  const [custom, setCustom] = useState("");
+
+  const choices = useMemo(() => parseNumberedChoices(pending.message), [
+    pending.message,
+  ]);
+
+  const submit = useMutation({
+    mutationFn: async (text: string) => {
+      const r = await queuePrompt(sessionId, text);
+      if (!r.ok) throw new Error(r.error ?? "queue failed");
+      try {
+        await clearPendingPrompt(sessionId);
+      } catch {
+        /* non-fatal: pending will TTL out or get cleared by the next user_prompt hook */
+      }
+      return r;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["session", sessionId] });
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      setCustom("");
+    },
+  });
+
+  const dismiss = useMutation({
+    mutationFn: () => clearPendingPrompt(sessionId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["session", sessionId] });
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+    },
+  });
+
+  const ageS = Math.max(0, Math.round((Date.now() - pending.received_at) / 1000));
+
+  return (
+    <div className="rounded-panel bg-surface1 ring-1 ring-warn/40">
+      <div className="px-5 py-3 border-b border-border1 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <StatusDot status="fail" pulse />
+          <h2 className="font-display text-sm font-emphasized text-warn">
+            Claude is waiting on you
+          </h2>
+          <span className="text-nano text-txt3 font-mono ml-2">
+            {pending.kind} · {ageS}s
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => dismiss.mutate()}
+          disabled={dismiss.isPending}
+          className="text-nano text-txt3 hover:text-txt1 px-2 py-1"
+          aria-label="Dismiss this question (e.g. answered in CC directly)"
+        >
+          dismiss
+        </button>
+      </div>
+      <div className="px-5 py-3 border-b border-border2">
+        <pre className="text-sm text-txt1 whitespace-pre-wrap break-words font-mono leading-relaxed">
+          {pending.message}
+        </pre>
+      </div>
+      <div className="px-5 py-3 space-y-3">
+        {choices.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {choices.map((c) => (
+              <button
+                key={c.digit}
+                type="button"
+                onClick={() => submit.mutate(c.digit)}
+                disabled={submit.isPending}
+                className="lift px-3 py-1.5 rounded-pill bg-surface2 hairline text-sm text-txt1 hover:text-brandSoft disabled:opacity-50"
+                aria-label={`Answer ${c.digit}: ${c.label}`}
+              >
+                <span className="font-mono text-brandSoft mr-2">{c.digit}</span>
+                <span>{c.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const text = custom.trim();
+            if (!text) return;
+            submit.mutate(text);
+          }}
+          className="flex items-center gap-2"
+        >
+          <input
+            type="text"
+            value={custom}
+            onChange={(e) => setCustom(e.target.value)}
+            placeholder={
+              choices.length > 0
+                ? "or type a custom answer…"
+                : "type your answer…"
+            }
+            className="flex-1 px-3 py-1.5 rounded-card bg-surface2 hairline text-sm text-txt1 placeholder:text-txt3 focus:outline-none focus:ring-1 focus:ring-brand"
+            disabled={submit.isPending}
+          />
+          <button
+            type="submit"
+            disabled={submit.isPending || !custom.trim()}
+            className="lift px-3 py-1.5 rounded-pill bg-brand text-white text-sm disabled:opacity-50"
+          >
+            {submit.isPending ? "sending…" : "send"}
+          </button>
+        </form>
+        {submit.isError && (
+          <div className="text-xs text-fail">
+            {(submit.error as Error)?.message ?? "send failed"}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* Cheap numbered-choice parser. Matches lines like:
+ *   "1) yes" / "1. yes" / "1: yes" / "[1] yes"
+ * Captures the digit and label. Anything that doesn't match falls back
+ * to free-text input below the choice row. */
+function parseNumberedChoices(message: string): { digit: string; label: string }[] {
+  const lines = message.split(/\r?\n/);
+  const re = /^\s*(?:\[?(\d{1,2})\]?[).:\-]\s+|(\d{1,2})\s*[).:\-]\s+)(.+?)\s*$/;
+  const out: { digit: string; label: string }[] = [];
+  for (const line of lines) {
+    const m = re.exec(line);
+    if (!m) continue;
+    const digit = (m[1] ?? m[2]) || "";
+    const label = (m[3] ?? "").trim();
+    if (!digit || !label) continue;
+    if (out.some((x) => x.digit === digit)) continue;
+    out.push({ digit, label });
+  }
+  return out;
 }
