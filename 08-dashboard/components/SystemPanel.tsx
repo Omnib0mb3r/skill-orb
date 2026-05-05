@@ -219,10 +219,96 @@ export function SystemPanel() {
         <BackfillPanel />
       </div>
 
+      {/* PWA hard reset */}
+      <div className="col-span-3">
+        <PwaResetCard />
+      </div>
+
       {/* Daemon log tail spans full width */}
       <div className="col-span-3">
         <LogTail />
       </div>
     </div>
+  );
+}
+
+/* PWA hard-reset card.
+ *
+ * Forces a clean reload of the dashboard on any platform. Useful on
+ * iPad where Safari aggressively caches the service worker and the
+ * normal reload icon doesn't refresh the JS bundle. Steps in order:
+ *
+ *   1. unregister every service worker for this origin
+ *   2. delete every CacheStorage cache (handles both SW caches and
+ *      anything Workbox/RuntimeCache stashed)
+ *   3. clear localStorage + sessionStorage (cosmetic; keeps state
+ *      from leaking across resets)
+ *   4. window.location.reload() with a cache-busting query param so
+ *      Safari doesn't serve a 304 for the HTML shell
+ *
+ * Wrapped in try/catch per step so a single API miss (e.g. caches API
+ * absent on a stripped browser) doesn't abort the whole reset. */
+function PwaResetCard() {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function hardReset() {
+    setBusy(true);
+    setMsg("Unregistering service workers…");
+    try {
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+    } catch {
+      /* continue */
+    }
+    try {
+      setMsg("Clearing caches…");
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch {
+      /* continue */
+    }
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch {
+      /* continue */
+    }
+    setMsg("Reloading…");
+    const url = new URL(window.location.href);
+    url.searchParams.set("_reset", String(Date.now()));
+    // Tiny delay so the user sees the final message before the reload.
+    setTimeout(() => {
+      window.location.replace(url.toString());
+    }, 300);
+  }
+
+  return (
+    <section className="rounded-panel bg-surface1 hairline">
+      <div className="px-5 py-3 border-b border-border1 flex items-center gap-2">
+        <Icon name="RefreshCw" className="text-brandSoft" size={16} />
+        <h2 className="font-display text-sm font-emphasized">Hard reset</h2>
+      </div>
+      <div className="px-5 py-4 flex items-center justify-between gap-4">
+        <p className="text-xs text-txt3 max-w-md">
+          Unregister the service worker, drop every cached asset, and reload
+          with a cache-buster. Use this when iPad Safari (or any PWA) is
+          serving a stale build.
+        </p>
+        <button
+          type="button"
+          onClick={hardReset}
+          disabled={busy}
+          className="h-9 px-4 rounded-input bg-err/10 hairline ring-1 ring-err/30 text-err text-xs font-emphasized disabled:opacity-40"
+          aria-label="Hard reset PWA"
+        >
+          {busy ? msg ?? "resetting…" : "hard reset"}
+        </button>
+      </div>
+    </section>
   );
 }
