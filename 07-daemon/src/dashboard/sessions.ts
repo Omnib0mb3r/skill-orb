@@ -570,27 +570,30 @@ const VIRTUAL_INPUT_DIR = (() => {
   );
 })();
 
-/* Liveness check for the StreamDeck.App. The app's app.log gets touched
- * on every state-watcher fire and on every virtual-input dispatch, so a
- * recently-modified mtime is a cheap heartbeat. We don't require a
- * dedicated heartbeat file because the existing log already serves the
- * same purpose. Falls back to "alive" when the log is missing rather
- * than blocking dashboard actions on a fresh install. */
-const STREAMDECK_LOG = path.posix.join(
-  VIRTUAL_INPUT_DIR,
-  '..',
-  'app.log',
-);
+/* Liveness check for the StreamDeck.App. Prefer a dedicated heartbeat
+ * file the tray app touches on a 20s interval; fall back to app.log
+ * mtime for older builds that don't write a heartbeat. The dedicated
+ * file is necessary because app.log only gets written on real events,
+ * so a quiet session ages past the freshness window even though the
+ * tray is happily running — the daemon was responding 503 "streamdeck
+ * app offline" to Nav-mode key dispatches in that case. Falls back to
+ * "alive" when neither file exists rather than blocking dashboard
+ * actions on a fresh install. */
+const STREAMDECK_HEARTBEAT = path.posix.join(VIRTUAL_INPUT_DIR, '..', '.heartbeat');
+const STREAMDECK_LOG = path.posix.join(VIRTUAL_INPUT_DIR, '..', 'app.log');
 const STREAMDECK_STALE_MS = 60_000;
 
 function streamDeckAlive(): { alive: boolean; ageMs: number | null } {
-  try {
-    const stat = fs.statSync(STREAMDECK_LOG);
-    const age = Date.now() - stat.mtimeMs;
-    return { alive: age <= STREAMDECK_STALE_MS, ageMs: age };
-  } catch {
-    return { alive: true, ageMs: null };
+  for (const file of [STREAMDECK_HEARTBEAT, STREAMDECK_LOG]) {
+    try {
+      const stat = fs.statSync(file);
+      const age = Date.now() - stat.mtimeMs;
+      return { alive: age <= STREAMDECK_STALE_MS, ageMs: age };
+    } catch {
+      continue;
+    }
   }
+  return { alive: true, ageMs: null };
 }
 
 export interface BridgeStatus {
