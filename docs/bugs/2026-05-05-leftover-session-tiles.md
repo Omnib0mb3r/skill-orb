@@ -49,7 +49,8 @@ On Windows, every Claude Code hook fires through `wscript.exe → node → hook-
 | stream-deck | `0df2095` | Purge stale identity records when shell starts new session |
 | stream-deck | `2bc04c4` | Periodic liveness sweep + tap-time recovery for dead-host slots |
 | stream-deck | `97aff48` | Liveness gate before auto-registering from state files |
-| stream-deck | `3e87007` | 120s state-file freshness grace window so hook-bash pid death doesn't flicker live tiles |
+| stream-deck | `3e87007` | 120s state-file freshness grace window (superseded by 46234df) |
+| stream-deck | `46234df` | Replace pid-liveness gate with timestamp-fresh + window-match — pid is always dead because the hook-bash exits in ms |
 
 ## Verification
 
