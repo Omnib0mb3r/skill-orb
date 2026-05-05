@@ -7,6 +7,7 @@ import {
   dashboardHealth,
   notifications as notificationsClient,
   dismissNotification,
+  type Notification,
 } from "@/lib/daemon-client";
 import { Icon } from "./Icon";
 import { StatusDot } from "./StatusDot";
@@ -47,7 +48,33 @@ export function TopBar({ activeTab }: { activeTab: string }) {
   });
   const dismissM = useMutation({
     mutationFn: (id: string) => dismissNotification(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+    /* Optimistic update: flip the row's dismissed flag in cache so the
+     * dropdown clears the moment the user clicks X, not on the next
+     * 10s refetch. Then invalidate so the canonical state from the
+     * daemon also lands. The unread badge is driven by /dashboard/health
+     * (separate query) — invalidate that too so the count drops. */
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ["notifications", "recent"] });
+      const prev = qc.getQueryData<{ ok: boolean; notifications: Notification[] }>(
+        ["notifications", "recent"],
+      );
+      if (prev) {
+        qc.setQueryData(["notifications", "recent"], {
+          ...prev,
+          notifications: prev.notifications.map((n) =>
+            n.id === id ? { ...n, dismissed: true } : n,
+          ),
+        });
+      }
+      return { prev };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["notifications", "recent"], ctx.prev);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["notifications", "recent"] });
+      qc.invalidateQueries({ queryKey: ["dashboard", "health"] });
+    },
   });
 
   const unread = health.data?.unread_notifications ?? 0;
