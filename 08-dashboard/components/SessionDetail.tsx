@@ -7,6 +7,7 @@ import {
   sessionDetail,
   queuePrompt,
   clearPendingPrompt,
+  DaemonError,
   type PendingPrompt,
 } from "@/lib/daemon-client";
 import { projectFromSlug, relTime } from "@/lib/session-helpers";
@@ -140,17 +141,32 @@ export function SessionDetail({ sessionId, query }: Props) {
     );
   }
   if (q.isError || !q.data?.ok) {
+    const notFound =
+      q.error instanceof DaemonError && q.error.status === 404;
     return (
       <div className="rounded-panel bg-surface1 hairline p-6 space-y-3">
         <div className="flex items-center gap-2 text-amber-400">
           <Icon name="AlertCircle" size={18} />
-          <h3 className="font-display text-md font-emphasized">Session ended</h3>
+          <h3 className="font-display text-md font-emphasized">
+            {notFound ? "Session not found" : "Session ended"}
+          </h3>
         </div>
         <p className="text-sm text-txt3">
-          The Claude session{" "}
-          <code className="font-mono text-txt2">{sessionId.slice(0, 8)}</code>{" "}
-          is no longer running. Pick a live tile from the rail, or open a new
-          session in VS Code on OTLCDEV.
+          {notFound ? (
+            <>
+              No Claude session matching{" "}
+              <code className="font-mono text-txt2">{sessionId.slice(0, 12)}</code>{" "}
+              exists on this host. The link may be stale or the id may have come
+              from a test record.
+            </>
+          ) : (
+            <>
+              The Claude session{" "}
+              <code className="font-mono text-txt2">{sessionId.slice(0, 8)}</code>{" "}
+              is no longer running. Pick a live tile from the rail, or open a new
+              session in VS Code on OTLCDEV.
+            </>
+          )}
         </p>
         <Link
           href="/sessions"

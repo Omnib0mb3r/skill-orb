@@ -3,9 +3,14 @@
  *
  * Phase 3.4.6 scaffold: install + activate + minimal fetch passthrough.
  * Phase 3.7 lands the push handler + VAPID subscription flow.
+ *
+ * SW_VERSION is rewritten by scripts/postbuild-sw-version.mjs after every
+ * `next build` so the sw.js byte stream changes and the browser picks up
+ * the new bundle without a manual unregister. Source value below is a
+ * sentinel; the post-build pass replaces it with an ISO timestamp.
  */
 
-const SW_VERSION = "v0.1.0";
+const SW_VERSION = "__BUILD_VERSION__";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
