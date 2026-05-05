@@ -81,26 +81,27 @@ $logFile = Join-Path $dataRoot 'daemon.log'
 # Detached child process so the scheduled task can exit immediately
 # while the daemon keeps running. WindowStyle Hidden + windowsHide on
 # child_process keeps the console flash off the desktop (Anti-slop #26).
-$psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = $node
-$psi.Arguments = "`"$dist`""
-$psi.WorkingDirectory = $DaemonRoot
-$psi.UseShellExecute = $false
-$psi.CreateNoWindow = $true
-$psi.RedirectStandardOutput = $true
-$psi.RedirectStandardError = $true
-$psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-
-$proc = [System.Diagnostics.Process]::Start($psi)
-
-# Bridge stdout + stderr to the daemon log so a failed start surfaces
-# in the dashboard's log tail. Async so this script can exit.
-$writer = [System.IO.StreamWriter]::new($logFile, $true)
-$writer.AutoFlush = $true
-$proc.OutputDataReceived += { if ($EventArgs.Data) { $writer.WriteLine($EventArgs.Data) } }
-$proc.ErrorDataReceived  += { if ($EventArgs.Data) { $writer.WriteLine($EventArgs.Data) } }
-$proc.BeginOutputReadLine()
-$proc.BeginErrorReadLine()
+#
+# Earlier versions used RedirectStandardOutput=$true with an event-driven
+# StreamWriter to bridge stdout/stderr into the daemon log. The
+# StreamWriter and the event handlers were owned by the PowerShell
+# runtime, so when this script exited at line 106, Node's writes to the
+# now-closed pipes failed with EPIPE and the daemon died moments after
+# bind. Switch to Start-Process with file-level redirection so the
+# pipes are owned by the OS and survive the parent's exit. The daemon
+# also writes its own structured lines to daemon.log via fs.appendFile,
+# so we redirect to a stdout-only sidecar file and let the Node-managed
+# log carry the structured stream.
+$stdoutLog = Join-Path $dataRoot 'daemon.stdout.log'
+$stderrLog = Join-Path $dataRoot 'daemon.stderr.log'
+$proc = Start-Process `
+    -FilePath $node `
+    -ArgumentList "`"$dist`"" `
+    -WorkingDirectory $DaemonRoot `
+    -WindowStyle Hidden `
+    -PassThru `
+    -RedirectStandardOutput $stdoutLog `
+    -RedirectStandardError $stderrLog
 
 Write-Host "[start-daemon] launched node $dist (pid=$($proc.Id))"
 exit 0
