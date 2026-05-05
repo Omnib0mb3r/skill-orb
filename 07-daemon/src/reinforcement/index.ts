@@ -122,6 +122,28 @@ function appendReinforcementLog(entry: Record<string, unknown>): void {
           ? `/sessions/detail?id=${encodeURIComponent(session)}`
           : undefined;
       switch (kind) {
+        case 'injection': {
+          // Fired the moment the curator decides to inject. Visibility
+          // matters: injection is invisible to the user inside the CC
+          // terminal (it goes in as additional context, not chat
+          // output), so the dashboard rail is the only place to spot
+          // bad recommendations before they steer Claude. Click takes
+          // the user to the wiki page so they can vet it.
+          const source = (entry.source as string | undefined) ?? 'wiki';
+          const target = (entry.chunk as string | undefined) ?? page;
+          const targetLink =
+            source === 'wiki' && page
+              ? `/wiki?page=${encodeURIComponent(page)}`
+              : link;
+          emitNotification({
+            severity: 'info',
+            source: 'curator',
+            title: `Lex injected ${source}: ${target || '(unknown)'}`,
+            body: `Lex pulled this into the next prompt as additional context. Click to inspect; if it looks wrong, ignore it in your reply and the reinforcement loop will demote it on its own.`,
+            ...(targetLink ? { link: targetLink } : {}),
+          });
+          break;
+        }
         case 'promote':
           emitNotification({
             severity: 'info',

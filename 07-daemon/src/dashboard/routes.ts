@@ -767,24 +767,40 @@ export async function registerDashboardRoutes(
     const { loadPage, rewritePageFrontmatter, moveTo, reindexPage } =
       await import('../reinforcement/index.js');
     const { wikiPagesDir } = await import('../paths.js');
-    const page = loadPage(id);
+    let page = loadPage(id);
     if (!page) {
       reply.code(404);
       return { ok: false, error: `wiki page ${id} not found in pending or pages` };
     }
-    if (page.frontmatter.status === 'canonical') {
-      return { ok: true, already_canonical: true, id };
-    }
+    const alreadyCanonical = page.frontmatter.status === 'canonical';
     const fm = {
       ...page.frontmatter,
       status: 'canonical' as const,
-      weight: typeof body.weight === 'number' ? body.weight : 0.5,
+      weight:
+        typeof body.weight === 'number'
+          ? body.weight
+          : alreadyCanonical
+            ? page.frontmatter.weight
+            : 0.5,
     };
-    rewritePageFrontmatter(page, fm);
-    const newPath = moveTo({ ...page, frontmatter: fm }, wikiPagesDir());
-    await reindexPage(store, { ...page, filePath: newPath, frontmatter: fm });
+    if (!alreadyCanonical) {
+      rewritePageFrontmatter(page, fm);
+      const movedPath = moveTo({ ...page, frontmatter: fm }, wikiPagesDir());
+      page = { ...page, filePath: movedPath, frontmatter: fm };
+    }
+    // Always reindex. Even when frontmatter is already canonical the
+    // vector-store metadata may still say pending (e.g. an earlier
+    // promote ran but the store was killed before flush, so the
+    // canonical line was lost on the loader's length-mismatch
+    // truncation). Idempotent: same id → in-place update.
+    await reindexPage(store, page);
+    // Flush so the canonical metadata reaches disk and survives a hard
+    // kill. Without this, taskkill /F between promote and the next
+    // graceful shutdown silently reverts the store to pending on
+    // restart.
+    await store.wikiPages.flush();
     log(`[admin] promoted wiki page ${id} to canonical (weight ${fm.weight})`);
-    return { ok: true, id, weight: fm.weight };
+    return { ok: true, id, weight: fm.weight, was_already_canonical: alreadyCanonical };
   });
 
   app.post('/admin/backfill/:mode/cancel', async (req, reply) => {
