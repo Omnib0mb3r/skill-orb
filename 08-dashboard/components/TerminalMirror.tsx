@@ -213,24 +213,46 @@ export function TerminalMirror({ sessionId }: Props) {
         sourceCols = cols;
         sourceRows = rows;
         if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
-        let fontSize = 14;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const t = term as any;
-        for (; fontSize >= 7; fontSize--) {
-          t.options.fontSize = fontSize;
+        /* Pick the largest fontSize where the container's natural grid
+         * accommodates both source cols AND source rows. If neither
+         * constraint can be met simultaneously (very narrow panel on a
+         * tall source), prefer fitting rows so the source's pinned
+         * status row (Thinking / Garnishing / etc) stays visible at
+         * the bottom of the viewport instead of disappearing into
+         * scrollback. Cols overflow becomes horizontal scroll, which
+         * is far less harmful than losing the live spinner. */
+        let bestFit: number | null = null;
+        for (let fs = 16; fs >= 4; fs--) {
+          t.options.fontSize = fs;
           const proposed = fit.proposeDimensions();
-          if (
-            proposed &&
-            proposed.cols >= cols &&
-            proposed.rows >= rows
-          ) {
+          if (proposed && proposed.cols >= cols && proposed.rows >= rows) {
+            bestFit = fs;
             break;
           }
         }
+        if (bestFit === null) {
+          for (let fs = 16; fs >= 4; fs--) {
+            t.options.fontSize = fs;
+            const proposed = fit.proposeDimensions();
+            if (proposed && proposed.rows >= rows) {
+              bestFit = fs;
+              break;
+            }
+          }
+        }
+        if (bestFit === null) bestFit = 4;
+        t.options.fontSize = bestFit;
         try {
           term.resize(cols, rows);
         } catch {
           /* terminal disposed */
+        }
+        try {
+          term.scrollToBottom();
+        } catch {
+          /* ignore */
         }
       };
 
@@ -269,7 +291,14 @@ export function TerminalMirror({ sessionId }: Props) {
                 /* ignore */
               }
             }
-            if (replay.data) term.write(replay.data);
+            if (replay.data) {
+              term.write(replay.data);
+              try {
+                term.scrollToBottom();
+              } catch {
+                /* ignore */
+              }
+            }
           }
         }
       } catch {
@@ -386,7 +415,7 @@ export function TerminalMirror({ sessionId }: Props) {
       ) : null}
       <div
         ref={containerRef}
-        className="h-[48vh] bg-[oklch(8%_0_0)]"
+        className="h-[65vh] min-h-[420px] bg-[oklch(8%_0_0)] overflow-auto"
         aria-label="Live Claude Code terminal output"
       />
     </section>
