@@ -364,8 +364,16 @@ async function handleMessage(message: BridgeMessage): Promise<void> {
     // text lands in the prompt buffer and waits for the user to hit
     // Enter manually. Send text with no auto-newline; only append the
     // '\r' when the message wants to auto-commit.
+    //
+    // Small delay between the paste and the '\r' so VS Code's
+    // bracketed-paste-mode terminator (\e[201~) is fully delivered to
+    // the TUI before the carriage return arrives. Without this, the
+    // '\r' sometimes lands inside the paste envelope and CC treats it
+    // as part of the pasted text instead of as Enter — leaving the
+    // user staring at an unsubmitted prompt.
     terminal.sendText(message.text, false);
     if (commit) {
+      await new Promise((resolve) => setTimeout(resolve, 80));
       terminal.sendText('\r', false);
     }
   } catch (err) {
