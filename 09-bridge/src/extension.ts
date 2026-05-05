@@ -109,6 +109,26 @@ function getDataRoot(): string {
   return raw;
 }
 
+/* Path normalisation used everywhere we compare a Claude Code cwd, a
+ * VS Code workspace fsPath, or a StreamDeck.App identity-file Cwd.
+ * Steps:
+ *   1. Backslashes -> forward slashes (Windows mixed-style paths).
+ *   2. Collapse runs of slashes -> single slash. The StreamDeck.App
+ *      tray writes identity files with double-escaped paths
+ *      ("C://dev//Projects//DevNeural"); without this collapse the
+ *      identity-file Cwd never matches the VS Code terminal cwd and
+ *      the mirror silently drops every event.
+ *   3. Lowercase (Windows is case-insensitive on disk; VS Code and
+ *      the transcript records often disagree on drive-letter case).
+ *   4. Strip trailing slash. */
+function normalizePath(s: string): string {
+  return s
+    .replace(/\\/g, '/')
+    .replace(/\/+/g, '/')
+    .toLowerCase()
+    .replace(/\/$/, '');
+}
+
 function getBridgeDir(): string {
   return path.posix.join(getDataRoot(), 'session-bridge');
 }
@@ -483,9 +503,9 @@ function shouldHandleSession(sessionId: string): boolean {
   // in the Claude Code transcript ("C:\dev\...") often differs from the
   // casing VS Code uses for its workspace fsPath ("c:\dev\..."), which
   // turned a case mismatch into a silent "skip every prompt".
-  const sessionCwdLower = sessionCwd.toLowerCase();
+  const sessionCwdLower = normalizePath(sessionCwd);
   return folders.some((f) => {
-    const folder = f.uri.fsPath.replace(/\\/g, '/').toLowerCase();
+    const folder = normalizePath(f.uri.fsPath);
     return sessionCwdLower === folder || sessionCwdLower.startsWith(`${folder}/`);
   });
 }
@@ -686,6 +706,63 @@ function stopWatching(): void {
  * Resolves session_id from the terminal's cwd by scanning the
  * StreamDeck identity dir, the same source of truth the daemon
  * already uses for "active" detection. */
+/* Mirror health state. Written to <bridgeDir>/.mirror-state.json so
+ * the daemon (and through it the dashboard) can surface failure modes
+ * without the user needing to inspect VS Code's Output panel. The
+ * existing prompt-delivery heartbeat at <bridgeDir>/.heartbeat covers
+ * the watcher loop's liveness; this covers the mirror loop's state. */
+interface MirrorState {
+  updated_at: string;
+  api_available: boolean;
+  subscribed: boolean;
+  reason: string | null;
+  tracked_terminals: number;
+  last_flush_at: string | null;
+  last_flush_session_id: string | null;
+  last_flush_bytes: number | null;
+  last_resolution_failure_at: string | null;
+  last_resolution_failure_reason: string | null;
+  last_post_error: string | null;
+  last_post_error_at: string | null;
+}
+
+const mirrorState: MirrorState = {
+  updated_at: new Date().toISOString(),
+  api_available: false,
+  subscribed: false,
+  reason: 'not started',
+  tracked_terminals: 0,
+  last_flush_at: null,
+  last_flush_session_id: null,
+  last_flush_bytes: null,
+  last_resolution_failure_at: null,
+  last_resolution_failure_reason: null,
+  last_post_error: null,
+  last_post_error_at: null,
+};
+
+let mirrorStateSaveTimer: NodeJS.Timeout | undefined;
+function writeMirrorStateDebounced(): void {
+  if (mirrorStateSaveTimer) return;
+  mirrorStateSaveTimer = setTimeout(() => {
+    mirrorStateSaveTimer = undefined;
+    try {
+      const dir = getBridgeDir();
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      mirrorState.updated_at = new Date().toISOString();
+      fs.writeFileSync(
+        path.posix.join(dir, '.mirror-state.json'),
+        JSON.stringify(mirrorState, null, 2),
+        'utf-8',
+      );
+    } catch {
+      /* ignore */
+    }
+  }, 500);
+}
+
 function startTerminalMirror(context: vscode.ExtensionContext): void {
   const proposed = vscode.window as unknown as {
     onDidWriteTerminalData?: (
@@ -694,10 +771,17 @@ function startTerminalMirror(context: vscode.ExtensionContext): void {
   };
   if (typeof proposed.onDidWriteTerminalData !== 'function') {
     channel.appendLine(
-      '[mirror] onDidWriteTerminalData not exposed; launch VS Code with --enable-proposed-api Omnib0mb3r.devneural-bridge to enable terminal mirroring',
+      '[mirror] onDidWriteTerminalData not exposed; launch VS Code with --enable-proposed-api omnib0mb3r.devneural-bridge to enable terminal mirroring',
     );
+    mirrorState.api_available = false;
+    mirrorState.subscribed = false;
+    mirrorState.reason =
+      'proposed API onDidWriteTerminalData not exposed; launch VS Code with --enable-proposed-api omnib0mb3r.devneural-bridge or set "enable-proposed-api": ["omnib0mb3r.devneural-bridge"] in %APPDATA%/Code/User/argv.json';
+    writeMirrorStateDebounced();
     return;
   }
+
+  mirrorState.api_available = true;
 
   const buffers = new Map<vscode.Terminal, string>();
   const flushTimers = new Map<vscode.Terminal, NodeJS.Timeout>();
@@ -708,6 +792,12 @@ function startTerminalMirror(context: vscode.ExtensionContext): void {
       process.env.LOCALAPPDATA?.replace(/\\/g, '/') ??
       path.posix.join(os.homedir().replace(/\\/g, '/'), 'AppData', 'Local')
     );
+  }
+
+  function recordResolutionFailure(reason: string): void {
+    mirrorState.last_resolution_failure_at = new Date().toISOString();
+    mirrorState.last_resolution_failure_reason = reason;
+    writeMirrorStateDebounced();
   }
 
   function resolveSessionForTerminal(t: vscode.Terminal): string | null {
@@ -722,22 +812,26 @@ function startTerminalMirror(context: vscode.ExtensionContext): void {
     }
     if (!cwd) {
       sessionIdCache.set(t, null);
+      recordResolutionFailure('terminal has no cwd and no workspace folder');
       return null;
     }
-    const wantA = cwd.replace(/\\/g, '/').toLowerCase().replace(/\/$/, '');
+    const wantA = normalizePath(cwd);
     const identityDir = path.posix.join(localAppData(), 'stream-deck', 'identity');
+    let identityPresent = false;
     try {
       for (const f of fs.readdirSync(identityDir)) {
         if (!f.endsWith('.json')) continue;
+        identityPresent = true;
         try {
           const raw = fs.readFileSync(path.posix.join(identityDir, f), 'utf-8');
           const obj = JSON.parse(raw) as { Cwd?: string };
-          const wantB = (obj.Cwd ?? '')
-            .replace(/\\/g, '/')
-            .toLowerCase()
-            .replace(/\/$/, '');
+          const wantB = normalizePath(obj.Cwd ?? '');
           if (!wantB) continue;
-          if (wantA === wantB || wantA.startsWith(wantB) || wantB.startsWith(wantA)) {
+          if (
+            wantA === wantB ||
+            wantA.startsWith(`${wantB}/`) ||
+            wantB.startsWith(`${wantA}/`)
+          ) {
             const id = f.slice(0, -'.json'.length);
             sessionIdCache.set(t, id);
             return id;
@@ -747,9 +841,18 @@ function startTerminalMirror(context: vscode.ExtensionContext): void {
         }
       }
     } catch {
-      /* identity dir absent — tray app not running */
+      sessionIdCache.set(t, null);
+      recordResolutionFailure(
+        'StreamDeck.App identity dir missing; tray app not running',
+      );
+      return null;
     }
     sessionIdCache.set(t, null);
+    recordResolutionFailure(
+      identityPresent
+        ? `no identity file matches terminal cwd ${wantA}; tray app may not have registered this session yet`
+        : 'StreamDeck.App identity dir empty; no Claude sessions registered',
+    );
     return null;
   }
 
@@ -760,6 +863,14 @@ function startTerminalMirror(context: vscode.ExtensionContext): void {
     if (!data) return;
     const sessionId = resolveSessionForTerminal(t);
     if (!sessionId) return;
+    /* Source terminal grid dimensions. Without this the mirror's xterm
+     * renders at whatever the dashboard container fits, but the cursor
+     * positioning ANSI sequences emitted by Claude Code assume the
+     * source terminal's cols/rows. The mismatch produced the
+     * "scrunched and weird" wrapping. We forward both sides of the
+     * envelope so the mirror can resize its grid to match. */
+    const dims = (t as { dimensions?: { columns: number; rows: number } })
+      .dimensions;
     const dataRoot = getDataRoot();
     const port = (() => {
       const m = dataRoot.match(/skill-connections/);
@@ -768,13 +879,29 @@ function startTerminalMirror(context: vscode.ExtensionContext): void {
     const url = `http://127.0.0.1:${port}/sessions/${encodeURIComponent(
       sessionId,
     )}/terminal-stream`;
+    const body: { data: string; cols?: number; rows?: number } = { data };
+    if (dims && dims.columns > 0 && dims.rows > 0) {
+      body.cols = dims.columns;
+      body.rows = dims.rows;
+    }
     void fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data }),
-    }).catch(() => {
-      /* daemon down; drop chunk silently */
-    });
+      body: JSON.stringify(body),
+    })
+      .then(() => {
+        mirrorState.last_flush_at = new Date().toISOString();
+        mirrorState.last_flush_session_id = sessionId;
+        mirrorState.last_flush_bytes = data.length;
+        mirrorState.last_post_error = null;
+        mirrorState.last_post_error_at = null;
+        writeMirrorStateDebounced();
+      })
+      .catch((err) => {
+        mirrorState.last_post_error = (err as Error)?.message ?? String(err);
+        mirrorState.last_post_error_at = new Date().toISOString();
+        writeMirrorStateDebounced();
+      });
   }
 
   context.subscriptions.push(
@@ -783,10 +910,11 @@ function startTerminalMirror(context: vscode.ExtensionContext): void {
         if (!(await isClaudeTerminal(e.terminal))) return;
         const prev = buffers.get(e.terminal) ?? '';
         buffers.set(e.terminal, prev + e.data);
+        mirrorState.tracked_terminals = buffers.size;
         if (!flushTimers.has(e.terminal)) {
           flushTimers.set(
             e.terminal,
-            setTimeout(() => flush(e.terminal), 50),
+            setTimeout(() => flush(e.terminal), 16),
           );
         }
       } catch {
@@ -802,9 +930,14 @@ function startTerminalMirror(context: vscode.ExtensionContext): void {
       if (timer) clearTimeout(timer);
       flushTimers.delete(t);
       buffers.delete(t);
+      mirrorState.tracked_terminals = buffers.size;
+      writeMirrorStateDebounced();
     }),
   );
 
+  mirrorState.subscribed = true;
+  mirrorState.reason = null;
+  writeMirrorStateDebounced();
   channel.appendLine('[mirror] terminal-data subscription active');
 }
 

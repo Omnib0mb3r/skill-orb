@@ -3,6 +3,107 @@
 import { useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 
+interface MirrorState {
+  updated_at: string;
+  api_available: boolean;
+  subscribed: boolean;
+  reason: string | null;
+  tracked_terminals: number;
+  last_flush_at: string | null;
+  last_flush_session_id: string | null;
+  last_flush_bytes: number | null;
+  last_resolution_failure_at: string | null;
+  last_resolution_failure_reason: string | null;
+  last_post_error: string | null;
+  last_post_error_at: string | null;
+}
+
+interface BridgeStatusResponse {
+  ok: boolean;
+  alive: boolean;
+  last_seen_ms: number | null;
+  age_ms: number | null;
+  mirror: MirrorState | null;
+}
+
+function describeBridge(
+  bridge: BridgeStatusResponse | null,
+  sessionId: string,
+): { label: string; tone: "ok" | "warn" | "err"; detail: string } {
+  if (!bridge) {
+    return { label: "bridge: probing", tone: "warn", detail: "" };
+  }
+  if (!bridge.alive) {
+    const ageS = bridge.age_ms == null ? null : Math.round(bridge.age_ms / 1000);
+    return {
+      label: "bridge: offline",
+      tone: "err",
+      detail:
+        ageS == null
+          ? "no heartbeat ever recorded; install or enable the VS Code bridge extension"
+          : `last heartbeat ${ageS}s ago; the bridge VS Code extension is paused or VS Code is closed`,
+    };
+  }
+  const m = bridge.mirror;
+  if (!m) {
+    return {
+      label: "mirror: unknown",
+      tone: "warn",
+      detail:
+        "bridge is alive but no mirror state file yet; old bridge build, rebuild and reinstall the .vsix",
+    };
+  }
+  if (!m.api_available) {
+    return {
+      label: "mirror: proposed API not exposed",
+      tone: "err",
+      detail:
+        m.reason ??
+        "launch VS Code with --enable-proposed-api omnib0mb3r.devneural-bridge",
+    };
+  }
+  if (!m.subscribed) {
+    return {
+      label: "mirror: not subscribed",
+      tone: "err",
+      detail: m.reason ?? "subscription failed",
+    };
+  }
+  if (m.last_flush_session_id && m.last_flush_session_id !== sessionId) {
+    return {
+      label: "mirror: streaming other session",
+      tone: "warn",
+      detail: `bridge is sending bytes to ${m.last_flush_session_id.slice(
+        0,
+        8,
+      )}…, not this one. Check StreamDeck.App registered the right cwd.`,
+    };
+  }
+  if (!m.last_flush_at) {
+    if (m.last_resolution_failure_reason) {
+      return {
+        label: "mirror: cwd unmapped",
+        tone: "warn",
+        detail: m.last_resolution_failure_reason,
+      };
+    }
+    return {
+      label: "mirror: subscribed, idle",
+      tone: "warn",
+      detail: `tracking ${m.tracked_terminals} terminal(s); waiting for bytes from a Claude session`,
+    };
+  }
+  const ageS = Math.max(
+    0,
+    Math.round((Date.now() - Date.parse(m.last_flush_at)) / 1000),
+  );
+  return {
+    label: `mirror: live (${ageS}s ago)`,
+    tone: "ok",
+    detail: `${m.last_flush_bytes ?? 0} B last batch; ${m.tracked_terminals} terminal(s) tracked`,
+  };
+}
+
 /**
  * Read-only mirror of a Claude Code terminal.
  *
@@ -28,6 +129,29 @@ export function TerminalMirror({ sessionId }: Props) {
   const termRef = useRef<unknown>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<"loading" | "live" | "offline">("loading");
+  const [bridge, setBridge] = useState<BridgeStatusResponse | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch("/dashboard/bridge-status", {
+          credentials: "include",
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as BridgeStatusResponse;
+        if (!cancelled) setBridge(json);
+      } catch {
+        /* leave previous value */
+      }
+    };
+    void fetchStatus();
+    const id = setInterval(fetchStatus, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -42,7 +166,6 @@ export function TerminalMirror({ sessionId }: Props) {
       ]);
       if (disposed) return;
       const term = new Terminal({
-        convertEol: true,
         cursorBlink: false,
         disableStdin: true,
         fontFamily:
@@ -55,42 +178,104 @@ export function TerminalMirror({ sessionId }: Props) {
           selectionBackground: "#333",
         },
         scrollback: 5000,
+        allowProposedApi: true,
       });
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.open(el);
+
       try {
-        fit.fit();
+        const { WebglAddon } = await import("@xterm/addon-webgl");
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => webgl.dispose());
+        term.loadAddon(webgl);
       } catch {
-        /* element may not be sized yet on first render */
+        try {
+          const { CanvasAddon } = await import("@xterm/addon-canvas");
+          term.loadAddon(new CanvasAddon());
+        } catch {
+          /* DOM renderer fallback */
+        }
       }
+
       termRef.current = term;
 
-      const onResize = () => {
+      /* Match the source terminal's grid by scaling fontSize until
+       * xterm's natural cols/rows for the container >= the source's
+       * cols/rows, then locking the grid to source dims. This is the
+       * fix for the "scrunched + mid-word wrap" problem: without it
+       * xterm picks its own grid and the source's cursor positioning
+       * ANSI sequences address cells that don't exist. */
+      let sourceCols: number | null = null;
+      let sourceRows: number | null = null;
+      const applyDims = (cols: number, rows: number) => {
+        if (!cols || !rows) return;
+        sourceCols = cols;
+        sourceRows = rows;
+        if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
+        let fontSize = 14;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const t = term as any;
+        for (; fontSize >= 7; fontSize--) {
+          t.options.fontSize = fontSize;
+          const proposed = fit.proposeDimensions();
+          if (
+            proposed &&
+            proposed.cols >= cols &&
+            proposed.rows >= rows
+          ) {
+            break;
+          }
+        }
         try {
-          fit.fit();
+          term.resize(cols, rows);
         } catch {
-          /* ignore */
+          /* terminal disposed */
+        }
+      };
+
+      const onResize = () => {
+        if (sourceCols && sourceRows) {
+          applyDims(sourceCols, sourceRows);
+        } else {
+          try {
+            fit.fit();
+          } catch {
+            /* ignore */
+          }
         }
       };
       window.addEventListener("resize", onResize);
       unbindResize = () => window.removeEventListener("resize", onResize);
 
-      // Seed with replay snapshot.
       try {
         const res = await fetch(
           `/sessions/${encodeURIComponent(sessionId)}/terminal-replay`,
           { credentials: "include" },
         );
         if (res.ok) {
-          const replay = await res.text();
-          if (replay && !disposed) term.write(replay);
+          const replay = (await res.json()) as {
+            data: string;
+            cols?: number;
+            rows?: number;
+          };
+          if (!disposed) {
+            if (replay.cols && replay.rows) {
+              applyDims(replay.cols, replay.rows);
+            } else {
+              try {
+                fit.fit();
+              } catch {
+                /* ignore */
+              }
+            }
+            if (replay.data) term.write(replay.data);
+          }
         }
       } catch {
         /* non-fatal */
       }
 
-      // Open the live WS. Reconnect with backoff if it drops.
       let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
       const connect = () => {
         if (disposed) return;
@@ -103,9 +288,23 @@ export function TerminalMirror({ sessionId }: Props) {
         ws.binaryType = "arraybuffer";
         ws.onopen = () => setStatus("live");
         ws.onmessage = (ev) => {
-          if (typeof ev.data === "string") term.write(ev.data);
-          else if (ev.data instanceof ArrayBuffer) {
-            term.write(new Uint8Array(ev.data));
+          const text =
+            typeof ev.data === "string"
+              ? ev.data
+              : ev.data instanceof ArrayBuffer
+                ? new TextDecoder().decode(ev.data)
+                : "";
+          if (!text) return;
+          try {
+            const msg = JSON.parse(text) as
+              | { t: "s"; c: number; r: number }
+              | { t: "d"; d: string };
+            if (msg.t === "s") applyDims(msg.c, msg.r);
+            else if (msg.t === "d") term.write(msg.d);
+          } catch {
+            /* tolerate the old plain-text wire format during rolling
+             * upgrades: write the chunk verbatim. */
+            term.write(text);
           }
         };
         ws.onclose = () => {
@@ -142,9 +341,11 @@ export function TerminalMirror({ sessionId }: Props) {
     };
   }, [sessionId]);
 
+  const bridgeView = describeBridge(bridge, sessionId);
+
   return (
     <section className="rounded-panel bg-surface1 hairline overflow-hidden">
-      <div className="px-5 py-3 border-b border-border1 flex items-center gap-2">
+      <div className="px-5 py-3 border-b border-border1 flex items-center gap-2 flex-wrap">
         <span className="font-display text-sm font-emphasized">Terminal mirror</span>
         <span
           className={`text-nano font-mono ml-2 ${
@@ -155,19 +356,37 @@ export function TerminalMirror({ sessionId }: Props) {
                 : "text-err"
           }`}
         >
+          ws:{" "}
           {status === "live"
             ? "live"
             : status === "loading"
               ? "connecting…"
               : "offline (reconnecting)"}
         </span>
+        <span
+          className={`text-nano font-mono ${
+            bridgeView.tone === "ok"
+              ? "text-promoted"
+              : bridgeView.tone === "warn"
+                ? "text-attn"
+                : "text-err"
+          }`}
+          title={bridgeView.detail || undefined}
+        >
+          {bridgeView.label}
+        </span>
         <span className="text-nano text-txt3 ml-auto">
           read-only · use Steer / Nav for input
         </span>
       </div>
+      {bridgeView.tone !== "ok" && bridgeView.detail ? (
+        <div className="px-5 py-2 border-b border-border1 text-nano text-txt2 bg-surface2">
+          {bridgeView.detail}
+        </div>
+      ) : null}
       <div
         ref={containerRef}
-        className="h-[60vh] bg-[oklch(8%_0_0)]"
+        className="h-[48vh] bg-[oklch(8%_0_0)]"
         aria-label="Live Claude Code terminal output"
       />
     </section>

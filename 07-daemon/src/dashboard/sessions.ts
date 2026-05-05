@@ -596,10 +596,40 @@ function streamDeckAlive(): { alive: boolean; ageMs: number | null } {
   return { alive: true, ageMs: null };
 }
 
+export interface BridgeMirrorState {
+  updated_at: string;
+  api_available: boolean;
+  subscribed: boolean;
+  reason: string | null;
+  tracked_terminals: number;
+  last_flush_at: string | null;
+  last_flush_session_id: string | null;
+  last_flush_bytes: number | null;
+  last_resolution_failure_at: string | null;
+  last_resolution_failure_reason: string | null;
+  last_post_error: string | null;
+  last_post_error_at: string | null;
+}
+
 export interface BridgeStatus {
   alive: boolean;
   last_seen_ms: number | null;
   age_ms: number | null;
+  mirror: BridgeMirrorState | null;
+}
+
+const BRIDGE_MIRROR_STATE_FILE = path.posix.join(
+  BRIDGE_DIR,
+  '.mirror-state.json',
+);
+
+function readMirrorState(): BridgeMirrorState | null {
+  try {
+    const raw = fs.readFileSync(BRIDGE_MIRROR_STATE_FILE, 'utf-8');
+    return JSON.parse(raw) as BridgeMirrorState;
+  } catch {
+    return null;
+  }
 }
 
 export function bridgeStatus(): BridgeStatus {
@@ -610,9 +640,15 @@ export function bridgeStatus(): BridgeStatus {
       alive: age <= BRIDGE_HEARTBEAT_STALE_MS,
       last_seen_ms: stat.mtimeMs,
       age_ms: age,
+      mirror: readMirrorState(),
     };
   } catch {
-    return { alive: false, last_seen_ms: null, age_ms: null };
+    return {
+      alive: false,
+      last_seen_ms: null,
+      age_ms: null,
+      mirror: readMirrorState(),
+    };
   }
 }
 

@@ -20,15 +20,21 @@ export function SessionDetailRoute() {
   }
 
   return (
-    <div className="px-6 py-5 grid grid-cols-3 gap-5">
-      <div className="col-span-2 space-y-5">
-        <TerminalMirror sessionId={id} />
+    <div className="px-6 py-5 space-y-5">
+      <TerminalMirror sessionId={id} />
+      <SendPromptForm sessionId={id} />
+      {q ? (
+        <div className="grid grid-cols-3 gap-5">
+          <div className="col-span-2">
+            <SessionDetail sessionId={id} query={q} />
+          </div>
+          <div className="col-span-1">
+            <RelatedReferences query={q} />
+          </div>
+        </div>
+      ) : (
         <SessionDetail sessionId={id} query={q} />
-      </div>
-      <div className="col-span-1 space-y-5">
-        <SendPromptForm sessionId={id} />
-        {q && <RelatedReferences query={q} />}
-      </div>
+      )}
     </div>
   );
 }

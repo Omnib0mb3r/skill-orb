@@ -18,7 +18,9 @@ const RING_BYTES = 256 * 1024; // ~256 KB per session, plenty for one screenful 
 interface SessionRing {
   buf: string[];
   bytes: number;
-  subscribers: Set<(data: string) => void>;
+  cols?: number;
+  rows?: number;
+  subscribers: Set<(msg: string) => void>;
 }
 
 const rings = new Map<string, SessionRing>();
@@ -32,29 +34,72 @@ function ensure(sessionId: string): SessionRing {
   return r;
 }
 
-export function pushTerminalData(sessionId: string, data: string): void {
+/* Wire envelope. Both directions use a tagged JSON object so a single
+ * WebSocket can multiplex grid resize events and data chunks. The
+ * mirror reshapes its xterm grid on `s` events and writes raw bytes
+ * on `d` events. Without resize forwarding the mirror's xterm renders
+ * at whatever cols its container fits, and the source's cursor
+ * positioning ANSI sequences land on the wrong cells -> the scrunched
+ * + mid-word wrap the user reported. */
+type Envelope =
+  | { t: 's'; c: number; r: number }
+  | { t: 'd'; d: string };
+
+export function pushTerminalData(
+  sessionId: string,
+  data: string,
+  cols?: number,
+  rows?: number,
+): void {
   if (!sessionId || !data) return;
   const r = ensure(sessionId);
+  const dimChanged =
+    typeof cols === 'number' &&
+    typeof rows === 'number' &&
+    cols > 0 &&
+    rows > 0 &&
+    (r.cols !== cols || r.rows !== rows);
+  if (dimChanged) {
+    r.cols = cols;
+    r.rows = rows;
+  }
   r.buf.push(data);
   r.bytes += data.length;
   while (r.bytes > RING_BYTES && r.buf.length > 1) {
     const head = r.buf.shift()!;
     r.bytes -= head.length;
   }
+  if (dimChanged) {
+    const sizeMsg = JSON.stringify({ t: 's', c: cols, r: rows } as Envelope);
+    for (const cb of r.subscribers) {
+      try {
+        cb(sizeMsg);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  const dataMsg = JSON.stringify({ t: 'd', d: data } as Envelope);
   for (const cb of r.subscribers) {
     try {
-      cb(data);
+      cb(dataMsg);
     } catch {
       /* one bad subscriber doesn't block the others */
     }
   }
 }
 
-/** Snapshot of the current ring for late-joining clients. */
-export function getTerminalReplay(sessionId: string): string {
+/** Snapshot of the current ring for late-joining clients. Returns the
+ * concatenated byte stream plus the last known grid dimensions so the
+ * mirror can size its xterm before writing the replay. */
+export function getTerminalReplay(sessionId: string): {
+  data: string;
+  cols?: number;
+  rows?: number;
+} {
   const r = rings.get(sessionId);
-  if (!r) return '';
-  return r.buf.join('');
+  if (!r) return { data: '' };
+  return { data: r.buf.join(''), cols: r.cols, rows: r.rows };
 }
 
 /** Subscribe to live chunks. Returns an unsubscribe function. The

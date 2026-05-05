@@ -509,22 +509,27 @@ export async function registerDashboardRoutes(
    * Body: { data: string }. Empty body = 204 (no-op). */
   app.post('/sessions/:id/terminal-stream', async (req, reply) => {
     const id = (req.params as { id: string }).id;
-    const body = (req.body ?? {}) as { data?: unknown };
+    const body = (req.body ?? {}) as {
+      data?: unknown;
+      cols?: unknown;
+      rows?: unknown;
+    };
     if (typeof body.data !== 'string' || !body.data) {
       reply.code(204);
       return null;
     }
-    pushTerminalData(id, body.data);
+    const cols = typeof body.cols === 'number' ? body.cols : undefined;
+    const rows = typeof body.rows === 'number' ? body.rows : undefined;
+    pushTerminalData(id, body.data, cols, rows);
     reply.code(204);
     return null;
   });
 
-  /* Late-join replay: GET returns the current ring snapshot as plain
-   * text. The dashboard calls this once before opening the WS so the
-   * xterm renders the recent screen state instead of starting blank. */
+  /* Late-join replay: GET returns the current ring snapshot plus the
+   * last known source grid dimensions so the mirror can resize before
+   * writing the replay. JSON envelope: { data, cols?, rows? }. */
   app.get('/sessions/:id/terminal-replay', async (req, reply) => {
     const id = (req.params as { id: string }).id;
-    reply.type('text/plain; charset=utf-8');
     return getTerminalReplay(id);
   });
 
