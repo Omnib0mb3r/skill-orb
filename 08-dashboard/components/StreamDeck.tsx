@@ -81,7 +81,12 @@ export function StreamDeck() {
     queryFn: sessionsClient,
     refetchInterval: 5_000,
   });
-  const [showStale, setShowStale] = useState(false);
+  /* Default: show every session that still has a jsonl on disk. Stale
+   * (mtime > ACTIVE_THRESHOLD_MS) tiles render dimmer via the "inactive"
+   * state but stay visible so a session that goes quiet for an hour
+   * doesn't vanish out from under the user. Toggle hides them when the
+   * rail gets crowded. */
+  const [showStale, setShowStale] = useState(true);
 
   /* Last-focused tracker drives the "tap again to enter Nav" rule. */
   const [navSessionId, setNavSessionId] = useState<string | null>(null);
@@ -221,8 +226,8 @@ export function StreamDeck() {
               aria-expanded={showStale}
             >
               {showStale
-                ? `Hide ${inactive.length} inactive`
-                : `+${inactive.length} inactive (history)`}
+                ? `Hide ${inactive.length} idle`
+                : `Show ${inactive.length} idle`}
             </button>
           )}
 
