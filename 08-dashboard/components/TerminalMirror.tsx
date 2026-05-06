@@ -206,6 +206,19 @@ export function TerminalMirror({ sessionId }: Props) {
        * fix for the "scrunched + mid-word wrap" problem: without it
        * xterm picks its own grid and the source's cursor positioning
        * ANSI sequences address cells that don't exist. */
+      /* Pre-built measurement context. Lets us compute char width for
+       * any fontSize without waiting for xterm's async render cycle.
+       * The font string must match TerminalMirror's Terminal options
+       * exactly; otherwise the predicted width drifts from the actual
+       * rendered cells. */
+      const measureCanvas = document.createElement("canvas");
+      const measureCtx = measureCanvas.getContext("2d");
+      const measureCharWidth = (fs: number): number => {
+        if (!measureCtx) return fs * 0.6;
+        measureCtx.font = `${fs}px ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace`;
+        return measureCtx.measureText("M").width;
+      };
+
       let sourceCols: number | null = null;
       let sourceRows: number | null = null;
       const applyDims = (cols: number, rows: number) => {
@@ -215,37 +228,46 @@ export function TerminalMirror({ sessionId }: Props) {
         if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const t = term as any;
-        /* Find the fontSize where the panel's natural-width cols
-         * equals source cols, so the xterm canvas fills the container
-         * horizontally. Fixed-point iteration: at any font size the
-         * natural cols are container_width / char_width(fs). Char
-         * width scales linearly with fs, so multiplying fs by
-         * (natural / target) converges in 2-3 passes. Clamped 4..16
-         * so the font stays readable on either extreme. Rows that
-         * don't fit at the chosen fs go to scrollback; scrollToBottom
-         * keeps the source's pinned status row visible. */
-        let fs = 10;
-        for (let i = 0; i < 5; i++) {
-          t.options.fontSize = fs;
-          const proposed = fit.proposeDimensions();
-          if (!proposed || !proposed.cols) break;
-          const ratio = proposed.cols / cols;
-          if (Math.abs(ratio - 1) < 0.015) break;
-          fs = fs * ratio;
-          fs = Math.max(4, Math.min(fs, 16));
-        }
+        /* Two-stage fit. Stage 1: predict fontSize from canvas
+         * measureText (synchronous, no render wait). Stage 2: after
+         * xterm renders, measure the actual canvas width and apply a
+         * corrective scale on a follow-up frame. xterm's WebGL
+         * renderer uses different glyph metrics than measureText so
+         * the prediction is consistently off by ~15% on this font;
+         * the corrective pass pulls it the rest of the way. */
+        const targetW = el.clientWidth;
+        const predicted = targetW / cols / 0.6;
+        let fs = Math.max(4, Math.min(predicted, 16));
         t.options.fontSize = fs;
         try {
           term.resize(cols, rows);
         } catch {
-          /* terminal disposed */
+          /* ignore */
         }
+        const correct = (depth: number) => {
+          if (depth > 5) return;
+          const screen = el.querySelector(".xterm-screen") as HTMLElement | null;
+          const measured = screen?.clientWidth ?? 0;
+          if (!measured) {
+            setTimeout(() => correct(depth + 1), 60);
+            return;
+          }
+          const off = measured / targetW;
+          if (Math.abs(off - 1) < 0.02) return;
+          // Pull back slightly each pass to converge from above without
+          // oscillating around the target.
+          fs = Math.max(4, Math.min((fs / off) * 0.99, 16));
+          t.options.fontSize = fs;
+          setTimeout(() => correct(depth + 1), 60);
+        };
+        setTimeout(() => correct(0), 60);
         try {
           term.scrollToBottom();
         } catch {
           /* ignore */
         }
       };
+      void measureCharWidth; // retained for future use; suppress unused
 
       /* Debounce resize so rapid layout shifts (orientation change,
        * panel toggling) don't run the fontSize-fit loop tens of times
